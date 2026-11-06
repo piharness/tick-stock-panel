@@ -114,14 +114,23 @@ def _capturing_echo():
 # ---------- 验收 1：提前拒绝（真实盘面，不打任何补丁） ----------
 
 def test_real_run_rejects_while_the_clock_is_partial() -> None:
-    """当前真实状态直接跑入口：确认时钟 0/250，非零退出，消息含剩余天数。"""
+    """当前真实状态直接跑入口：时钟未满即非零退出，消息含剩余天数。
+
+    期望值从 `audit()` 现算，不写死 `250`——时钟每个交易日 +1，写死的常量
+    会在 2026-11-05 之后变成一条假红（实测已从 0/250 走到 1/250）。
+    """
     if not pc.GATE.sessions():
         pytest.skip("本机没有行情分区")
     if pc.GATE.READ_LOG.exists():
         pytest.skip("真实读取已发生，先验条件解除")
+    clk = pc.GATE.audit()["confirmation_clock"]
+    if clk["decision_days_computable"] >= clk["required"]:
+        pytest.skip("确认时钟已满，本验收不再适用")
     with pytest.raises(SystemExit) as exc:
         pc.run()
-    assert "还差 250 个确认决策日" in str(exc.value)
+    assert (f"确认时钟 {clk['decision_days_computable']} / {clk['required']}"
+            in str(exc.value))
+    assert f"还差 {clk['remaining']} 个确认决策日" in str(exc.value)
     assert not pc.GATE.READ_LOG.exists(), "拒绝时不许留记账行"
 
 
