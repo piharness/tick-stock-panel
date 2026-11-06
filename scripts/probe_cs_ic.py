@@ -81,6 +81,13 @@ def _load(name: str, rel: str):
 _ppd = _load("probe_paired_diff", "scripts/probe_paired_diff.py")
 se_hac, se_block = _ppd.se_hac, _ppd.se_block
 
+#: v13c 收口：`--rebuild` 的重算窗口必须有日期上限。这是最后一个没有上限的
+#: 产地通路——probe_neutral / probe_window / probe_basis_calibration 三处
+#: 已是「cap + require_exploration 双保险」同款；本脚本此前 366 个分区时
+#: 恰好只算到 2026-10-08，第 367 个分区落盘后第一次重跑就会把 2026-10-09
+#: （CONFIRM_START）静默写进封签缓存。
+GATE = _load("decision_gate", "scripts/decision_gate.py")
+
 
 def sessions() -> list[str]:
     return sorted(c.name.split("=", 1)[1] for c in (DATA / TABLE).iterdir()
@@ -131,6 +138,12 @@ def build(rebuild: bool = False) -> dict[str, dict[str, dict]]:
     if CACHE.exists() and not rebuild:
         return json.loads(CACHE.read_text(encoding="utf-8"))
     cal = sessions()
+    #: 只截**决策日**到探索段末（2026-10-08），往后保留 HORIZON 个价格日供
+    #: t+20 取价——2026-10-08 的 20 日收益要读到 2026-11-05。截断是本脚本
+    #: 唯一的日期上界，所以 cap 之后再断言一次：`cap_calendar` 被改坏时这里
+    #: 必须抛（fail-closed），而不是把确认段决策日静默写进封签缓存。
+    cal = GATE.cap_calendar(cal)
+    GATE.require_exploration(GATE.decision_days(cal), "probe_cs_ic", sys.argv)
     frames = {d: day_frame(d) for d in cal}
     frames = {d: f for d, f in frames.items() if not f.is_empty()}
     out: dict[str, dict[str, dict]] = {k: {} for k in SIGNALS}

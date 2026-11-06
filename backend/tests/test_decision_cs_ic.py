@@ -85,7 +85,12 @@ def test_quintile_ic_is_one_for_a_monotone_relation() -> None:
 
 
 def test_cache_days_are_the_same_sample_as_net_diff() -> None:
-    """决策日必须与 `probe_net_diff.py` 同源：缺一天就是另一个样本。"""
+    """决策日必须与 `probe_net_diff.py` 同源：缺一天、多一天都是另一个样本。
+
+    多出来的只可能是确认段（2026-10-09 起）——`build()` 的日期上限被改坏
+    时，`--rebuild` 会把它们静默写进封签缓存；旧的方向性断言（`<=`）对
+    这种失效方式不设防，故收紧为相等。
+    """
     exc = REPO / "data" / ".probe_per_day_exc.json"
     ic = REPO / "data" / ".probe_cs_ic.json"
     if not (exc.exists() and ic.exists()):
@@ -93,4 +98,38 @@ def test_cache_days_are_the_same_sample_as_net_diff() -> None:
     want = set.intersection(
         *(set(v) for v in json.loads(exc.read_text(encoding="utf-8")).values()))
     got = set(json.loads(ic.read_text(encoding="utf-8"))["momentum_20"])
-    assert want <= got
+    assert want == got
+
+
+def test_build_caps_window_and_fails_closed(tmp_path, monkeypatch) -> None:
+    """`build()` 必须先 cap 再 `require_exploration`，重算窗口不得越过探索段。
+
+    用合成日历（末日远超确认段）+ 空行情打穿 `build()` 的守卫段：断言
+    `require_exploration` 收到的决策日**已 cap**（末日 = EXPLORATION_END），
+    而不是裸 `decision_days(sessions())`（末日越过 CONFIRM_START）。
+    """
+    from datetime import date, timedelta
+
+    calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(
+        cs.GATE, "require_exploration",
+        lambda days, script, argv=(), **kw: calls.append((script, list(days))))
+    d0 = date(2026, 1, 5)
+    cal = [(d0 + timedelta(days=i)).isoformat() for i in range(300)]
+    monkeypatch.setattr(cs, "sessions", lambda: list(cal))
+    monkeypatch.setattr(cs, "day_frame", lambda d: pl.DataFrame())
+    monkeypatch.setattr(cs, "CACHE", tmp_path / "cs_ic.json")
+
+    #: 前提自检：合成日历不 cap 时确实越过确认段，测试不会空洞通过。
+    assert max(cs.GATE.decision_days(cal)) >= cs.GATE.CONFIRM_START
+
+    out = cs.build(rebuild=True)
+
+    assert len(calls) == 1
+    script, days = calls[0]
+    assert script == "probe_cs_ic"
+    #: 与「cap 后再取决策日」逐日相等——接线正确，而不是恰好结果相同。
+    assert days == cs.GATE.decision_days(cs.GATE.cap_calendar(cal))
+    assert max(days) == cs.GATE.EXPLORATION_END
+    assert out == {name: {} for name in cs.SIGNALS}
+    assert (tmp_path / "cs_ic.json").exists()
