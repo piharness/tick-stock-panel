@@ -1,0 +1,3575 @@
+# 决策账本：Capital-Console 融合说明
+
+> 状态：已实现（`backend/app/decision/`、`/api/decision/*`、`/decisions` 页面）
+> 判定原则：**搬不变量，不搬模块**。本文记录哪些留下、哪些丢掉、以及为什么。
+
+## 0. 一句话结论
+
+`Capital-Console` 的价值不在它的 22 个模块，而在它用代码强制执行的六条不变量；
+`tick-stock-panel` 已经有更好的数据层、执行层和界面，缺的正是这六条。
+所以融合 = **把不变量接进 TSP 的现有数据与账本**，而不是把两个仓库拼在一起。
+
+## 1. 两个系统各自的真实缺口
+
+| | 强 | 弱 |
+|---|---|---|
+| **TSP** | 数据管线（Polars/分区/插件化）、策略与回测、paper 撮合（T+1/涨跌停/除权/多账户）、3000+ 测试、React 界面、开放 API | 能算"回测里赚了多少"，答不出"**我下过的判断，到期后比常数预测强吗**"；没有预登记，没有三态门禁，没有校准结算 |
+| **Capital-Console** | 预登记 + 内容哈希、K1–K4 三态门禁、Brier 校准与常数基线、失败关闭、只追加账本 | 自带一套 `Data/` 与 `config/` 工作区、junction 单源、真钱 `capital_cny` 账户、独立 Web 控制台、Python 3.12 + PowerShell 启动器；`book/orders/tickets/broker` 与 TSP 的 `strategy/paper.py` 功能重叠且更弱 |
+
+结论：**重叠的部分丢 CC 的，缺失的部分搬 CC 的**。
+
+## 2. 菁 / 芜 判定表
+
+| Capital-Console | 判定 | 在 TSP 的落点 / 理由 |
+|---|---|---|
+| `guard.py` 三态门禁 | **菁 → 移植** | `app/decision/gates.py`。三态是整套体系的地基：没有 UNKNOWN，"读不到"就会变成"没触发" |
+| `calibration.py` 结算 + Brier | **菁 → 移植** | `app/decision/settle.py`。改成 Polars + TSP 分区，去掉 pandas 与 `Data/` 硬编码 |
+| `policy.py` 承诺/观测二分 | **菁 → 降级保留** | TSP 无 Principal 私钥，不冒充签名。承诺 = 内容哈希（card_id），观测 = gates 单独哈希 |
+| `preflight.py` 失败关闭 | **菁 → 语义保留** | 不新起服务，改为「门禁 UNKNOWN 不放行 + 建卡遇 STOP 返回 409」 |
+| `kernel/` 38 指标 / 22 结论 | **芜（对本仓库）** | 绑定另一个研究项目的数据与口径。只借"结论必须带 falsifier"的 schema 思想，不搬数据 |
+| `book.py` / `orders.py` / `tickets.py` / `broker.py` | **芜（重复）** | TSP `strategy/paper.py` 已覆盖且更强（T+1、涨跌停排队、除权、多账户、append-only 台账） |
+| `web.py` + `web/index.html`（1452 行） | **芜（重复）** | 改由 React `/decisions` 页面承接，复用全站主题与组件 |
+| `config/*.yaml` + junction 工作区 | **芜（第二套真相）** | 全部落 `data/user_data/decision/`，与 paper 账户同盘同源 |
+| `capital_cny` 真钱账户 | **芜（越界）** | TSP 明确不做资金通道；K1 改用 paper 账户回撤 |
+| `STATE.json` / `TASK.md` / `redteam/` | **芜（流程）** | 那是单人研究项目的交接装置，不是产品代码 |
+| `simulate.py` / `panel.py` / `sizing.py` | **暂不移植** | 与 `backtest/position_sizing.py`、`robust_optimizer.py` 职责重叠，先验证账本闭环再谈组合优化 |
+| `consensus.py`（ARM/CONFIRM/ENTER） | **暂不移植** | 是特定策略腿的状态机；账本层应先于策略层落地 |
+
+## 3. 移植过来的六条不变量
+
+1. **预登记**：卡在结果之前封存，`sha256(承诺内容)` 即 `card_id`。改一个限价 = 另一张卡，不是"改过的旧卡"。
+2. **三态**：`PASS / TRIGGERED / UNKNOWN`。`strict=True` 时 UNKNOWN 也阻断。
+3. **接线才算数**：`gates.py` 里出现的每条规则都真的读数据；读不到返回 UNKNOWN，不返回 PASS。
+4. **可证伪**：`Brier skill = 1 - brier / brier_const`。基线的取法决定这条路走不走得通
+   （见第 9 节）：`abs` 用同样本命中率——它含未来信息，任何常数 `p_win` 都恒不可超越；
+   `median` 用精确的 `0.5`，历史胜率才可能跑赢它。
+5. **失败关闭**：建卡时门禁为 STOP ⇒ HTTP 409；确需补登历史卡必须 `allow_stop=true` + ≥10 字理由，理由随卡存档。
+6. **只追加**：卡文件不覆盖（同 id 返回 `created: false`），结算写 `settlements.jsonl`；没有删除端点。
+
+## 4. 口径（改这些之前先改测试）
+
+| 项 | 口径 | 理由 |
+|---|---|---|
+| 限价撮合 | 不复权价。开盘 ≤ 限价按开盘；否则最低 ≤ 限价按限价；否则 `NOT_FILLED` 留痕 | 与 `strategy/paper.py` 一致，且"看得见买不到"本身是策略的一部分 |
+| `raw_open` | `open / (close / raw_close)` | enriched 只落 `raw_close/raw_high/raw_low`；同一日复权因子对 OHLC 一致 |
+| 收益 | 复权价：`exit_close / (fill_price × f_entry) - 1` | 除权日不产生假跌幅 |
+| 超额 | 同区间基准（默认 `000300.SH`，`kline_index_enriched`） | 不比基准的收益不是 alpha |
+| **选股超额** | **`ret - 同日全市场收益中位数`** | **基线精确 50%，同日 pick 近似独立；剥离 beta** |
+| 到期日无行情 | 仍 `PENDING`，不拿旧价假装结算 | 停牌不是"没发生" |
+| 结论门槛 | 已结算 `n < 8` ⇒ `INSUFFICIENT`；`skill_lcb ≤ 0` ⇒ 不显著 | 小样本的 Brier 只是噪声 |
+
+## 5. 与 Capital-Console 的有意差异
+
+| CC 的做法 | 本实现 | 为什么改 |
+|---|---|---|
+| 无决策文件 ⇒ K3 TRIGGERED | 空账本 ⇒ K3 PASS | TSP 用户可能从不使用账本；"未声称决策"不是"记录造假" |
+| 签名（Principal 私钥） | 内容哈希 | 没有密钥就不要假装有；哈希能证明"未被改写"，不能证明"谁写的"，如实标注 |
+| `capital_cny` 真钱账户 | paper 账户 | TSP 不做资金通道 |
+| 门禁 STOP 时 `decide` 直接不出卡 | API 409，可显式越权并留痕 | 补登历史卡做校准是合法需求，但必须留下可读理由 |
+| `asym2.pit.freshness` 外部新鲜度 | 日K分区目录 | 不引入第二个数据真相；没有数据的那天就不是交易日 |
+
+## 6. 验收标准（可证伪）
+
+- [x] 改动任一承诺字段 ⇒ `card_id` 变化；事后改卡 ⇒ `verify_card` 返回 False（测试 `test_verify_detects_post_seal_edit`）
+- [x] 门禁在数据过期时判 `TRIGGERED` 而非 PASS（`test_gate_stops_when_data_is_stale`）
+- [x] 缺 instruments 时 K2 判 `UNKNOWN`，`strict=True` 下阻断（`test_gate_k2_unknown_when_instruments_missing`）
+- [x] 同一批卡重复结算不重复写入（`test_settle_is_idempotent`）
+- [x] 复权因子 2 的场景下收益为 +10% 而非 +120%（`test_adjusted_return_removes_exrights_jump`）
+- [x] 常数预测的 skill = 0、判 `NO_INFORMATION`；样本 < 8 判 `INSUFFICIENT`
+- [x] 真实数据只读验证：门禁 0.01s、常数基线 0.06s（6 个采样日 / 33,090 个观测，p0 = 35.69%）
+
+**尚未验证（诚实登记）**：没有跑过"真实策略信号 → 卡"的自动生产者；当前建卡是显式 API 调用。
+`p_win` 的自动来源已实现（`app/decision/pwin.py`，账本自举），但**它只在 `median`
+口径下成立**——见第 9 节。`abs` 口径下这条路在数学上走不通，不是工程量问题。
+
+## 7. 非目标
+
+- 不接券商、不做实盘、不提供资金通道（与 TSP 既有边界一致）。
+- 不做组合优化 / Kelly 仓位（`sizing.py` 暂不移植）。
+- 不引入 `config/*.yaml` 或第二套数据目录。
+- 不追求"每个策略都自动出卡"——先让账本可信，再谈自动化。
+
+## 8. 下一步（按代价排序）
+
+1. ~~**p_win 的真实来源**~~ → 已实现 `pwin.py`（账本自举 + 样本外重放），
+   但**必须先读第 9 节**：`abs` 口径下这条路结构性地走不通。
+   样本外重放的可见性口径已于 **9.8** 修正（原来偷看了未结算的样本）。
+2. **策略 → 卡的生产者**：`POST /api/decision/cards` 已支持 `auto_pwin=true`，
+   下一步是把「当日跑策略」这一步接上（`strategy.run` → picks → 建卡）。
+3. **组合层**：把 `sizing.py` 的 E[log] 仓位接到 `paper` 的下单金额上，但必须先有
+   `n ≥ 8` 且 `significant=true` 的校准证据。
+
+---
+
+## 9. p_win 的来源：这个问题必须先定口径，再定方法
+
+> 本节记录六次实测的结论。全部脚本在 `scripts/probe_*.py` / `verify_pwin_e2e.py`，
+> 数据为 `data/kline_daily_enriched`（365 个交易日，2025-05-07 .. 2026-11-04）。
+
+### 9.1 先说结论
+
+**"用哪个历史命中率、带多少样本"这个问法假设了 p_win 有唯一正确答案。
+实际上答案由计分口径决定，而两个口径给出的结论相反。**
+
+| | `abs`（当前默认） | `median`（新增） |
+|---|---|---|
+| 因变量 | `ret > 0` | `ret > 同日全市场中位数` |
+| 常数基线 | 展开 climatology（决策时点可知，§9.10 修正） | 精确 `0.5`（无未来信息） |
+| 有效样本 | 365 天 / 20 日 horizon ≈ **18 个不重叠窗口** | ≈ pick 数（ICC ≈ 0） |
+| 基线估计误差 | 展开估计，随历史长度收敛 | 0 |
+| 历史胜率能否当 p_win | 能，但增量极小（§9.10） | 能，但增量极小（§9.10） |
+
+> §9.10 推翻了本节原先「abs 走不通、median 走通」的二分。**两个口径的
+> `verdict` 都是相对 0.5 的产物**，而 0.5 不是任何一个策略的基础胜率。
+> 换成展开基线后，两个口径给出同一个结论：`NO_INCREMENT`。
+
+同一批 386 条真实结算（40 个决策日、高换手策略）：
+
+```
+[abs]    n=386  hit=17.36%  skill=-7.00%   lcb=-21.22%  NO_INFORMATION
+[median] n=386  hit=19.95%  skill=+33.16%  lcb=+17.23%  BEATS_CONSTANT
+```
+
+不是数据打架，是两个问题：**赚没赚** vs **选得准不准**。
+
+### 9.2 六条实测
+
+| # | 主张 | 实测 | 脚本 |
+|---|---|---|---|
+| 1 | `p0` 不是常数，是**采样窗口的函数** | 同一段数据：`sample=6` ⇒ **35.69%**（与旧记录逐位一致）、`sample=12`（代码默认）⇒ **42.03%**、`sample=24` ⇒ **48.16%**。跨度 12.5 个百分点，只因为取了几个点 | `probe_p0_drift.py` |
+| 2 | `p0` 的精度被高估 31 倍 | 345 个起点的日间 sd = **21.37%**；naive SE 0.037% vs 按日聚类 1.15% | `probe_p0_precision.py` |
+| 3 | 绝对收益的有效样本是「天」不是「观测」 | 3.3 万个观测只有 **18 个不重叠窗口**；要拿到 ±2% 需要 **36 年** | `probe_p0_precision.py` |
+| 4 | 超额口径下 pick 近似独立 | 同日 20 个 pick 的日胜率 sd = 16.96% vs 独立假设 11.18%… 随机组 11.13%，**ICC ≈ 0** | `probe_excess_outcome.py` |
+| 5 | 历史胜率在强信号上样本外有效，弱信号上翻转 | 高换手：训练 +12.06% → 验证 **+23.12%**；20 日动量：+4.45% → **-4.19%** | `probe_window.py` |
+| 6 | 窗口长度不敏感 | W = 40 / 80 / 160 / 320 / 全历史，skill 差异 **< 1 个百分点** | `probe_window.py` |
+
+第 1 条要展开说，因为它解释了旧文档里的 35.69%：
+
+```
+sample=6   p0 = 35.69%  ± 16.91%  (95%)   ← 旧记录（6 采样日 / 33,090 观测）
+sample=12  p0 = 42.03%  ± 11.96%  (95%)   ← 当前代码默认值
+sample=24  p0 = 48.16%  ±  9.27%  (95%)
+```
+
+那 6 个采样点自身的 p 值是 `[20.1%, 26.3%, 70.5%, 51.5%, 30.3%, 15.4%]`——
+**同一年里，20 日上涨占比从 15% 到 70%**。用 6 个这样的点去估"市场基础胜率"，
+95% 区间宽达 ±17%，比"有信息"和"没信息"之间的差距还大。
+
+`prior()` 现在会一并返回 `p0_se` 与 `p0_range`，前端显示成 `42.03% ±11.96%`。
+`sample` / `step` 是任意参数，`p0` 随之漂移，所以它**不能承担"常数基线"的角色**——
+这也正是 `median` 口径存在的理由：那里的基线是精确的 0.5，不需要估。
+
+第 5 条是最重要的：**它说明 p_win 的来源本身需要被审计**。动量策略的历史胜率
+不是"算错了"，而是"对未来没有预测力"。账本必须能说出这句话。
+
+### 9.3 样本内常数基线为什么不能用（数学，不是数据）
+
+> 原标题是「为什么 `abs` 口径下历史胜率注定失败」。§9.10 证明这个标题把
+> 「基线错了」误读成了「口径走不通」——错的是基线，不是 `abs`。
+
+`abs` 原来的基线是 `brier_const = mean((hit - y)²)`，其中 `hit` 是**该样本**的
+命中率。对任意常数 `p`：
+
+```
+p = hit   ⇒ brier = brier_const  ⇒ skill = 0
+p ≠ hit   ⇒ brier > brier_const  ⇒ skill < 0
+```
+
+而历史胜率**只能是常数**（每个策略一个数）。所以：
+
+> **样本内常数基线 + 常数 p_win ⇒ skill ≤ 0，恒成立。**
+
+这段数学没错，但它证明的是一个**恒等式**，不是发现：`hit` 是使平方误差最小
+的常数，任何别的常数都打不赢它。拿它当分母，检验就变成了同义反复。
+
+修正（§9.10）是把分母换成**展开 climatology**——只用决策时点之前已结算的
+样本估常数。换完之后 `abs` 不再恒 ≤ 0，但同时暴露出 `median` 口径的同一个
+问题：`0.5` 只是「随机选股」的基准，不是这个策略的基础胜率（实测 27.9%）。
+
+**两个口径的 `verdict` 都只回答「比 0.5 好多少」，不回答「有没有预测力」。**
+后者需要另一个检验：`verdict_incremental`。
+
+### 9.4 p_win 的实现：账本自举
+
+`app/decision/pwin.py`：
+
+```
+第 N 张卡的 p_win  ←  前 N-1 张已封存并结算的卡
+```
+
+- **冷启动**：`n < 8` ⇒ `p_win = None`，`source="prior"`，不编造数字；
+- **收缩**：`p = (hits + κ·0.5) / (n + κ)`，`κ = 20`（等价 20 个虚拟样本），**不调优**；
+- **元校准**：把历史按决策日重放，第 i 天只用第 i 天之前的样本估 p，
+  算 Brier 改善的单侧 95% 下界。`lcb > 0` ⇒ `RELIABLE`，否则 `UNRELIABLE`；
+- **失败关闭**：`suggest(require_reliable=True)` 在 `UNRELIABLE` 时抛错，
+  API 返回 **409**。宁可不出卡，也不用一个已被证伪的概率污染账本。
+
+这不是"外部数据源"，而是账本自己的历史。好处是天然 walk-forward：没有任何未来
+信息能进入 p_win。
+
+### 9.5 新增接口
+
+| 端点 | 用途 |
+|---|---|
+| `GET /api/decision/pwin?strategy_id=&horizon=&basis=&window=&kappa=` | 某策略当前的 p_win 及其样本外证据 |
+| `POST /api/decision/cards` `auto_pwin=true` | 用账本历史自动填 p_win；不可靠则 409 |
+| `GET /api/decision/score?basis=median` | 超额口径计分 |
+| `GET /api/decision/overview` | 同时返回 `score`（abs）与 `score_median` |
+
+结算记录新增三个字段（向后兼容，旧记录读不到即为 `None`）：
+
+```
+median_ret    同区间全市场收益中位数
+excess_med    ret - median_ret
+outcome_med   1 if ret > median_ret else 0
+```
+
+### 9.6 验收标准（已通过）
+
+- [x] 冷启动 `n < 8` ⇒ `p_win = None`，`source="prior"`，不返回数字
+- [x] 8 个全胜样本 ⇒ `p_win = 18/28`，不是 1.0（`test_shrinkage_pulls_toward_prior`）
+- [x] 稳定 70% 胜率 ⇒ `RELIABLE`，`oos_lcb > 0`
+- [x] 前 20 天全胜、后 20 天全负 ⇒ `UNRELIABLE`，`oos_lcb ≤ 0`
+- [x] 样本外重放不偷看当天结果（`test_walk_forward_uses_only_past`）
+- [x] `median` 口径的 `brier_const` 恰为 0.25，不是样本命中率
+- [x] 单日 20 个 pick ⇒ `days=1`，`skill_lcb=None`，`significant=False`
+- [x] 旧记录缺 `outcome_med` 时 `abs` 口径照常可算（向后兼容）
+- [x] 真实数据端到端：40 张卡 / 386 条结算 / `outcome_med` 覆盖 99%，
+      `median` 口径 skill +33.16%（lcb +17.23%，HAC 修正后），`abs` 口径 -1.44%
+
+### 9.7 这一节没有解决的问题
+
+1. **`abs` 口径怎么办**：要么承认它只能回答"赚没赚"、不参与"有没有信息"的判断；
+   要么给 `p_win` 加标的级区分度（需要因子暴露模型）。当前选择前者。
+2. **非平稳**：动量策略的符号翻转说明"策略胜率"不是稳定参数。`UNRELIABLE`
+   能识别它，但不能预测下一次翻转。这是统计的边界，不是实现的缺口。
+3. **冷启动期**：前 8 张卡没有 p_win，只能用 prior。这是诚实的代价。
+
+### 9.8 口径修正：重放必须只用**已结算**的样本（2026-11-04）
+
+#### 问题
+
+`walk_forward` 原来的回看是 `days[i-window:i]`——按**决策日**往前数。
+但一张卡的出场日是 `as_of + 1 + horizon`（次日入场 + 持有 horizon 天）。
+于是决策日 `D` 的 p 用到了 `D-1` 的胜率，而那个结果要等 20 个交易日之后才出来。
+
+模块注释当时写着「没有任何未来信息能进入 p_win」，代码违反了这句话。
+`scripts/probe_pwin_source.py` 的预登记口径反而是对的（`cutoff = pos[t] - HORIZON`），
+库函数没有照它实现——**文档、探针、实现三者不一致时，以预登记为准**。
+
+#### 修复
+
+```python
+exit.date < D              # 优先：结算记录里的真实出场日（精确）
+或  D - d > horizon + 1    # 回退：没有 exit.date 时按决策日间隔保守判定
+```
+
+一天里只要还有一笔没结算完，这一天就整体不算可见（取 `max(exit.date)`）。
+
+#### 实测（同一批 386 条结算 / 39 个决策日 / horizon=20）
+
+| | 可评估决策日 | Brier 改善 | 单侧下界 | skill | 判定 |
+|---|---|---|---|---|---|
+| 修复前 | 37 | +0.08614 | +0.06506 | +34.45% | RELIABLE |
+| 修复后 | **17** | **+0.12325** | **+0.09533** | **+49.30%** | RELIABLE |
+
+**判定没变，但数字全变了。** 而且方向和直觉相反：修复后改善**更大**。
+原因是修复前把冷启动期 `p≈0.5` 的那些日子也算进了评估，把均值拉低了。
+所以「泄漏导致乐观」这个说法在这里是错的——泄漏的真实危害不是偏大或偏小，
+而是**这个数字无法用决策当时已知的信息复现**。
+
+这一点值得记住：如果当初用「修复后数字变大」来自证修复正确，那就又犯了
+"用结果解释方法"的错。修复的依据是定义，不是它让指标变好看。
+
+#### 附带的结构性结论
+
+39 个决策日、horizon 20 ⇒ 只有 **17 天**可评估（其余 22 天的结果还没结算）。
+`2 × horizon + 1` 是"有第一天可评估"的下界：要认证一个 20 日策略，
+账本至少要有 **41 个决策日**，否则连"样本外"都凑不出来。
+这条约束直接决定第 8 节第 2 步（策略 → 卡的生产者）的验收节奏：
+**自动化跑满 41 个交易日后，p_win 的可靠性才有第一次可读的结论。**
+
+#### 新增验证
+
+- `test_walk_forward_cannot_certify_before_first_settlement`：20 天账本 + horizon 20 ⇒ `INSUFFICIENT`
+- `test_walk_forward_honours_exit_date`：有 `exit.date` 时按真实出场日判定，不按间隔
+- `test_walk_forward_does_not_see_the_regime_it_is_evaluating`：制度翻转后 p 仍停在旧制度
+- `scripts/probe_pwin_availability.py`：并排跑「旧口径」与「预登记口径」，量化差异
+
+三条测试都在「把可见性判定强制为 True」时失败——不是装饰性断言。
+`reason` 现在写明「N 个可评估决策日」，`GET /pwin` 与建卡响应新增 `oos_days`。
+
+### 9.9 结算必须记录 p_win 的出处
+
+结算流水原来只存 `p_win` 这个数字，不存它从哪来。于是事后无法区分三种样本：
+
+| 来源 | 含义 | 该不该算进「校准」 |
+|---|---|---|
+| `ledger` | 账本自举 | 该 |
+| `prior` | 冷启动常数 0.5 | 不该——它的 Brier 恒等于基线，天然 skill=0 |
+| `None` | 人手填的 / 旧记录 | 不该混入，至少要看清楚占多少 |
+
+新增三个字段（旧记录读不到即为 `None`，向后兼容）：
+
+```
+p_win_source     "ledger" / "prior" / None
+p_win_n          估这个 p 时用了多少已结算样本
+p_win_verdict    当时的元校准结论（RELIABLE / UNRELIABLE / INSUFFICIENT）
+```
+
+`score()` 同时返回 `by_source` 分组。实测同一批 386 条：
+
+```
+[median] 合并      n=386  skill +33.16%  BEATS_CONSTANT
+         ledger   n=376  skill +34.04%  BEATS_CONSTANT
+         prior    n=10   skill   0.00%  NO_INFORMATION
+```
+
+这组数字差得不多（prior 只占 10 条），但它证明分组是通的。更重要的是
+**方向**：如果冷启动期很长、或有人手工填了一批乐观的 p_win，合并分数会
+把两种完全不同的证据混成一个无法解释的数。分组的代价是几行代码，
+不分组则意味着「校准结论」可以被一段没有信息的历史稀释。
+
+`scripts/verify_pwin_e2e.py` 现在也像 API 一样把出处写进 `forecast.pwin`，
+否则它自己造出来的账本永远是 `unknown`——验证脚本绕过 API 时，必须补上
+API 做的同一件事，否则验证的是另一条路径。
+
+### 9.10 `RELIABLE` 是基线的产物，不是 p_win 的能力（2026-11-05）
+
+#### 问题
+
+§9.8 修好了可见性，但没检查**基线**。`walk_forward` 的 `bc` 用的是
+`(prior - y)²`，而 `_prior_of()` 对两个口径都返回 `0.5`。于是当 p 接近常数时：
+
+```
+skill = 1 - p(1-p)/0.25 = 1 - 4p(1-p)
+```
+
+命中率 15% ⇒ **+49%**，28% ⇒ **+19%**。这个数字和「预测未来」无关，只和
+「命中率离 50% 有多远」有关。§9.8 实测的 +49.30% 正好落在这个闭式解上
+（该评估窗口命中率约 15% ⇒ 上限 0.1225，实测 0.12325）。
+
+#### 四预测器对照（`scripts/probe_pwin_information.py`）
+
+343 个决策日 / 3430 条观测，同一批样本上打分：
+
+| 预测器 | abs Brier | 相对 0.5（下界） | 相对展开基线（下界） |
+|---|---|---|---|
+| A 近端 60 日胜率（现行 p_win） | 0.2002 | **+0.04979 (+0.04271)** | **+0.00156 (+0.00050)** |
+| B 展开全历史胜率 | 0.2018 | — | — |
+| C 常数 0.5（现行基线） | 0.2500 | — | — |
+| D 全样本命中率（神谕常数） | 0.2004 | — | — |
+
+`median` 口径同向且更极端：A−C `+0.04684 (+0.04042)`，A−B `−0.00026 (−0.00150)`。
+
+三件事，其中第 2 条已被 §9.11 推翻：
+
+1. **A 打赢 C 是必然的**（C 是错的基线）；
+2. ~~A 打不赢 B（近端胜率不含额外信息）~~ —— 上表 A−B 的点估计是
+   **+0.00156**，方向与这句话相反。这个符号与 `walk_forward` 的 −0.00548
+   冲突，根因是两处 `window` 语义不同（§9.11）。口径统一后 A−B 为
+   **+0.00155**，但 iid 下界 +0.00050 经重叠修正后变成 **−0.00078**。
+   正确表述是「与 0 无法区分」，既不是打赢也不是打不赢；
+3. **A 打不赢 D**——`A−D = +0.00015`，但下界 `−0.00146`。A 连「事后最优
+   常数」都赢不了，说明它不只是「在估基础胜率」，而是「估得比事后平均
+   还差一点」。
+
+顺带确认两个口径是同一个变量：abs 命中率 27.87%、median 27.90%，
+因变量一致率 **93.56%**；20 日全市场收益中位数均值 **−1.01%**，
+阈值几乎重合。§9.1 说「不是数据打架，是两个问题」——数据上它们是同一个问题，
+结论相反**全部来自基线**（一个用神谕常数，一个用 0.5）。
+
+#### 修正：三个基线，两个判定
+
+`settle.score()` 现在分开报告三个基线：
+
+| 字段 | 含义 | 用途 |
+|---|---|---|
+| `brier_random` | `p = 0.5` | 无信息基准（median 口径的「随机选股」） |
+| `brier_clim` | 展开 climatology | **诚实基线**：决策时点可知的最优常数 |
+| `brier_insample` | 样本内命中率 | 事后最优，恒 ≥ 任何常数预测器，**只做诊断** |
+
+`abs` 口径的 `brier_const` 改成 `brier_clim`；`median` 口径保持 `0.25`
+（0.5 是定义性基准，不是估计值）。
+
+`pwin.walk_forward()` 新增第二套判定，与现行 `verdict` **并列而非替代**：
+
+```
+verdict              这个 p 比「无信息常数 0.5」好吗？      → RELIABLE / UNRELIABLE
+verdict_incremental  这个 p 比「同样诚实的历史常数」好吗？  → INCREMENTAL / MARGINAL / NO_INCREMENT
+```
+
+`MARGINAL` 是必须的第三档：`lcb > 0` 只说明「可分辨」，不说明「有用」。
+实测 `abs` + `window=250` 给出改善 `+0.00011`、下界 `+0.00003`——若只按符号
+判定会得到「显著但等于零」的 INCREMENTAL。`MIN_INCREMENTAL_EFFECT = 0.001`
+（预测误差降低 0.1 个百分点）是这一档的门槛。
+
+#### 一个必须写下来的数学事实
+
+**不随决策日变化的预测器，相对展开基线的 Brier 改善恒 ≤ 0。**
+
+因为常数的分辨率（resolution）恒为 0，Murphy 分解给出
+`BSS_clim = (RES − REL)/UNC ≤ 0`。这有两个后果，必须分开说：
+
+1. `estimate()` 返回的 `p_win` 是一个**标量**，它相对 climatology 的增量
+   结构性地为 0。所以「卡上那个数字」本身不含超出「历史平均胜率」的信息。
+2. `walk_forward` 里的 p 是**逐日重估**的，理论上可以赢 climatology。
+   实测两个窗口都为负（−0.00237 / −0.00055）。**§9.11 推翻了本节的解释**：
+   这个负号里有一块是「滚动窗口样本更少 ⇒ 方差更大」的机械项，不是信息量
+   的度量。所以只能说「这批数据没能显示增量」，不能说「这条路走不通」。
+
+因此「把基线换成 B 之后 RELIABLE 会变 UNRELIABLE」这个预期只对了一半：
+它确实会变，但变的原因是**当前这个时变方式不含信息**，不是「这批数据
+没有信息」。若把它当成唯一的 gate，「胜率稳定在 70%」这种明显有用的情形
+也会被判死（`test_constant_predictor_has_no_increment_but_can_be_reliable`
+钉住了这个反例）。
+
+#### 实测（`scripts/probe_pwin_verdicts.py`，343 决策日 / 3430 观测）
+
+| basis | window | skill vs 0.5 | skill vs clim | verdict | incremental |
+|---|---|---|---|---|---|
+| median | 60 | +0.1785 | **−0.0117** | RELIABLE | NO_INCREMENT |
+| median | 250 | +0.1858 | **−0.0027** | RELIABLE | NO_INCREMENT |
+| abs | 60 | +0.1707 | **−0.0271** | RELIABLE | NO_INCREMENT |
+| abs | 250 | +0.1930 | +0.0005 | RELIABLE | **MARGINAL** |
+
+`verdict_incremental` 对 `window` 敏感：窗口越接近全历史，p 与展开基线越像，
+增量越接近 0。判断「近端是否含远端没有的信息」时，必须让 `window` 明显小于
+历史长度——默认 250 在 343 天的账本上已经接近全历史。
+**§9.16 修正**：窗口一旦覆盖全部已可见决策日，增量不是「接近 0」而是**恒等 0**
+（两个估计量是同一个），此时检验没有功效，结论是 `NOT_TESTABLE` 而不是
+`NO_INCREMENT`。
+
+#### `days` / `oos_days` 的语义拆分
+
+`walk_forward` 的 `days` 曾在失败分支是「总决策日」、在成功分支是「可评估日」，
+而 `estimate()` 又把 `wf["days"]` 透传成 `oos_days`，于是「账本规模」被当成
+「样本外天数」显示。现在：
+
+- `days` **恒为**总决策日；
+- `oos_days` **恒为**可评估决策日（失败时为 `0`，不再是 `None`）；
+- `estimate()` 透传 `wf["oos_days"]`。
+
+#### 验收
+
+- [x] `test_days_and_oos_days_are_distinct`：20 天账本 + horizon 20 ⇒ `days=20, oos_days=0`
+- [x] `test_constant_predictor_has_no_increment_but_can_be_reliable`：稳定 70% ⇒ `RELIABLE × NO_INCREMENT`（§9.16 把窗口从 250 收到 20：原来的断言是恒等式，不是结论）
+- [x] `test_increment_detected_when_regime_drifts_and_window_is_short`：制度翻转 + 短窗口 ⇒ `INCREMENTAL`
+- [x] `test_marginal_verdict_when_increment_is_significant_but_tiny`：`+0.00011/+0.00003` ⇒ `MARGINAL`
+- [x] `test_score_abs_baseline_is_expanding_not_insample`：p=hit 时 `skill > 0`，旧实现恒为 0
+- [x] 真实行情：`median` 口径两个 window 都返回 `NO_INCREMENT`（§9.8 的 `RELIABLE` 未被推翻，但不再被当作「有信息」的证据）
+
+#### 这一节没有解决的
+
+1. **结构性上限**：365 交易日 ÷ 20 日 horizon = **18 个不重叠窗口**。
+   p=0.28 时标准误 10.6%，95% 区间 ±20.7%；要收到 ±5% 需要 309 个窗口 ≈ 26 年。
+   「41 个决策日就有第一次可读结论」是对的，但**可读 ≠ 有功效**。
+2. **重叠窗口的自相关**：`_daily_clustered_lcb` 只按决策日聚类，校正了同日
+   横截面相关，**没有**校正 horizon 重叠导致的跨日自相关。正确做法是
+   block bootstrap（block ≥ horizon）或 Newey-West。当前下界仍然偏乐观。
+3. **出路只有一条**：把 per-strategy 标量换成 pooled 截面模型
+   （全标的 × 全策略，n 从 3430 起），预测 20 日收益分布的某个分位，
+   按 CRPS 打分，`p_win = P(ret > 0)` 作为派生量。账本退回审计与漂移监控。
+   在那之前，`p_win` 只能当「一个比 0.5 好、但没有区分度的常数」使用。
+
+### 9.11 两个口径错误互相抵消，§9.10 的结论要退回「测不出」（2026-11-05）
+
+§9.10 的 A/B 对照跑在 `probe_pwin_information.py` 上，而 `walk_forward` 的
+结论跑在 `pwin.py` 上。这两个实现**对同一个参数名 `window` 的理解不同**，
+加上下界算法低估了标准误，于是两边给出符号相反的 A−B。逐个说。
+
+#### 错误一：`window` 在 `estimate()` 与 `walk_forward()` 里不是同一个东西
+
+- `estimate()`：取「最近 `window` 个**已结算**决策日」；
+- `walk_forward()`（旧）：取「最近 `window` 个**日历**决策日，再过滤掉未结算的」。
+
+持有 20 日的卡，最近 21 天都不可见。所以 `window=60` 在 walk-forward 里
+实际只用到约 39 天（≈390 条观测），而 `estimate()` 的 `window=60` 是 60 天
+（≈600 条）。后果有两层：
+
+1. walk-forward 验证的**不是** `estimate()` 输出的那个预测器——同一个参数，
+   两个模型；
+2. `window ≤ horizon` 时一天都评估不出来。`window=20, horizon=20` 返回
+   `oos_days=0`，而 `estimate(window=20)` 正常给出数字。
+
+§9.10「A 打不赢 B」正压在这个歧义上：那个 +0.00156 用的是 60 个已结算日，
+而 `walk_forward` 的 −0.00548 用的是 39 个日历日。**符号是口径造成的，不是
+数据造成的。**
+
+修法：`walk_forward` 也按「最近 `window` 个已结算决策日」取近端。改完后两个
+脚本的 A−B 逐位一致（`+0.00155` vs `+0.00156`，差异来自 1 个可评估日的边界）。
+
+#### 错误二：逐日观测不是独立样本
+
+逐日改善量是 MA(horizon−1)：相邻决策日的收益重叠 19 天。实测自相关
+lag1 = **0.65–0.84**，lag20 仍有 −0.05…+0.03。按 iid 算，标准误被低估
+2.2–2.7 倍。
+
+修法：`settle.hac_lcb()`，Newey-West（Bartlett 核），`lag = horizon - 1`，
+`pwin._mean_se_lcb()` 与 `settle._daily_clustered_lcb()` 共用。新增：
+
+```
+n_eff    等效独立样本数 = n · (se_iid / se_hac)²     （321 天 ⇒ 44–66）
+hac_lag  滞后阶数 = horizon - 1
+```
+
+#### 两个错误方向相反，只修一个会得到相反的假结论
+
+| basis | window | 改善（旧→新） | 旧判定（日历窗口+iid） | 只修窗口（已结算+iid） | 两处都修（+HAC） | n_eff |
+|---|---|---|---|---|---|---|
+| median | 60 | −0.00237 → −0.00026 | NO_INCREMENT | NO_INCREMENT（−0.00150） | **NO_INCREMENT**（−0.00302） | 65 |
+| median | 250 | −0.00055 → −0.00034 | NO_INCREMENT | NO_INCREMENT（−0.00046） | **NO_INCREMENT**（−0.00065） | 44 |
+| abs | 60 | −0.00548 → **+0.00155** | NO_INCREMENT | **INCREMENTAL**（+0.00050） | **NO_INCREMENT**（−0.00078） | 66 |
+| abs | 250 | +0.00011 → +0.00008 | **MARGINAL**（+0.00003） | NO_INCREMENT（+0.00001） | **NO_INCREMENT**（−0.00010） | 44 |
+
+`abs/60` 这一行是关键：只修窗口，会得到一个「显著为正」的 INCREMENTAL；
+只修标准误，会得到一个「显著为负」的 NO_INCREMENT。两个错误一个压低了
+点估计、一个抬高了显著性，**互相掩护**。§9.10 的 `MARGINAL` 就是它们
+刚好抵消到门槛附近的产物。
+
+改完后全表四个配置都是 `NO_INCREMENT`，且下界全为负。
+`MIN_INCREMENTAL_EFFECT = 0.001` 从来没有承重：`abs/60` 的改善
+（+0.00155）已经越过 0.001，卡住它的是下界，不是门槛。
+
+#### 更硬的一条：这个检验对滚动估计量有内置负偏
+
+对任意一天，`d_i = (c_i − y)² − (p_i − y)² = (c_i − p_i)(c_i + p_i − 2y)`。
+对 y 取期望（`E[y] = μ`）：
+
+```
+E[d_i] = (c_i − μ)² − (p_i − μ)²
+E[d]   = [Var(c) + bias²(c)] − [Var(p) + bias²(p)]
+```
+
+`p` 只用 `window` 天、`c` 用全部历史，**`Var(p) > Var(c)` 是构造性的**。
+所以任何 trailing-window 估计量相对展开基线都自带机械负偏，量级
+≈ `Var(p) − Var(c)`，与「有没有信息」无关。
+
+`scripts/probe_pwin_variance.py` 实测：
+
+| basis | window | sd(p) | sd(c) | 机械项 | 实测改善 | 残差=信号 |
+|---|---|---|---|---|---|---|
+| median | 60 | 0.0470 | 0.0234 | −0.00208 | −0.00026 | +0.00182 |
+| median | 250 | 0.0243 | 0.0234 | −0.000065 | −0.00034 | −0.00028 |
+| abs | 60 | 0.0409 | 0.0151 | −0.00121 | +0.00155 | **+0.00276** |
+| abs | 250 | 0.0155 | 0.0151 | −0.000002 | +0.00008 | +0.00008 |
+
+**残差才是信号通道**：它等于 `d_i` 减掉机械项，若近端真的多含信息，应当
+系统性为正。对它单独做 HAC 检验：
+
+| basis | window | 残差 | HAC 下界 | t |
+|---|---|---|---|---|
+| median | 60 | +0.00182 | −0.00087 | 1.11 |
+| median | 250 | −0.00028 | −0.00054 | −1.71 |
+| abs | 60 | **+0.00276** | **+0.00013** | **1.73** |
+| abs | 250 | +0.00008 | −0.00009 | 0.76 |
+
+所以准确的说法不是「近端不含信息」，而是：
+
+> 近端窗口可能有信息（`abs/60` 的残差 t=1.73），但它的量级（+0.0028）
+> 和估计量自身的方差惩罚（−0.0012）同阶，净效应被抵消到测不出。
+
+而且本节只测了 4 个配置（2 个口径 × 2 个窗口），其中只有 1 个 t>1.645；
+纯噪声下出现至少一个的概率约 1−0.95⁴ ≈ 19%。**这条不能当作发现，
+只能当作「不能排除」。**
+
+#### 对两个待定问题的回答
+
+1. **不能让 `suggest(require_reliable=True)` 接受 `NO_INCREMENT` 作为拒绝条件。**
+   对滚动估计量它恒为负（机械项），接上就是永久停机；而且停机的理由
+   （「没有增量」）与真实原因（「这个检验对这个预测器有内置负偏」）不是
+   一回事。`verdict` 也不适合当 gate——它是「基础胜率离 50% 有多远」的
+   单调函数，命中率 28% 的策略无条件通过，命中率 52% 的策略无条件拒绝。
+2. **0.001 不是问题所在。** 修完口径后没有任何配置能靠它区分。
+
+#### 如果还要继续这条路，检验该怎么改
+
+要检测「近端是否多含信息」，必须让两个预测器的**估计方差相等**，
+否则方差惩罚会盖过信号。可用的做法：
+
+- 同窗口长度、不同信息集：`p1` 用最近 60 个已结算日，`p2` 用「随机抽 60 个
+  已结算日」或「60 天前的那 60 天」——两者方差同阶，差值才是信息；
+- 或者直接对残差序列做检验（本节表格），把机械项当已知量减掉。
+
+#### 仍然没解决
+
+- HAC 修正二阶矩，没有修正「p 与 c 由同一批 y 构造」导致的估计相关；
+  残差的方差仍被低估。
+- `n` 接近 `lag` 时（端到端账本只有 17 个可评估日 / 20 日持有期）NW 本身
+  不可靠，下界仍偏乐观。这种账本的真实独立样本可能是 1–2 个，唯一诚实的
+  读数是 `n_eff`。
+- `n_eff` 44–66 说明账本的信息量比「321 天」少一个数量级。任何需要**条件**
+  预测（按日、按标的、按制度）的模型都撑不起这个样本量——见 §9.12。
+
+### 9.12 账本的职责边界：它是审计工具，不是训练集（未实现，下一步）
+
+§9.11 把信息量算清楚了：321 个可评估日只等于 **44–66** 个独立样本；
+真实账本（39 天 / 17 个可评估日 / 20 日持有期）只有 **1–2** 个。
+经验上，可辨识的参数个数约为 `n_eff / 10`。
+
+由此得到一条硬约束：
+
+> **账本只够估一个标量。** 任何「按日、按标的、按制度」的条件模型，
+> 都不能在这个样本上训练或验证。
+
+这直接否掉了 §9.10 提的第 8 条出路（pooled 截面 + 分位数 + CRPS）作为
+**账本**的延伸——那不是升级，是把模型容量加到数据撑不住的地方。
+
+正确的分工是两层，各有各的样本：
+
+| 层 | 数据 | 方法 | 评价 |
+|---|---|---|---|
+| 条件模型 | 全市场横截面（百万级 stock-day） | purged K-fold + embargo，防重叠泄漏 | CRPS / pinball，不是 Brier |
+| 账本 | 实盘决策卡（几十条） | 只做审计与漂移 | 与回测分布的偏离，不是「有没有 skill」 |
+
+账本要回答的问题因此从「这个 p_win 准不准」变成：
+
+1. **审计**：实盘 p_win 的 Brier 是否落在回测分布内（按 horizon 分档）；
+2. **漂移**：条件模型的实盘表现是否系统性偏离回测（CUSUM on daily Brier）。
+
+这两件事在几十条样本上是**可做**的——因为它们检验的是一个已知分布的偏离，
+不是一个未知效应的存在。
+
+#### 验收标准（可证伪）
+
+1. 账本页不再显示「39 天」而不显示 `n_eff`；~~`n_eff < 30` 时只显示「样本不足」，
+   不给任何 skill 数字~~ —— **§9.13 修正**：真实账本的 `n_eff` 就是 1，隐藏数字
+   会造成永久空白。改为「数字保留 + 降级为不可判定」。
+2. 漂移检测的回放实验：向历史序列注入已知的 Brier 恶化（+0.02），
+   CUSUM 必须在 ≤ 20 个决策日内报警，年化误报 ≤ 1 次。
+3. 条件模型的 CRPS 在 purged 时序 CV 上同时优于两个基线：常数命中率、
+   同日横截面中位数。
+4. 实盘 Brier 与回测 Brier 之差超过 2 个 HAC 标准误 ⇒ 判「回测不可信」，
+   冻结该策略的自动建卡。
+
+#### 第一步
+
+把 `n_eff` 显示到决策页与 `/api/decision/pwin` 的展示层。这是零风险的
+一步，而且它会立刻改变读数：现在的「39 天」会被读成「39 个样本」，
+实际只有 1–2 个。
+
+### 9.13 `n_eff` 是分母，不是开关（2026-11-05）
+
+§9.12 的验收标准第 1 条写着「`n_eff < 30` 时只显示「样本不足」，不给任何
+skill 数字」。这条与 §9.11 拒绝 `NO_INCREMENT` gate 的理由是**同一个错误**，
+只是换了一层：
+
+- §9.11：对滚动估计量 `verdict_incremental` 恒为负 ⇒ 接成 gate 就是永久停机；
+- §9.12：真实账本的 `n_eff` 只有 1–2 ⇒ 按 `< 30` 隐藏 skill 就是永久空白。
+
+两者都拿**一个对目标数据结构性不成立的判据**做二值开关。区别只是前者让
+结论恒为「否」，后者让读数恒为「无」。界面上「无」比「否」更糟：用户会去
+别处找同一个数字（顶部 skill、`/api/decision/pwin`、探针输出），而那些地方
+没有「不可判定」的语境。
+
+正确的形态是把它当**分母**，而不是开关：
+
+1. 每一处 skill 旁边都要有它，否则 skill 没有分母；
+2. 它决定结论的强度（`significant` 降级），不决定数字的存亡；
+3. 它自己不可靠时要标注来源（上界 / 估计值）。
+
+这与三态门禁同构：`UNKNOWN` 不是 `PASS`，也不是不显示——是显式的未知。
+
+#### 顺带修掉的一个硬 bug
+
+`n_eff = n·(se_iid/se)²` 原来没有上界。`se < se_iid`（负自相关或纯噪声）时
+它会给出比 `n` 还大的值：实测 n=17、lag=19 的 MA(19) 序列给出 **55**。
+「等效独立样本数超过观测数」没有意义。
+
+更根本的是 NW 在这个区间不可用。同一个 MA(19) 过程抽 5 次，方差膨胀在
+**0.56–1.26** 之间跳（真实值约 2–3），`n_eff` 在 11–55 之间跳。`hac_lcb`
+的文档已经警告过「n 接近 lag 时 NW 不可靠」，但 `n_eff` 仍然照算。
+
+修法（`settle.effective_sample`）：
+
+```
+n < 3·(lag+1)  ->  n_eff = max(1, n // (lag+1))，reliable=False
+否则            ->  n_eff = min(n, round(n·(se_iid/se)²))，reliable=True
+```
+
+第二行是上界修正；第一行是**退回构造性量**：不重叠窗口数不需要估计，
+是唯一诚实的读数。
+
+| 账本 | oos_days | lag | 修前 n_eff | 修后 n_eff | reliable |
+|---|---|---|---|---|---|
+| 探针（321 天） | 321 | 19 | 65 / 44 / 66 / 44 | **不变** | True |
+| 真实账本（39 天） | 17 | 19 | 11–55（抽样跳动） | **1** | False |
+
+真实账本的 `n_eff` 因此从「§9.11 推断的 1–2」变成代码输出。修前修后探针的
+四个配置逐位不变（65/44/66/44），说明这个修正只影响它该影响的区间。
+
+#### 两个连带的行为变化
+
+1. `settle.score()` 新增 `n_eff` / `hac_lag` / `n_eff_reliable`；
+   `significant` 增加 `and n_eff_reliable`——`skill_lcb` 是读数，
+   `significant` 是结论，两者的失败模式不一样。30 天 / 20 日持有期的账本
+   下界仍为正，但 `n_eff=1`，不再标「显著」。
+2. `pwin.walk_forward()` / `estimate()` / `POST /cards` 的 `pwin` 出处
+   同步透传 `n_eff_reliable`。
+
+#### 验收
+
+- [x] `test_effective_sample_caps_at_observations`：公式给 400，截到 100
+- [x] `test_effective_sample_uses_windows_when_lag_dominates`：17 天 / lag 19
+      ⇒ `(1, False)`；60 天 ⇒ `(15, True)`
+- [x] `test_walk_forward_reports_n_eff_reliability`：100 天 ⇒ `True`，
+      30 天 ⇒ `(1, False)`
+- [x] `test_score_does_not_claim_significance_without_effective_sample`：
+      下界 > 0 但 `significant=False`
+- [x] 决策页显示「有效样本 N（lag L）」；`n_eff < 30` 或 `reliable=False` 时
+      skill 降级为「不可判定」并说明上界来源（`Decision.test.tsx`）
+- [x] 探针四个配置的 `n_eff` 修前修后逐位一致（65/44/66/44）
+
+#### 端到端实测：`reliable=True` 与 `n_eff=1` 并存
+
+`scripts/verify_pwin_e2e.py`（40 张卡 / 386 条结算 / 39 个决策日 / 17 个可评估日）：
+
+```
+[median] skill=+0.3316  lcb=+0.1723  sig=False   n_eff=1  lag=19  reliable=False
+[abs]    skill=-0.0144  lcb=-0.0493  sig=False   n_eff=1  lag=19  reliable=False
+estimate: verdict=RELIABLE  reliable=True  n_eff=1  n_eff_reliable=False
+```
+
+`sig=False` 是本节改动生效（旧实现给 `True`）。但 `estimate` 仍返回
+`reliable=True`——因为 `reliable` 只回答「lcb > 0」，不回答「这个 lcb 可不可信」。
+两个字段并列不是矛盾，是分工：
+
+| 字段 | 回答 | 在 n_eff=1 时 |
+|---|---|---|
+| `reliable` | lcb > 0 吗 | True（数字本身为正） |
+| `n_eff_reliable` | 这个 lcb 可信吗 | False |
+
+后果：`suggest(require_reliable=True)` 会在这份账本上放行建卡。这不是 bug，
+是「`verdict` 不该当 gate」的又一个证据（§9.11 第 1 条）。修法不是给它加
+`n_eff` 门槛——那会让真实账本永久停机，与 §9.12 的错误同构——而是把 gate
+从「拒绝建卡」改成「建卡 + 在卡上标注」。
+
+#### 仍然没解决
+
+- `3·(lag+1)` 是经验阈值，不是推导出来的。更严格的做法是 Andrews(1991) 的
+  数据驱动带宽 + 预白化，或 block bootstrap。当前选它是因为它**可解释**：
+  低于这个比值时退回的量（不重叠窗口数）有明确含义，而 NW 的估计没有。
+- `n_eff` 仍然是**检验配置**的属性，不是账本的属性：同一批 321 天数据，
+  `window=60` 给 65、`window=250` 给 44。页面上显示的是当前配置下的值，
+  切换 `window` 会变。这一点必须随数字一起说，否则它会被当成账本的固有属性。
+- 两个口径的 `n_eff` 同源（都来自 `score()` 的逐日序列），但因变量不同，
+  数值不同。页面上并列显示，不能互相替代。
+
+### 9.14 阈值可以决定「信不信」，不能决定「做不做」（2026-11-05）
+
+§9.13 留下两件事：一个结论（`estimate` 在 `n_eff=1` 时仍返回 `reliable=True`，
+`suggest()` 因此放行建卡）和一个没修的字段（`significant` 仍是二值）。本节把
+前者升级成一条可执行的界线，把后者拆开。
+
+#### 一、三次同构，一个闭环
+
+| 节 | gate 的输入 | 被 gate 的行为 | 后果 |
+|---|---|---|---|
+| §9.11 | `verdict_incremental`（滚动窗口算出） | 建卡 | 卡不再增长 ⇒ 判据不变 ⇒ 永久停机 |
+| §9.12 | `n_eff`（决策日算出） | 隐藏 skill 数字 | 没人再产卡 ⇒ `n_eff` 不变 ⇒ 永久空白 |
+| §六 | `reliable`（结算记录算出） | 拒绝建卡 | 没有新结算 ⇒ `reliable` 不变 ⇒ 永久 409 |
+
+§六 那一行已经拆掉：`reliable` 降级为标签，gate 换成 `allow_prior`（§9.15）。
+拆的过程恰好证明了这条形式：只要 gate 的输入还是 `reliable`，无论怎么调阈值都
+解不开；换成一个「声明一句就能满足」的开关，闭环才断。
+
+三者不是「阈值选错了」。换成 `n_eff>=30`、`reliable`、更严格的 Andrews 带宽
+都一样——**不动点在闭环里，不在判据里**。共同形式是：
+
+> gate 的输入，由被 gate 的行为所产生的数据算出。
+
+由此得到一条比「分母不是开关」更可操作的界线：
+
+> **阈值可以决定「信不信」，不能决定「做不做」。**
+
+允许 `n_eff < 30 ⇒ UNKNOWN` 这样的门槛存在，只要它的作用域是**标签**。
+一旦作用域是**行为**（隐藏数字、拒绝建卡），就重新变成 §9.12。
+
+#### 二、`significant` 拆成三个字段
+
+旧实现 `significant = lcb > 0 and n_eff_reliable` 把读数和可判定性 AND 在一起，
+`False` 同时表示「测过了，下界不为正」和「根本测不了」。这两件事的后续动作
+相反：前者该改策略，后者该继续攒样本。
+
+| 字段 | 回答 | 真实账本（n_eff=1, lcb=+0.17） |
+|---|---|---|
+| `skill_lcb` | 下界是多少（读数） | +0.1723 |
+| `skill_lcb_positive` | 下界为正吗（读数） | `True` |
+| `significance` | 这个下界能不能当结论（结论） | `UNKNOWN` |
+| `significant` | 等价于 `significance == "PASS"`（兼容字段） | `False` |
+
+**没有把 `significant` 降格成纯读数。** 那样做会让 `n_eff=1` 的账本重新输出
+`significant=true`，而所有读这个字段的旧调用方（探针、下游脚本、将来的自动化）
+都会把它读成「显著」。统计工具里，保守的错误（把可判定读成不可判定）比激进的
+错误（把不可判定读成显著）便宜得多。所以：新增读数键，保留结论键的语义。
+
+`MIN_NEFF=30` 在这里**只喂标签**：不隐藏数字、不放行也不拦截任何请求。这是它
+和 §9.12 那条验收标准的唯一区别，也是它能活下来的原因。
+
+#### 三、`n_eff` 原来是两把尺子
+
+同一个键名，两条不同的残差序列：
+
+| 出处 | 残差序列 |
+|---|---|
+| `settle.score()` | `(b0-y)² - (p-y)²`，`b0` 是 0.5（median）或展开 climatology（abs） |
+| `pwin.walk_forward()` | `(p_clim-y)² - (p-y)²`，`p_clim` 是**按结算可见性**展开的收缩胜率 |
+
+自协方差不同 ⇒ `se` 不同 ⇒ `n_eff` 不同。现在两边都落在 `n < 3(lag+1)` 的
+退化分支里（都是 1），看不出差别；**账本一旦越过 60 个可评估日，卡上的
+「有效样本」和 `/api/decision/pwin` 的就会分叉**，而且是两个都叫 `n_eff` 的数字。
+
+这正是 §9.8 抓过的「一个键两种含义」，只是换了字段。修法是拆名：
+
+```
+walk_forward: n_eff                  # 对应 verdict（相对常数先验）
+              n_eff_incremental      # 对应 verdict_incremental（相对展开基线）
+```
+
+`estimate()` 与 `POST /cards` 的 `pwin` 出处同步透传两个键。`n_eff` 的语义因此
+从「增量检验的有效样本」变成「verdict 的有效样本」——数值在退化区间里不变
+（都是 1），所以这次改动**可证不改变任何读数**，只改变它指向哪条序列。
+
+#### 四、顺带修正的三处表述
+
+1. **`n // (lag+1)` 不是上界**，是 MA(H−1) 下 `n_eff` 的**模型推断值**
+   （长程方差 ≈ H·γ0 ⇒ `n_eff ≈ n/H`）。说成上界会让人以为真值只会更小；
+   负自相关时真值更大。经验的是那个 `3`，不是这个值。
+2. **`n_eff` 挂在 skill 上，不挂在账本上**。页面上从「有效样本」改为
+   「skill 的有效样本」——它随 `window` 变，不是账本的固有属性。
+3. 页面的 `weak` 不再自己算 `n_eff < 30 || !reliable`，改读 `significance`。
+   阈值只在后端定义一处，前端不复制。
+
+#### 五、实测
+
+`scripts/verify_pwin_e2e.py`（40 张卡 / 390 条结算 / 39 个决策日 / 17 个可评估日）：
+
+```
+[abs]    skill=-0.0144  lcb=-0.0493  sig=UNKNOWN  lcb_positive=False  significant=False
+[median] skill=+0.3316  lcb=+0.1723  sig=UNKNOWN  lcb_positive=True   significant=False
+         n_eff=1  lag=19  reliable=False
+estimate: reliable=True  verdict=RELIABLE  significance=UNKNOWN
+          n_eff=1  n_eff_incremental=1  n_eff_reliable=False
+```
+
+`lcb_positive=True` 而 `significance=UNKNOWN` 是这次改动要守的形状：读数没被
+改动，结论被如实降级。
+
+#### 验收
+
+- [x] `test_significance_of_three_states`：PASS / FAIL / UNKNOWN 的判定边界
+- [x] `test_score_does_not_claim_significance_without_effective_sample`：
+      `n_eff=1` 且 `lcb>0` ⇒ `skill_lcb_positive=True`、`significance=UNKNOWN`、
+      `significant=False`
+- [x] `test_score_pass_and_fail_both_require_a_denominator`：样本撑得住时符号才
+      决定 PASS / FAIL
+- [x] `test_walk_forward_keeps_the_two_n_eff_apart`：两个键都在，不共用
+- [x] `test_estimate_significance_is_unknown_when_sample_is_short`：
+      冷启动 / 短账本 ⇒ UNKNOWN，不是 FAIL
+- [x] 前端 `Decision.test.tsx`：`PASS` 打 `✓`、`UNKNOWN` 打 `?`、`FAIL` 不打符号
+- [x] 探针四个口径的输出与 §9.13 逐位一致（`n_eff=1`、`lcb=+0.1723`）
+
+#### 没做的
+
+1. ~~`require_reliable` → `require_evidence`~~ —— 已落地，见 §9.15。字段名最终是
+   三态 `allow_prior`，不是 `require_evidence`：gate 的对象是「有没有证据」，
+   而 `allow_prior=true` 是「这次就用先验」的显式声明，比
+   `require_evidence=false` 少一层否定。
+2. **把收缩推广到 skill**（贝叶斯化）。对 skill 取以 0 为中心、强度 κ 的
+   skeptical prior，报后验均值 + 可信区间，不报 `lcb > 0`。`n_eff=1` 时后验
+   ≈ 先验，区间自动变宽——「数据少」表现为「区间宽」，而不是「标签 UNKNOWN」。
+   这才是分母概念的完全体，属于 §9.16 的体量。
+
+#### 仍然没解决
+
+- `MIN_NEFF=30` 是经验值。它让值的切换点（`n=3(lag+1)`，`n_eff` 从 2 跳到 15）
+  落在标签仍为 UNKNOWN 的区间里，但两者不是精确对齐的：如果 `n_eff` 在
+  `n=65` 就跨过 30，用户仍会看到一次「值跳了、标签也跳了」。要彻底消除，
+  得让标签带宽（`4(lag+1)`）和值的切换点错开，而那需要把 `n` 和 `lag` 一起
+  传进 `significance_of`——多一层耦合，当前不值得。
+- `MIN_NEFF` 只约束 `skill_lcb` 的结论。`verdict_incremental` 的结论（
+  `INCREMENTAL` / `MARGINAL` / `NO_INCREMENT`）仍然只看 `lcb` 符号，没有
+  对应的三态。它现在不是 gate（§9.11），所以危害小；但它和 `significance`
+  不对称，读的人会以为两个结论的可信度是同一档。（§9.16 补了 `NOT_TESTABLE`
+  一档，但 `n_eff` 仍不参与判定，这个不对称只解决了一半。）
+
+### 9.15 `allow_prior`：gate 的对象是「有没有证据」（2026-11-05）
+
+§9.14 没做的第 1 条当天落地。落地过程中第一版写法被证伪，值得单独记下来：
+**换字段名不等于换语义**，而 `bool` 承担不了三态。
+
+#### 一、第一版写法会静默反转
+
+第一版：新增 `allow_prior: bool = False`，保留 `require_reliable`，两者都传时
+`allow_prior` 优先。看起来旧客户端不受影响。实测（Pydantic 2.13.4）：
+
+```
+M(require_reliable=False).model_fields_set  ==  set()
+M(require_reliable=False).model_dump()      ==  {'allow_prior': False}
+```
+
+`require_reliable` 在新模型里已不存在，Pydantic 默认 `extra="ignore"`，**未知
+字段被静默丢弃，不报错**。于是旧客户端只传 `require_reliable=false` 时，
+`allow_prior` 取默认 `False` 并胜出 ⇒ 还是 409。同一处静默反转，换了个入口。
+
+根因不是优先级写错，是 `bool` 分不清「没传」和「传了 false」。这个字段必须
+三态。
+
+#### 二、最终形态：三态 + 单点解析
+
+```python
+allow_prior: bool | None = None      # None = 未指定
+require_reliable: bool = True        # 保留原默认；它映射到的正是「失败关闭」
+
+def _resolve_allow_prior(req) -> bool:
+    if req.allow_prior is not None:
+        if req.allow_prior is False and req.require_reliable is False:
+            raise HTTPException(400, "allow_prior=false 与 require_reliable=false 相互矛盾")
+        return req.allow_prior
+    return not req.require_reliable   # 旧字段唯一的映射方向
+```
+
+`require_reliable` 不需要三态：默认 `True` 映射到 `False`，与「未指定」同解。
+
+| 请求 | 解析结果 | 行为 |
+|---|---|---|
+| 不传 | `False` | 无证据 → 409；有证据（哪怕 unreliable）→ 200 + 标注 |
+| `allow_prior=true` | `True` | 冷启动用先验建卡，`source=prior` |
+| `require_reliable=false`（旧） | `True` | 等价于 `allow_prior=true` |
+| `require_reliable=true`（旧，含默认） | `False` | 只拒「无证据」，不再拒「证据不可靠」 |
+| 两个都传 false | — | 400，不静默择一 |
+
+两个字段只在 `_resolve_allow_prior` 里读。散落读取是这类改动的标准死法：
+一处读了 `req.require_reliable`，优先级就白设计了。
+
+#### 三、这会改变默认请求的行为，不是纯改名
+
+旧的 `require_reliable=true` 连 unreliable 账本一起拒；新的 `allow_prior=false`
+只拒「无证据」。同一份 unreliable 账本，昨天 409，今天 200。这是 §9.14 一的
+意图，但必须承认它是行为变更，所以两条旧测试是**翻转**，不是回滚：
+
+| 旧测试 | 新断言 |
+|---|---|
+| `test_auto_pwin_fails_closed_when_unreliable` | 200 + `verdict=UNRELIABLE` + `significance=UNKNOWN` |
+| `test_suggest_fails_closed_when_unreliable` | 不再抛；`p_win is not None`，结论降级 |
+
+`suggest()` 第二个 `raise` **整段删除**，不是改名。留着它，`allow_prior` 对
+unreliable 分支就是空操作——那正是「改了名、没改行为」的形态。
+
+`allow_prior=false` 仍然会拒冷启动。这看着像同一个死锁，但不是：闭环的定义是
+「gate 的输入由被 gate 的行为产生」，而这里 gate 的输入是**一句声明**——
+`allow_prior=true` 永远可满足，不需要任何新数据。区别在可满足性，不在严格性。
+
+#### 四、`allow_prior=false` 保证不了「没有先验」
+
+它只保证 `p_win is not None`，即 `n >= MIN_N=8`。真实账本 `n=386 / hits=77`：
+
+| 量 | 值 |
+|---|---|
+| `p_win` = (77+10)/406 | 0.214286 |
+| `prior_weight` = 20/406（按观测数） | 0.049261 |
+| `n_eff=1` ⇒ `prior_weight_effective` = 20/21 | 0.952381 |
+| 按 `n_eff` 收缩 (77/386×1+10)/21 | 0.485690 |
+
+那张卡 `source="ledger"`、`allow_prior=false` 放行，但它的 p_win 有 95% 是先验。
+把分母从 `n` 换成 `n_eff`，p_win 从 0.214286 挪到 0.485690——**0.271404 的位移
+全部来自把 386 条相关观测当成独立样本**。这正是 gate 声称要拒绝的事，只是
+`source` 标签把它遮住了。
+
+**但不能把它做成 gate。** `prior_weight_effective > 0.5 ⇒ 拒绝` 又是「gate 的
+输入由被 gate 的行为产生」（建卡 → 结算 → `n_eff` 涨），§9.14 一的闭环。所以它
+只是标签：两个权重进 `estimate()` 的返回、进 `forecast.pwin`、进承诺哈希。
+事后无法把「95% 是先验」改写成别的。
+
+两个都要给。只给 `prior_weight`（4.9%）会把 386 条重叠观测读成 386 个独立样本；
+只给 `prior_weight_effective`（95.2%）又看不出差在哪里。差值本身是信息。
+
+`prior_weight_effective` 的分母是 `walk_forward` 的 `n_eff`——那是**计分序列**的
+等效独立样本数，不是收缩本身的自由度。两者在 MA(H−1) 下同阶（都约 `n/H`），
+拿它当代理是保守的；但它随 `window` 变，不是账本的固有属性，读数时必须带这个
+限定。`n_eff=None`（样本不够、没跑 walk-forward）时为 `None`：「没测」既不是
+「全先验」也不是「全证据」。
+
+#### 五、顺带修掉的两处出处撒谎
+
+1. `auto_pwin=true` 但每个 pick 都自带 `p_win` 时，旧实现照样写一块
+   `source=ledger` 的出处——把人工填的数字记成账本算的。现在没有要补的 pick
+   就不写出处。
+2. 部分 pick 缺 p_win 时，出处加 `filled: [symbols]`，标明哪几个是这次补的。
+   否则同一张卡上「账本算的」和「人填的」无法区分。
+
+#### 验收
+
+- [x] `test_prior_weights_differ_by_denominator`：386/1 ⇒ 4.9% 对 95.2%
+- [x] `test_estimate_carries_prior_weight_of_the_number_it_returns`
+- [x] `test_suggest_returns_unreliable_ledger_as_a_label`
+- [x] `test_suggest_allow_prior_falls_back_on_cold_start`：纯先验 ⇒ 权重 1.0/1.0
+- [x] `test_allow_prior_true_builds_card_on_cold_start`：声明即可放行
+- [x] `test_allow_prior_false_conflicts_with_legacy_false`：矛盾 400
+- [x] `test_legacy_require_reliable_false_maps_to_allow_prior`：旧字段映射方向
+- [x] `test_auto_pwin_with_all_p_win_given_claims_no_ledger_provenance`
+- [x] 三个 decision 测试文件 95 passed（基线 90）
+- [x] `verify_pwin_e2e.py`：`n=386 hits=77 p_win=0.214286`、
+      `prior_weight=0.049261`、`prior_weight_effective=0.952381` 与本节逐位一致
+
+#### 仍然没解决
+
+- **标签只到卡，没到分数视图。** `settlements.jsonl` 记了 `p_win_source`，没记
+  两个权重，所以 `score()["by_source"]` 仍把「95% 是先验」的卡和「证据为主」的
+  卡一起算进 `ledger` 组（实测该组 `n=376`、`skill=+0.3404`）。要修得先决定
+  「按权重分桶」还是「给每组报权重均值」——那是分组口径问题，不是加一个字段
+  能解决的，留给下一节。
+- **收缩用 `n` 而不是 `n_eff` 是单位错误。** κ 的单位是「独立样本」，`n` 的
+  单位是「观测」。修它会把 p_win 从 0.214 挪到 0.486，属于 §9.16，必须先用
+  探针拿外部证据，不能顺手改。
+  **探针（`scripts/probe_shrink_unit.py`）推翻了「单位错误」这个读法**：κ 换算到
+  等效单位后两个权重恒等，95.2% 是标签的换算错误、不是 `p_win` 的分母错误。
+  探针账本上 `p(n)=0.186` 落在 [0.105, 0.235] 内，`p(n_eff)=0.470` 落在区间外
+  （见 §9.16 的实测表）。方向是改标签、不动分母，留给 §9.17。
+- `allow_prior` 这个名字仍有歧义：有证据时先验永远参与收缩，这个开关管不着。
+  它 gate 的只是「没有任何证据时是否允许用先验常数」。改名
+  `allow_prior_fallback` 会更准，但当前只有 `_resolve_allow_prior` 一处读它，
+  先靠 docstring 收口。
+
+### 9.16 恒等零不是结论：`verdict_incremental` 的第四态（2026-11-05）
+
+`probe_shrink_unit.py --days 40` 在 40 个决策日 / 400 条观测的账本上跑默认配置，
+[D] 段原本输出：
+
+```
+window=250 对 40 个决策日：improvement_vs_clim=+0.000000  lcb=0.0  verdict=NO_INCREMENT
+```
+
+读起来是「近端窗口不比全历史多含信息」。它不是。它是「近端窗口**就是**全历史」。
+
+#### 一、恒等式
+
+设第 i 天已可见的决策日集合 `V_i`（已结算、出场日早于当天）。两个估计量是
+
+```
+p_i        = shrink(近端 window 个可见日)
+p_clim,i   = shrink(全部 V_i)
+```
+
+`window >= |V_i|` 时 `V_i[-window:] ≡ V_i` ⇒ `p_i ≡ p_clim,i` ⇒ 逐日改善
+`(p_clim − y)² − (p − y)² ≡ 0` ⇒ 均值 0、标准误 0、下界 0。
+
+那个 `+0.000000 / 0.0` 不是「测出来是 0」，是**恒等式**。两个估计量吃的是同一批
+样本；比较它们等于拿尺子量自己，得到的 0 与「两者一样好」无关。
+
+#### 二、它为什么不能报成 NO_INCREMENT
+
+- 「没有增量」是一个**关于数据的结论**：近端与远端不同，且近端没赢。
+- 这里近端与远端**相同**，所以「谁更好」这个问题从来没有被问过。
+
+后续动作相反：前者该改策略，后者该改 `window`。合成一个 `NO_INCREMENT` 时，
+读的人只会看到「否」——而界面上的「否」比「未知」更容易被当成定论（§9.14 二）。
+
+默认配置正好落在这个区间：真实账本 39 个决策日、17 个可评估日，
+`DEFAULT_WINDOW = 250`。
+
+#### 三、修法：先判「能不能测」，再判「测出了什么」
+
+`walk_forward` 记一个 `truncated_any`：至少有一个被评估日满足 `|V_i| > window`。
+
+| `truncated_any` | `verdict_incremental` | `improvement_vs_clim` / `skill_vs_clim` / `skill_vs_clim_lcb` / `n_eff_incremental` |
+|---|---|---|
+| `True` | INCREMENTAL / MARGINAL / NO_INCREMENT | 数值 |
+| `False` | **NOT_TESTABLE** | 全为 `None` |
+| `None`（没有可评估日） | INSUFFICIENT | 全为 `None` |
+
+撤数字与给状态是同一件事的两半。只改状态、留着 `+0.000000`，读者仍会读数字；
+只删数字、不改状态，`None` 会被当成「没算」。两个都要。
+
+`window <= 0`（不限窗口）永远不置位 ⇒ 永远 `NOT_TESTABLE`：它不是「截断到 0 天」，
+是「没有截断这个概念」。
+
+判据是「没有一个被评估日被截断」，**不是**「`window ≥ oos_days`」。后者在边界上
+会漏判：`|V_i|` 数的是**所有**已可见日，`oos_days` 只数**被评估**的日子。22 个
+决策日 / horizon=1 时 `oos_days=20`，而最后一天能看到 21 天 ⇒ `window=20` 仍然
+截断（检验可做），`window=21` 才恒等（`NOT_TESTABLE`）。差一天，状态就不同。
+
+#### 实测（同一份 40 决策日 / 400 观测 / horizon 20 / median 口径的账本）
+
+| 配置 | `truncated_any` | `improvement_vs_clim` | `skill_vs_clim_lcb` | `verdict_incremental` |
+|---|---|---|---|---|
+| `window=250`（默认） | False | — | — | **NOT_TESTABLE** |
+| `window=10` | True | −0.005283 | −0.0735 | NO_INCREMENT |
+
+第二行才是「测过、没有增量」。第一行现在不报数字。
+
+#### 两条旧测试必须改写，不是被删除
+
+它们把恒等式当成了结论：
+
+| 测试 | 旧断言 | 新断言 | 为什么 |
+|---|---|---|---|
+| `test_constant_predictor_has_no_increment_but_can_be_reliable` | `window=250`，改善 `== 0` | `window=20`（真的截断），改善 `≤ 0`（实测 −0.000021） | 「常数预测器没有分辨率」是一个**估计**出来的很小的负数，不是恒等式 |
+| `test_window_counts_settled_days_not_calendar_days` | `window=10000`，改善 `== 0` | `NOT_TESTABLE` + `improvement_vs_clim is None` | 主张（window 数已结算日）不变，末尾那个 0 换成了状态 |
+
+第一条改窗口之后，`verdict` 仍是 RELIABLE、`verdict_incremental` 仍是
+NO_INCREMENT——原测试的主张保住了，只是证据不再来自恒等式。
+
+#### 与 §9.13 / §9.14 / §六 的关系
+
+那三次是「判据对目标数据结构性不成立，却被接成**开关**」；这一次判据没有接成
+开关，它接成了**结论**。所以修法不同：不是加门槛、不是降级标签，而是承认这个
+配置下**没有对照**，并把状态说出来。
+
+四次错误的共同点只有一句：**输出的强度超过了证据的强度。**
+
+#### 验收
+
+- [x] `test_increment_is_not_testable_when_window_covers_every_day`：`DEFAULT_WINDOW`
+      在 40 日账本上 ⇒ `NOT_TESTABLE`，四个数值字段全 `None`，`reason` 不含
+      「多含信息」；`estimate()` 同步透传
+- [x] `test_increment_is_testable_once_the_window_truncates`：同一账本
+      `window=10` ⇒ 有数值，不是 `NOT_TESTABLE`
+- [x] `test_not_testable_is_a_state_not_a_zero`：`0/0` 的两种来源映射到两个状态
+- [x] `test_constant_predictor_has_no_increment_but_can_be_reliable` 改写（窗口 20）
+- [x] `test_window_counts_settled_days_not_calendar_days` 改写（wide ⇒ `NOT_TESTABLE`）
+- [x] 三个 decision 测试文件 98 passed（基线 95，新增 3）
+- [x] `verify_pwin_e2e.py` 逐位不变：`n=386 hits=77 p_win=0.214286`、
+      `prior_weight=0.049261`、`prior_weight_effective=0.952381`、`reliable=True`、
+      `significance=UNKNOWN`；新增 `truncated_any=False`、
+      `verdict_incremental=NOT_TESTABLE`、`skill_vs_clim=None`
+- [x] `probe_shrink_unit.py --days 40`：[D] 段输出 `NOT_TESTABLE`，`improvement_vs_clim=—`
+
+#### 为什么 `truncated_any` 没进卡（`truncated_days` 进了）
+
+卡的 `forecast.pwin` 已经封存了 `window` / `days` / `oos_days` /
+`verdict_incremental`，标志可由这四者推出（`window >= days` ⇒ 不可能截断）。
+加字段会改封存 schema 的形状，换不来新信息。`/api/decision/pwin` 的实时返回里
+带这个字段，因为那里没有卡上的上下文。
+
+`truncated_days` 是例外，它推不出来：同一天能不能看到样本取决于那天的出场日，
+`days` / `oos_days` 都不含这个信息。而它恰好是 §9.17 里唯一能衡量结论分量的数，
+所以进卡。
+
+#### 仍然没解决
+
+1. **κ 的单位（§9.19）。** 这一节没动 `p_win`、`kappa`、`prior_weight_effective`。
+   探针只够否掉一个读法，不够定一个新口径：非重叠 20 日窗口给出 0.155 / 0.185，
+   `n_eff=2`，命中率 90% 区间 [0.105, 0.235]；`p(n)=0.186` 在区间内，
+   `p(n_eff)=0.470` 在区间外。所以「换成 `n_eff`」会让估计变差，该改的是
+   `prior_weight_effective` 的**标签**——但改标签要连带改 `settlements.jsonl` 里
+   字段的含义，必须单独写一节。
+2. **`verdict_incremental` 仍然不看 `n_eff`。** 现在能区分「测不了」，但「测得出来、
+   而分母是 1」仍然报 INCREMENTAL / NO_INCREMENT。§9.14 的三态只覆盖 `verdict`，
+   这个不对称还在。§9.17 补上了「这个结论比了几天」（`truncated_days` 进结论句），
+   但没有把它接成开关——那会变成 §9.13 警告过的「把分母当闸门」。
+3. **`by_source` 的分组键（§9.15 遗留）。** 39 日账本里 40 张卡全部是 `UNKNOWN`，
+   按 provenance 分组只会得到「先验穿着账本的外衣」。分组键该是封存时的
+   `significance`，但那要先把字段写进 `settlements.jsonl`，与第 1 条同一批改动。
+
+> **第 2 条已由 §9.21 补上。** 补的不是第五态，是第二个检验自己的
+> `significance_incremental`：`INCREMENTAL × UNKNOWN` = 改善过门槛、但有效样本
+> 不足 30。第 1、3 条仍开着。
+
+### 9.17 布尔量量不出功效：`truncated_days`（2026-11-05）
+
+§9.16 把「零天被截断」判成 `NOT_TESTABLE`，判据是 `truncated_any`。它是个布尔量：
+`True` 只保证**至少一天**被截断。一天能撑起什么结论，上一节没有问。
+
+#### 一、反例：同一份账本，只改 `window`
+
+账本：30 个决策日 18/20 命中，接 30 个决策日 2/20 命中（90% → 10% 的制度翻转），
+`horizon=1`，1200 条观测，57 个可评估日。数据一个字不改，只扫 `window`：
+
+| `window` | 截断日/评估日 | `improvement_vs_clim` | `skill_vs_clim_lcb` | `n_eff_inc` | `verdict_incremental` |
+|---|---|---|---|---|---|
+| 5 | 52/57 | +0.141318 | +0.386809 | 57 | INCREMENTAL |
+| 12 | 45/57 | +0.115852 | +0.317726 | 57 | INCREMENTAL |
+| 20 | 37/57 | +0.085577 | +0.231231 | 57 | INCREMENTAL |
+| 28 | 29/57 | +0.055395 | +0.143621 | 57 | INCREMENTAL |
+| 40 | 17/57 | +0.017918 | +0.039038 | 57 | INCREMENTAL |
+| 44 | 13/57 | +0.010192 | +0.019620 | 57 | INCREMENTAL |
+| 53 | 4/57 | +0.001009 | +0.000464 | 57 | MARGINAL |
+| 54 | 3/57 | +0.000598 | −0.000002 | 57 | NO_INCREMENT |
+| 56 | 1/57 | +0.000097 | −0.000222 | 57 | NO_INCREMENT |
+| 57 | 0/57 | — | — | — | NOT_TESTABLE |
+
+> **这张表被 §9.18 改过一版，§9.20 已撤回。** 中间那版把滞后改成
+> `window-1`，下界普遍低 2–3 倍，转折点从 `window=54` 提前到 `window=25`。
+> 那个改动的前提（`r1(d)=+0.98` 是零假设下的自相关）是错的，读数已恢复为
+> `lag=horizon-1`。本节的结论不受影响：`window=12` 有增量、`window=56` 没有。
+
+90% → 10% 是这份账本里最大的信号，`window=12` 时下界 +0.1014；同一个信号在
+`window=56` 时报 `NO_INCREMENT`。变的不是数据，是「窗口碰巧绑定了几天」。
+
+#### 二、为什么 1 天不能替 57 天说话
+
+逐日改善 `d_i = (p_clim,i − y_i)² − (p_i − y_i)²`。窗口没有绑定的那天
+`p_i ≡ p_clim,i` ⇒ `d_i ≡ 0`。这些 0 是**真的**，不是缺失：那天两个预测器确实
+相同，说它改善了 0 是对的。
+
+但均值是全部评估日的平均，于是真实效应被摊成 `f·δ`，`f = k/n`。`window=56`
+时 `mean = δ/57`，`se` 却仍按 57 天算（只有 1 个非零观测，方差也只剩那一个），
+`lcb` 必然落在 0 附近——**结论由 `f` 决定，不由数据决定**。
+
+`NO_INCREMENT` 的旧句子是「近端窗口不比全历史多含信息」。这是一句关于信息量的
+结论，需要多天才成立；`k=1` 时它只证明了「最后一天近端赢了一点，摊薄之后不够」。
+后续动作也相反：前者该改策略，后者该改 `window`——和 §9.16 的分歧一模一样，
+只是位置从 `k=0` 挪到了 `k=1`。
+
+#### 三、修法：不设阈值，让句子和证据等长
+
+没有引入「`f ≥ 50%` 才许报结论」这类阈值。那是把 §9.14 的毛病换个位置再犯一次：
+阈值决定信不信，不能决定做不做。做的是两件事：
+
+1. `truncated_days` 单独成字段，与 `oos_days` 一起读；
+2. 三个数值结论的句子末尾附覆盖度，并与 `n_eff` 合进同一个括号，例如
+   `（等效独立样本 3；只有 3/57 天被截断，其余 54 天两个估计量恒等、改善恒为 0）`。
+   （原文这里是「等效独立样本 57」——那正是 §9.22 修掉的自相矛盾：分母不能
+   超过真正比过的天数。）
+
+数字全部保留：`mean` 是真的，撤掉它等于把「这个 window 效果很小」这个事实藏起来。
+`NOT_TESTABLE` 分支不变——`k=0` 时没有对照，数字仍然全撤。两节的界线是
+「没有数据」与「数据很少」，不是「够不够多」。
+
+#### 四、`n_eff_incremental` 在这个区间读的是什么
+
+`horizon=1 ⇒ lag=0 ⇒ n_eff ≡ n`。所以 `window=56` 时报「等效独立样本 57」，
+而承载比较的只有 1 天。它不是算错：没有重叠就没有可校正的自相关，`n_eff` 只是
+把 `n` 抄了一遍。但把它印在结论里，读者会以为这个判断建立在 57 个独立样本上。
+
+要它有意义，得让它数「非零贡献的天数」；可那样它就和 `skill_vs_clim_lcb` 的
+分母不一致了（那个 `lcb` 是在全部 `n` 天上算的），又是一次「一个键两种含义」。
+所以这一版不改 `n_eff`：让 `truncated_days` 承担「证据有几天」，让 `n_eff`
+继续承担「这 n 天值几个独立样本」。两个问题不挤进一个字段。
+
+> **§9.22 修正。** 这个折中在分母上站不住：`n_eff ≡ n` 不只是「把 n 抄了
+> 一遍」，它会在 6 个对照日上报 57、在 1 个对照日上报 256，于是
+> `significance_incremental` 在 1 天证据上给出 `FAIL`。修法不是把 `n_eff`
+> 改成「非零天数」（那确实会和 `lcb` 的分母打架），而是给它加一条上界：
+> `min(n_eff, truncated_days // (lag+1))`。`mean` 与 `lcb` 不变，被截的只有
+> 「这个下界有没有分母」这个判断。
+
+> **§9.18 曾推翻这段，§9.20 又把 §9.18 推翻了。** 中间的诊断是「重叠有两种，
+> `lag=horizon-1` 漏掉了估计量重叠（共用 `w-1` 天）」。这个诊断错在判据：
+> 它用 `r1(d)=+0.98` 证明「存在自相关」，而那个 0.98 来自**确定性账本**与
+> **制度翻转**，不是零假设下的依赖。平稳 + 抽样的同一份账本上 `r1(d)=-0.10`，
+> `lag=0` 的误报率 4.5%（n=57）、0%（n=200）。结论回到原样：`n_eff=n` 是
+> **正确读数**，不是把 `n` 抄了一遍；需要脚注的是「只有 k 天承载证据」，
+> 那已经由 `truncated_days` 承担。
+
+#### 五、验收
+
+- [x] `test_one_truncated_day_cannot_speak_for_the_whole_ledger`：最大截断窗口下
+      `truncated_days == 1`、结论 `NO_INCREMENT`、句子含 `1/`、不含「多含信息」；
+      同一份数据 `window=5` ⇒ `truncated_days > 50`、`INCREMENTAL`
+- [x] `test_not_testable_is_a_state_not_a_zero` 的 `NO_INCREMENT` 断言改为
+      「没测出增量」+ 覆盖度（原断言钉的是被改掉的那句话）
+- [x] 三个 decision 测试文件全通过
+- [x] `verify_pwin_e2e.py`：`n=381 hits=77 p_win=0.216958`、
+      `prior_weight=0.049875`、`prior_weight_effective=0.952381`、`reliable=True`、
+      `significance=UNKNOWN`、`truncated_any=False`、
+      `verdict_incremental=NOT_TESTABLE`、`skill_vs_clim=None`；新增
+      `truncated_days=0`
+- [x] `probe_shrink_unit.py --days 40` 的 [D] 段逐字不变
+- [x] `scripts/probe_truncation_power.py`：上表可复现
+
+> **这两条 `[x]` 的写法有问题，§9.18 已改。** 原来写的是「逐位不变
+> `n=386 … p_win=0.214286`」，而这组字面量当天下午就变成 381/0.216958——
+> 不是代码回归，是 `data/kline_daily_enriched/date=2026-11-05/part.parquet`
+> 在 15:56 落盘，多了一个交易日，`[-40:]` 的决策日窗口整体右移一格。
+> **一个随本地行情漂移的字面量不能当回归保证**：它分不清「代码变了」和
+> 「数据变了」。要么断言关系（`truncated_days == 0`、`verdict_incremental ==
+> NOT_TESTABLE`、`skill_vs_clim is None`），要么把快照日期写进断言旁边。
+
+#### 仍然没解决
+
+- **`truncated_days` 只是标签，不是开关。** 它进了结论句和卡上的出处，但不参与
+  判定。要不要在 `k/n` 过低时降级成 `NOT_TESTABLE`，是下一节的口径问题——
+  一旦接成阈值，就又回到「阈值决定做不做」。
+- **`n_eff` 在 `lag=0` 时恒等于 `n`。** 这一节没有修，因为修它会与 `lcb` 的分母
+  脱钩。真正需要的是把「覆盖度」与「等效独立样本」当成两个量分别报告，
+  而不是让一个字段同时回答。
+
+### 9.18 滞后阶数读错了对象：`window` 造的重叠（2026-11-05）
+
+> **本节已撤回，见 §9.20。** 诊断的前提是「同一份账本上 `r1(d)=+0.98`
+> 说明零假设下存在估计量自相关」。那份账本同时是**确定性**的（每天恰好
+> 18/20 或 2/20 命中）和**有制度翻转**的，两个条件各自都能把 `r1` 推到 1；
+> 平稳 + 二项抽样的账本上 `r1(d)=-0.10`。`lag=window-1` 的唯一效果是在
+> n=57 时把功效从 100% 打到 0%。以下保留原文，作为「判据选错会得到什么」
+> 的记录——它的推理链是完整的，错在第一块砖。
+
+§9.17 把「零天」的边界修成了「一天」，并留下一条判断：`n_eff=57` 只是把 `n`
+抄了一遍，因为它落在退化情形（只有 1 天被截断）。这条判断低估了问题的范围。
+
+#### 一、`n_eff=57` 不是边界情形，是每一行
+
+同一份账本（90% → 10% 翻转，`horizon=1`，57 个可评估日），对每个 `window`
+的逐日改善序列直接调 `effective_sample(n, se_iid, se, lag=0)`：
+
+| `window` | 5 | 12 | 20 | 28 | 36 | 40 | 44 | 48 | 50 | 52 | 53 | 54 | 55 | 56 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `n_eff` | 57 | 57 | 57 | 57 | 57 | 57 | 57 | 57 | 57 | 57 | 57 | 57 | 57 | 57 |
+
+一个在 14 个配置上完全不变的数，不可能是对「这些观测值几个独立样本」的估计。
+所以这不是「`k=1` 时退化」：`window=12` 有 45 天参与比较，报的仍然是 57。
+§9.17 用 `truncated_days` 给这句话补了脚注，但被补的那句话本身是错的。
+
+#### 二、两种重叠，一个键
+
+`lag = horizon - 1` 的理由是「持有 H 天的卡，相邻决策日的**结果**重叠 H-1 天」。
+重叠有两种，它只覆盖第一种：
+
+| 重叠 | 来源 | 长度 | 是否进 `lag` |
+|---|---|---|---|
+| 结果重叠 | 相邻决策日持有的交易日 | `horizon - 1` | 是 |
+| 估计量重叠 | 两个估计量共用的已结算决策日 | `window - 1` | **否** |
+
+第 i 天的 `p` 用已结算日 `[i-w, i-1]`，第 i+1 天用 `[i-w+1, i]`，共用 `w-1` 天。
+逐日改善因此是 MA(w-1)，与持有期无关。`horizon=1` 时 `lag=0`，NW 修正整个
+被关掉，`effective_sample` 直接 `return n`——**「没有可校正的自相关」和
+「假定自相关为零」被写成了同一个返回值**。
+
+实测这条序列的 lag-1 自相关：
+
+| `window` | 12 | 20 | 40 | 53 |
+|---|---|---|---|---|
+| `r1` | +0.983 | +0.982 | +0.925 | +0.673 |
+| `r3` | +0.913 | +0.921 | +0.763 | +0.133 |
+
+`lag=0` 的前提（`r1≈0`）在每一行都不成立。
+
+#### 三、改法：换滞后的来源，不换 `n_eff` 的定义
+
+`walk_forward` 里增量序列单独取滞后：
+
+    lag_inc = max(horizon - 1, min(window, n) - 1)
+
+`min(window, n)` 是「窗口不会比序列长」这个上限；窗口盖住全部可评估日时该检验
+已判 `NOT_TESTABLE`，不进入这条路径。只改增量这一条：`daily` 比的是常数 0.5，
+它的对照不由 `window` 制造，持有期重叠仍是主项。两条序列各有各的滞后，各自
+单独存字段（`hac_lag` / `hac_lag_incremental`）。
+
+**`n_eff` 的公式一个字没改**，仍是 `n·(se_iid/se)²`，仍与 `skill_vs_clim_lcb`
+共用同一个 `se`。§9.17 担心的「改 `n_eff` 会与 `lcb` 的分母脱钩」没有发生：
+脱钩的是 `lag`，不是 `n_eff`。把滞后改对，两个数自动回到同一分母上。
+
+另加一处：`n_eff_reliable=False` 时结论句标注「NW 不可用，取不重叠窗口数」。
+`1` 和「估出来是 1」是两件事，前者是 `n // (lag+1)`。两个检验都加——第一个
+检验的 `reason` 原本也把 `等效独立样本 1` 写成估计值（真实账本就是这种情形）。
+
+#### 四、修正前后的同一张表
+
+| `window` | 截断日/评估日 | `lag` 旧→新 | `n_eff` 旧→新 | `skill_vs_clim_lcb` 旧→新 | 结论 旧→新 |
+|---|---|---|---|---|---|
+| 5 | 52/57 | 0→4 | 57→12 | +0.3868→+0.2439 | INCREMENTAL→INCREMENTAL |
+| 12 | 45/57 | 0→11 | 57→6 | +0.3177→+0.1014 | INCREMENTAL→INCREMENTAL |
+| 20 | 37/57 | 0→19 | 57→2 | +0.2312→+0.0207 | INCREMENTAL→INCREMENTAL |
+| 28 | 29/57 | 0→27 | 57→2 | +0.1436→−0.0105 | INCREMENTAL→**NO_INCREMENT** |
+| 40 | 17/57 | 0→39 | 57→1 | +0.0390→−0.0132 | INCREMENTAL→**NO_INCREMENT** |
+| 44 | 13/57 | 0→43 | 57→1 | +0.0196→−0.0090 | INCREMENTAL→**NO_INCREMENT** |
+| 53 | 4/57 | 0→52 | 57→1 | +0.0005→−0.0011 | MARGINAL→**NO_INCREMENT** |
+| 56 | 1/57 | 0→55 | 57→1 | −0.0002→−0.0001 | NO_INCREMENT→NO_INCREMENT |
+
+三件事因此变了性质：
+
+1. **转折点从 `window=54` 提前到 `window=25`。** 逐窗口比对 1..56：`window=24..53`
+   这 30 个配置里，旧口径全部报 INCREMENTAL 或 MARGINAL，新口径 29 个降为
+   NO_INCREMENT、1 个（`window=24`）降为 MARGINAL。旧表里 `window=44` 报
+   INCREMENTAL、下界 +0.0196；修正后是 −0.0090，**符号反了**。那不是一个
+   「边界上的一两天」，是一段 30 个窗口宽的假阳性区间。
+2. **`n_eff` 开始随配置变**：12 → 6 → 2 → 1。它现在和 `truncated_days`
+   说同一件事的两个方面（几天承载证据 / 这几天值几个独立样本），不再互相打脸。
+3. **`window=5` 的 INCREMENTAL 站得住**（+0.2439）。修正没有把结论一律打成
+   NO_INCREMENT——它只打掉了靠 iid 假设撑起来的那一段。
+
+#### 五、验收
+
+- [x] `test_rolling_window_overlap_is_not_iid`：`window=12` 时 `hac_lag == 0`
+      而 `hac_lag_incremental == 11`，`n_eff_incremental < oos_days/3`，结论仍
+      INCREMENTAL；`window=40` 时 `hac_lag_incremental == 39`、
+      `n_eff_incremental_reliable is False`、结论 NO_INCREMENT、句子含「NW 不可用」
+      **（该测试已删除，见 §9.20——它钉住的是一个把功效打没的配置）**
+- [x] 三个 decision 测试文件全通过（新增 1 条）
+- [x] `verify_pwin_e2e.py` 除 `reason` 多一句 NW 标注外逐位不变：真实账本
+      `horizon=20`，`hac_lag` 与 `hac_lag_incremental` 都是 19（持有期主导），
+      `n_eff=1`、`verdict_incremental=NOT_TESTABLE` 不变；新增字段
+      `hac_lag_incremental=19`
+- [x] `probe_shrink_unit.py --days 40` 的 [D] 段逐字不变
+- [x] `scripts/probe_incremental_lag.py`：上两表可复现
+
+#### 仍然没解决
+
+- **`window=20` 报 INCREMENTAL，而 `n_eff=2` 且 `n_eff_reliable=False`。**
+  增量侧没有 `significance` 那样的三态结论：`verdict` 只读 `lcb` 的符号，
+  而那个 `lcb` 的 `se` 是在 NW 边界上估的。句子已经带了标注，但只读结论标签
+  的人仍会被误导。补一个 `significance_incremental` 是下一步，不是这一节。
+- **`lag_inc` 是上界，不是估计值。** 取 `window-1` 覆盖的是「最多能重叠多少天」；
+  非零改善只集中在 `k` 个相邻日时，真实依赖长度短于它。Bartlett 权重让两者
+  差别不大（`window=53` 时 lag=1 与 lag=10 给出同号下界），但这是运气，不是保证。
+- **`by_state` 的阻塞点没动**：`verify_pwin_e2e.py` 建卡时 `forecast={"pwin": …}`
+  的键列表里仍没有 `significance`（约 128–131 行），那份账本的 `by_state`
+  第一份证据会是空的。
+- **`settle.score` 的滞后仍只按持有期。** 它计分的 `p_win` 本身是滚动估计，
+  同一族重叠还在，但卡上没有记 `window`（建卡出处里只有 `n` / `days` / `kappa`），
+  事后算不出那个滞后。要修得先让 `window` 进出处。
+- **e2e 的字面量不是回归保证。** 见 §9.17 第五节的注：它随 `data/` 漂移。
+
+### 9.20 判据选错了：`r1` 不是 HAC 的对象（2026-11-05）
+
+§9.18 用「逐日改善的 `r1=+0.98`」证明 `lag=0` 不成立，把滞后改成 `window-1`。
+推理链每一步都对，错在第一块砖：**它量的是账本，不是零假设。**
+
+#### 一、HAC 校的是均值的方差，判据只有尺寸和功效
+
+`se` 的正确性不由「自相关有多长」回答，由两件事回答：
+
+- **尺寸**：没有增量时，`lcb > 0` 的频率应 ≤ 5%；
+- **功效**：真有增量时，`lcb > 0` 的频率。
+
+自相关只是输入，而输入取决于你拿哪份账本去量。§9.18 的账本同时满足两个
+抬高 `r1` 的条件，且都不是零假设的性质。
+
+#### 二、四种账本上的 `r1`（`window=12`，n≈59）
+
+| 账本 | `r1(d)` | `r2(d)` | 说明 |
+|---|---|---|---|
+| 平稳 + 确定性（每天恰好 6/20） | +0.964 | +0.921 | `y` 是常数，只剩 `δ` 漂移 |
+| **平稳 + 二项抽样** | **−0.100** | −0.186 | **零假设的真实形态** |
+| 翻转 + 确定性（§9.18 用的那份） | +0.984 | +0.954 | 两个条件叠加 |
+| 翻转 + 二项抽样 | +0.929 | +0.882 | 有信号，也有噪声 |
+
+`r1` 跟的是「确定性」和「信号」。第一行说明：只要每天命中数相同，`d_i` 就
+只剩 `δ_i = p_clim − p` 的缓慢漂移，`r1` 必然接近 1——**与 `window` 无关，
+与重叠也无关**。第三行只是把制度翻转再叠上去。
+
+第四行是另一件事：翻转让 `d` 持续为正，所以 `r1` 高。但那份持续性是**要检测
+的信号**，不是要校正的噪声。用备择的依赖去定零假设的方差，等于把信号算进
+误差里。
+
+#### 三、尺寸与功效（`w=40`，各 200 次重复）
+
+| 场景 | n | `lag=0` 拒绝率 | `lag=w−1` 拒绝率 |
+|---|---|---|---|
+| H0 平稳 0.3 | 57 | 4.5% | 0.0% |
+| H0 平稳 0.3 | 199 | 0.0% | 0.0% |
+| H1 翻转 0.9→0.1 | 57 | **100.0%** | **0.0%** |
+| H1 翻转 0.9→0.1 | 199 | 100.0% | 100.0% |
+
+`lag=0` 的尺寸本来就对（4.5%，不超 5%）；`lag=w−1` 没有改善它，却在这个
+项目真实样本量（n=57，真实账本 n=17）上把功效清零。n=199 时两者都能拒绝，
+所以这不是「`w−1` 永远错」，是「**它在样本量与账本同量级时必然错**」。
+
+`n_eff` 也因此不是问题：平稳 + 抽样下它等于 `n` 是**正确读数**（这里说的是
+`d` 全都有对照的情形；被窗口截断出来的恒等零另算，见 §9.22）。§9.18 说
+「一个在 14 个配置上完全不变的数不可能是估计」——那个推理在「配置应当改变真值」时成立，而这里真值确实不随 `window` 变。
+
+#### 四、撤回
+
+- `walk_forward` 的 `lag_inc` 退回 `lag`（`horizon-1`）；
+- `hac_lag_incremental` 字段**保留**，值等于 `hac_lag`。不合并字段，是因为
+  下游按「每条序列各有自己的滞后」读过它——一次错误的滞后修正需要留下位置，
+  否则下次还会有人在同一个键上改；
+- 删除 `test_rolling_window_overlap_is_not_iid`，换成
+  `test_incremental_lag_is_the_hold_overlap_not_the_window`：H=1 时断言
+  `hac_lag_incremental == 0` 且 `n_eff_incremental == oos_days`，H=20 时两个
+  滞后都是 19。旧实现给 11 / 39 与 6 / 1，必失败；
+  （§9.22 把 `== oos_days` 改成 `== truncated_days`：`oos_days` 里有一部分是
+  恒等零，不能进分母。）
+- `scripts/probe_incremental_lag.py` 重写：[A] 四种账本的 `r1`、[B] 尺寸与
+  功效、[C] §9.18 的翻转表复现。§9.17 那张表恢复为 `lag=0` 读数。
+
+#### 五、顺带修掉的一处：被吞掉的测试
+
+`test_rolling_window_overlap_is_not_iid` 插入时吃掉了下一个函数的 `def` 行，
+第 616 行的 docstring 与三条断言变成了前一个函数里的死代码——`99 passed`
+里有**一条根本没被收集**。恢复为
+`test_median_basis_keeps_clim_as_a_separate_baseline` 后是 `100 passed`。
+
+这不是格式问题：那条断言钉的是「median 口径的 `brier_clim` 与常数 0.25
+分开报告」，正是 §9.3 那条恒等式的守卫。它可以被静默删掉一次，就能被删第二次。
+
+#### 六、验收
+
+- [x] 三个 decision 测试文件 `100 passed`（99 + 恢复的那条）
+- [x] `probe_incremental_lag.py` 三张表可复现
+- [x] `probe_truncation_power.py` 的表与 §9.17 恢复后一致
+- [x] 真实账本（`horizon=20`）不受影响：`hac_lag` 与 `hac_lag_incremental`
+      本来就都是 19，`n_eff=1`、`NOT_TESTABLE` 不变
+
+#### 仍然没解决
+
+- ~~**`significance_incremental` 仍然缺。** 这一节撤回的是滞后，不是那个不对称：
+  `verdict_incremental` 只读符号，没有「测不了」这一档。§9.17 列的下一步成立。~~
+  已落地，见 §9.21。
+- **`lag=0` 的 4.5% 是单点估计。** 200 次重复的蒙特卡洛标准误约 1.5 个百分点，
+  在 5% 附近分辨率不够；要定这个数得 2000 次以上。
+- **探针只对 H=1 做了功效表。** H≥2 时两种滞后在大样本上同量级，差别被结果
+  重叠盖住；这一段没有单独的功效读数。
+- **`settle.score` 的 `window` 仍未进出处**，所以它那一族的滞后事后算不出来。
+- **§9.19 是空号。** §9.16 的「仍然没解决」把 κ 的单位预留给 §9.19，那一节
+  还没写；本节按 §9.20 编号是为了不占那个号。读者从 §9.18 翻到 §9.20 会看到
+  一个洞，那是真的。
+
+### 9.21 增量检验的可辨识性：`significance_incremental`（2026-11-05）
+
+§9.20 撤回的是滞后，不是 §9.17 留下的那个不对称：第一个检验有
+`verdict × significance` 两维（符号 / 有没有分母），第二个检验只有 `verdict`。
+`lcb > 0` 只说明「这批样本里近端赢了」，不说明「这个赢法可复现」。
+
+#### 一、反例：下界 +0.02069，等效独立样本 1
+
+账本：30 个决策日 18/20 命中，接 30 个决策日 2/20 命中（90% → 10%），
+`window=5`。数据一个字不改，只把持有期从 1 天换成 20 天：
+
+| 字段 | `horizon=1` | `horizon=20` |
+|---|---|---|
+| `oos_days` | 57 | 38 |
+| `hac_lag_incremental` | 0 | 19 |
+| `n_eff_incremental` | 57 | **1**（`n // 20`，`reliable=False`）|
+| `improvement_vs_clim` | +0.14132 | +0.12023 |
+| `skill_vs_clim_lcb` | +0.10726 | +0.02069 |
+| `verdict_incremental` | INCREMENTAL | INCREMENTAL |
+| `significance_incremental` | PASS | **UNKNOWN** |
+
+> §9.22 之后 H=1 那一行的 `n_eff_incremental` 是 **52**（对照天数），不是 57；
+> `PASS` 不变。H=20 那一行本来就是 1。差别不在结论，在分母的来源。
+
+H=20 时旧句子是：「相对展开基线改善 +0.12023，下界 +0.02069 > 0：
+**近端窗口含有远端没有的信息**（等效独立样本 1，NW 不可用，取不重叠窗口数；
+只有 33/38 天被截断…）」。括号里已经写了「等效独立样本 1」，可句子本身是
+结论式的——读者读的是句子，不是括号。
+
+这正是 §9.17 自己定下的界线被越过：句子必须和证据等长。`n_eff=1` 时，
+`+0.02069` 的下界没有分母，能支持的只有「方向为正」。
+
+#### 二、为什么不给 `verdict_incremental` 加第五态
+
+这里的理由曾经是「两种状态的补救方式相反」：`NOT_TESTABLE` 改 `window`
+（配置），样本不够就攒样本（数据）。**这个理由被 §六自己的数据推翻了**——
+真实账本（17 个可评估日 / H=20）的 `NOT_TESTABLE` 只能靠攒到约 600 天才解除，
+和「样本不够」是同一条路。两个障碍经常同时成立，补救方式不是可靠的判据。
+
+真正的区别在**有没有数字**：`NOT_TESTABLE` 时 `p ≡ p_clim`，改善、下界、`n_eff`
+全是恒等式的产物，必须撤掉（§9.17）；样本不够时数字是真的，只是没有分母，
+撤掉会把「测过、不可判定」伪装成「没测过」。一个状态既要撤数字又要留数字，
+就是两个状态。所以状态留在 `verdict`，可辨识性进 `significance`——
+与第一个检验的 `verdict × significance` 同构：`RELIABLE × UNKNOWN` 早就是
+合法组合（真实账本此刻就是），`INCREMENTAL × UNKNOWN` 没有理由不行。
+
+#### 三、修法
+
+`_incremental_verdict` 返回 `(verdict, reason, significance)`，第三个值直接调
+`settle.significance_of(lcb, n_eff, n_eff_reliable)`——与第一个检验同一个函数、
+同一个 `MIN_NEFF=30`。`UNKNOWN` 时三个分支共用一句同构的话：只报符号，不报
+结论（「近端含有远端没有的信息」和「没测出增量」都需要分母，一个都没有）。
+
+`walk_forward` 把 `sig_inc` 写进 `significance_incremental`，并在「窗口盖住
+全部已可见日」的分支里把它一并撤成 `UNKNOWN`——撤数字和撤状态写在同一个分支，
+分开写的地方迟早只改一半。`_insufficient` 与 `estimate` 的冷启动分支同样返回
+`UNKNOWN`：没测不是没通过。
+
+#### 四、顺手修掉：探针的判据单位和生产不同
+
+`probe_incremental_lag.py` 的 [C] 表自己折算结论，用的是
+`e0[2] / brier_clim < MIN_INCREMENTAL_EFFECT`——**相对**下界对**绝对**门槛。
+`MIN_INCREMENTAL_EFFECT = 0.001` 是 Brier 单位，除以 `brier_clim≈0.28` 之后
+同一个改善小 3.6 倍，于是 `window=51/52` 被报成 INCREMENTAL，生产报 MARGINAL。
+探针和被探的东西分叉，比没有探针更糟：它会把「判据变了」误报成「数据变了」。
+
+改成 `_verdict_of(lcb_abs)`，并在 `lag=0` 那一列断言它与
+`wf["verdict_incremental"]` 逐位相等。表随之变了：51/52 从 INCREMENTAL 变
+MARGINAL。翻转计数也变了——旧文案写死「28 个窗口从 INCREMENTAL 变
+NO_INCREMENT」，按修正后的单位重算是 **26**（「掉出 INCREMENTAL」、含 MARGINAL
+则是 27）。那个 28 确实是单位错误的产物：用 `lcb / brier_clim` 折算，同一份
+账本正好给出 28。
+
+#### 五、iid 对照：§9.17 的结论不是确定性账本的怪癖
+
+§9.20 的教训是「确定性账本量出来的东西不一定是零假设的性质」。§9.17 的覆盖度
+结论建立在同一份确定性账本上（每天恰好 18/20），所以它也需要对照。
+`probe_truncation_power.py` 现在对同一批 `window` 再跑 60 份二项抽样账本
+（每天按 0.9 / 0.1 抽 20 个结果）：
+
+| `window` | 截断/评估 | 确定性账本 | iid 分布 |
+|---|---|---|---|
+| 5 | 52/57 | INCREMENTAL | INCREMENTAL 100% |
+| 20 | 37/57 | INCREMENTAL | INCREMENTAL 100% |
+| 40 | 17/57 | INCREMENTAL | INCREMENTAL 100% |
+| 50 | 7/57 | INCREMENTAL | INCREMENTAL 53% / MARGINAL 47% |
+| 51 | 6/57 | MARGINAL | MARGINAL 100% |
+| 54 | 3/57 | NO_INCREMENT | MARGINAL 48% / NO_INCREMENT 52% |
+| 56 | 1/57 | NO_INCREMENT | NO_INCREMENT 100% |
+
+12/12 个窗口里，确定性账本的结论是 iid 分布的众数（含并列）。`window=50` 与
+`54` 本来就在门槛附近，落在哪一边不重要；重要的是**翻转点跟着覆盖度走，
+不跟着账本有没有噪声走**。
+
+#### 六、`NOT_TESTABLE` 的药方：改配置还是攒样本
+
+这一节差点以一句错药方收尾。原句是：
+
+> window=250 ≥ 最多 17 个已可见决策日 …… **要让这个检验可判定，window 必须小于可评估日数。**
+
+它把 `NOT_TESTABLE` 的两个可能障碍当成了一个：
+
+1. `window` 盖住全部已可见日 ⇒ 两个估计量恒等（**配置**，改 window 才能开始判定）；
+2. 已可见日本身不够 ⇒ 就算 window=1，`n_eff` 也到不了 30（**样本**，只能攒）。
+
+在 e2e 账本（39 个决策日 / 17 个可评估日 / H=20；行数随 `data/` 漂移）上把 window 逐个缩下去：
+
+| `window` | 截断/评估 | `improvement_vs_clim` | `n_eff` | `verdict_incremental` | `significance_incremental` |
+|---|---|---|---|---|---|
+| 250 | 0/17 | —（撤数字）| — | NOT_TESTABLE | UNKNOWN |
+| 20 | 0/17 | —（撤数字）| — | NOT_TESTABLE | UNKNOWN |
+| 12 | 5/17 | +0.00001 | 1 | NO_INCREMENT | UNKNOWN |
+| 8 | 9/17 | −0.008432 | 1 | NO_INCREMENT | UNKNOWN |
+| 4 | 13/17 | −0.035012 | 1 | NO_INCREMENT | UNKNOWN |
+| 1 | 16/17 | −0.070247 | 1 | NO_INCREMENT | UNKNOWN |
+
+**按原句做，状态从 `NOT_TESTABLE` 变成了 `NO_INCREMENT`，`n_eff` 还是 1。**
+这不是「解除」，是把「没测」换成一个看起来像结论的词——而且换出来的那个词
+更假：它读起来像「近端确实没有增量」，实际是 16 天的噪声除出来的符号。
+`significance_incremental` 仍然是 UNKNOWN，但读者先看到的是 verdict。
+
+修法：`_not_testable_remedy(days, hac_lag)` 先算再开药方。判据是构造值
+`n // (lag+1)`（MA(H−1) ⇒ `n_eff ≈ n/H`）：
+
+- `max(1, days // (lag+1)) >= MIN_NEFF` ⇒ window 是唯一障碍，原句成立；
+- 否则 ⇒ 句子改写成「把 window 缩到 1 也只能让检验跑起来：17 个可评估日、
+  MA(19) ⇒ 等效独立样本约 1 < 30，结论仍然不可判定。要让它可判定，按 MA(H−1)
+  的构造值推算需要约 600 个可评估日（30×20），不是改配置能解开的」。
+
+这个判据只在 `NOT_TESTABLE` 分支跑，不 gate 任何东西；它改的是句子，不是数字。
+同一份 40 天账本换成 H=1（38 个可评估日、`lag=0`）时，`30 ≤ 38`，句子回到
+原样——差别不在数据，在 `H`。
+
+**600 是模型值，不是测出来的门槛。** 它来自 `30 × H`，前提是 `n_eff ≈ n/H`。
+单条路径上的 NW 读数抖得很厉害：一条 290 天回放里 267 个可评估日给出
+`n_eff=22`（约 0.065–0.09/天，未截断读数外推到 30 只要 350–390 天），
+而 78 天给 16、98 天给 9——同一族路径，比值差一倍。所以句子里的「约」不能
+去掉，也不能把 600 当成「过了就一定能判定」的承诺；它只回答「现在缩 window
+有没有用」。§9.22 的截断按同一条 MA(H−1) 模型收紧分母，门槛仍按 600 表述；
+350–390 是未截断的 NW 读数，不作为门槛。
+
+#### 七、验收
+
+- [x] 三个 decision 测试文件 `102 passed`（101 + §六新增的一条）
+- [x] 三态各钉一条：H=20 ⇒ `INCREMENTAL × UNKNOWN`；H=1 ⇒ `INCREMENTAL × PASS`；
+      窗口盖住全历史 ⇒ `NOT_TESTABLE × UNKNOWN`
+- [x] `NOT_TESTABLE` 的句子按 `n // (lag+1)` 是否够 30 分流：H=20 指向样本
+      （「不是改配置能解开的」），H=1 指向 window。两条都钉了断言，
+      另加一条反证：window=1 让状态变成 `NO_INCREMENT`，`n_eff` 仍是 1。
+- [x] `estimate` 与 `walk_forward` 报同一个 `significance_incremental`，
+      且它随卡封存（`forecast.pwin`）——接口与卡不能各说一句话
+- [x] e2e（`n=386 hits=79`，随 `data/` 漂移）：`verdict_incremental=NOT_TESTABLE`、
+      `significance_incremental=UNKNOWN`，句子点名 600 个可评估日
+- [x] `probe_incremental_lag.py` [C] 与生产逐位一致（带断言）
+- [x] `probe_truncation_power.py` iid 对照 12/12
+
+#### 仍然没解决
+
+- **真实账本上这个字段恒为 UNKNOWN，而且不是改配置能解除的。** `horizon=20`、
+  `oos_days=17` ⇒ `NOT_TESTABLE`；window 缩到 1 也只是把标签换成
+  `NO_INCREMENT`，`n_eff` 仍是 1（§六的表）。`n_eff` 要过 30，按 MA(H−1) 的
+  构造值推算需要约 600 个可评估日（实测比值更高时会少一些，见 §六末的注）。
+  这一节是给账本长大以后准备的。
+- **`verdict_incremental` 与 `significance_incremental` 前端都没显示。**
+  两个字段进了 `forecast.pwin` 封存，但决策页只渲染 `significance`（评分卡的）。
+  封存解决的是「事后不能改写」，没有解决「读者当下看得到」——而 §9.17 的
+  出发点正是「读者读的是句子」。
+- **`suggest()` 有 `window`，HTTP 层没透传。** 签名是
+  `window: int = DEFAULT_WINDOW`（`pwin.py`），`api/decision.py` 的建卡入口
+  没有把这个入参接出去。现在这是对的：在 17 个可评估日上开放 window 只会
+  生产 `NO_INCREMENT`。账本过 600 天之后才需要它——届时补的是 API 参数，
+  不是函数签名。
+- **`MIN_NEFF=30` 没有对增量序列单独标定。** 它借自水平序列（§9.14），在这里
+  只决定标签、不决定任何数字；但「30 对差值序列是否偏严」没有读数。
+- **`n_eff_incremental_reliable` 没进卡。** 卡上有 `significance_incremental`
+  （结论）和 `n_eff_incremental`（数），但读不出那个数是不是构造值。按 §9.16
+  的规则它属于「能由状态推出」（`UNKNOWN` 就是它的读数），所以没加。
+- **`settle.score` 的 `window` 仍未进出处**（§9.20 遗留）。
+
+### 9.22 `n_eff_incremental` 的上限：证据越少，分母越大（2026-11-05）
+
+§9.21 修的是句子（`significance_incremental` 这个标签），这一节修的是那个
+标签的**分母**。只修句子不够：状态机里还有一个洞，能让那句「600 天才可判定」
+和它自己的数字互相否定，而且在默认配置下就会命中。
+
+#### 一、反例：1 个对照日 = 256 个独立样本
+
+逐日改善是 `d_i = (p_clim,i - y_i)² - (p_i - y_i)²`。窗口没有截断第 i 天时
+`p_i == p_clim,i`，于是 `d_i == 0`——**恒等零**，不是抽样噪声，是窗口配置的
+恒等式：给它任何一份账本，这些天都恒等于 0。
+
+它们留在序列里是对的（`mean` 要覆盖全部评估日，见 §9.17），但 NW 把它们
+当成独立观测：方差被零稀释 ⇒ `se ≈ se_iid` ⇒ `n_eff = n·(se_iid/se)² ≈ n`。
+`n_eff` 于是随「没比过的天数」一起长。
+
+构造序列 `d = [0]*255 + [0.02]*k`：
+
+| 非零日 `k` | `n_eff` | `lcb` | `significance` |
+|---|---|---|---|
+| 1 | **256** | −0.00005 | FAIL |
+| 2 | 132 | −0.00010 | FAIL |
+| 6 | 48 | −0.00025 | FAIL |
+
+真实尺度上（278 个决策日、256 个可评估日、常数预测器、默认 `window=250`、
+6 天对照）：`n_eff=57`、`significance_incremental=FAIL`。另一条真实数据回放
+（290 个决策日、267 个可评估日、默认 `window=250`、17 天对照）给 `n_eff=54`；
+把 window 依次推到 252 / 254 / 255，`n_eff` 是 79 / 267 / 250——
+**分母一路涨到等于可评估日数，对照天数却在减少**。而 §9.21 §六说这个判定
+要 600 天。两句话不能同时为真，先到的是后者——而且方向相反：账本越短，
+越容易拿到一个「没有增量」的结论。
+
+#### 二、修法：分母截到对照天数
+
+`_identifiable_sample(n_eff, truncated_days, lag)`，上限是
+`max(1, truncated_days // (lag+1))`。
+
+- **不能只截到 `truncated_days`。** 对照日按决策日连续排列（`visible` 单调
+  增长，一旦超过 window 就一直超过），持有 H 天时相邻两天重叠 H−1 天，
+  独立样本至多 `k/H`。256 天账本上 `k=36`、NW 给 17，截到 36 仍会把 1.8 个
+  独立样本说成 36 个。
+- **更弱的截法连方向都保不住。** `n_eff_nw` 随 window **非单调**：
+  57 → 35 → 26 → 22 → 19 → 18 → 17（`k=6,11,16,21,26,31,36`）。取
+  `min(n_eff, k)` 之后序列先升后降，而「证据越多、分母越大」正是要守的东西。
+- **`k // (lag+1)` 不是新模型。** 它与 `effective_sample` 的退化值、
+  `_not_testable_remedy` 的推算是同一条 MA(H−1)：长程方差 ≈ H·γ0 ⇒
+  `n_eff ≈ n/H`。H=1 时它退化为 `k`，所以 `horizon=1` 的账本行为不变。
+
+截断只改 `n_eff_incremental` 与 `significance_incremental`，不改
+`improvement_vs_clim` / `lcb` / `verdict_incremental`：符号和量级仍然是全部
+评估日上的读数，只有「这个读数有没有分母」变了。也不翻转
+`n_eff_incremental_reliable`——它回答的是「NW 可不可用」，不是「有没有被截」；
+`effective_sample` 里的 `min(n, …)` 同样不翻转它。截断后的值读作**上界**。
+
+判定函数自己也守这条不变量：`_incremental_verdict` 在算 `significance_of`
+之前再截一次。只靠在 `walk_forward` 传对参数，下一个调用点就会绕过去。
+
+#### 三、验收
+
+- [x] `truncated_days=1` ⇒ `n_eff_incremental ≤ 1`、`significance_incremental != FAIL`
+- [x] 同样本下 `n_eff` 随 `truncated_days` 单调不减（6/21/41/61/81/101 天）
+- [x] `n_eff_incremental ≤ truncated_days // (lag+1)` 写成断言
+- [x] 278 个决策日 / 256 个可评估日 / 默认 window：`FAIL` → `UNKNOWN`，
+      `n_eff` 57 → 1，句子仍写「6/256 天被截断」
+- [x] 真实 290 天回放（267 个可评估日 / 17 天对照）：`FAIL` → `UNKNOWN`，
+      `n_eff` 54 → 1；同一条回放上 window=250/252/254/255 的旧读数是
+      54/79/267/250，新读数全是 1
+- [x] 三个 decision 测试文件 `107 passed`（102 + 5）
+- [x] e2e 不变：真实账本 17 个可评估日仍是 `NOT_TESTABLE × UNKNOWN`
+
+#### 仍然没解决
+
+- **`improvement_vs_clim` 仍被恒等零摊薄。** 256 天里只有 6 天承载证据，
+  均值是 6 天的效应除以 256。分母修好了，均值还没有：读者看到 `+0.00004`
+  仍可能读成「平均每天改善 0.00004」，而不是「6 天里有改善，其余 250 天
+  没有对照」。正解是只在对照片段上算均值与 NW，另立
+  `improvement_on_contrast_days`；那要改字段语义，单独做。
+- **`settle.score` 没有 `window`**，不存在「`p ≡ p_clim`」的构造，所以没有
+  这个机制；但它的 `n_eff` 仍可能在低方差序列上被高估，没有单独标定。
+
+### 9.23 核选错了：`se` 的偏差在分子上，且不随 n 收敛（2026-11-05）
+
+§9.22 修的是分母（`n_eff_incremental` 的截断上限）。这一节修的是**分子**：
+`se` 本身系统性偏小，`PASS` 的错误率因此是标称值的两倍左右。四条验收
+（单调、截断、标注一致、`107 passed`）全部成立也发现不了它——它们约束的是
+顺序与文案，不约束尺度。
+
+#### 一、反例：带宽固定成模型记忆长度
+
+`hac_lcb` 原本用 Bartlett 核，带宽恒等于 `lag+1 = H`。持有 `H` 天的卡，
+逐日改善是等权 MA(H−1)：`γ_k = γ_0·(H−k)/H`（正是重叠 H 日收益的自协方差
+形状）。Bartlett 权重 `1 - k/H` 在这个形状上的概率极限是
+
+    LRV_hat → (2/3 + 1/H)·LRV
+
+也就是 `se` 恒为真值的 `sqrt(2/3) = 0.817` 倍。**它不随 n 收敛**：带宽固定、
+模型记忆固定，加多少样本都补不上那一阶被压掉的协方差。用发布代码实测
+（等权 MA(19)、`H0` 真值 0、400 次重复）：
+
+| n | 核 | `se`/真值 | `P(lcb>0)` | `n_eff` 均值 |
+|---|---|---|---|---|
+| 250 | bartlett | 0.755 | **11.0%** | 20.6 |
+| 250 | truncated | 0.911 | 7.8% | 14.8 |
+| 600 | bartlett | 0.778 | **8.8%** | 47.4 |
+| 600 | truncated | 0.942 | 6.0% | 33.0 |
+| 1000 | bartlett | 0.799 | **7.8%** | 77.1 |
+| 1000 | truncated | 0.972 | 4.5% | 52.6 |
+
+`n_eff = n·(se_iid/se)²` 被同一份偏差放大 1.44 倍（47.4 → 33.0）。
+这就是「同一个门槛 30，两种含义」的来源：旧读数下 30 约等于 20 个真独立样本。
+
+#### 二、修法：截断核 + `LRV ≥ γ0`
+
+`LRV = γ_0 + 2Σ_{k=1..lag} γ̂_k`，`γ̂_k` 的分母取 `n-k`；`lag` 不是「取够
+大」，它就是重叠长度，所以末阶不能被权重压掉。另外 `LRV` 下界取 `γ_0`：
+重叠序列在 `k < H` 上 `γ_k ≥ 0`，`LRV ≥ γ_0` 是模型内的硬下界；顺带挡住
+`LRV ≤ 0 ⇒ se = 0 ⇒ lcb = mean` 这个「零误差」退化（iid 压力测试里
+n=250 有 2.5% 的重复踩到）。
+
+**不是「让带宽随 n 增长」。** `b ≈ 1.1447·n^(1/3)` 在 n=1000 只到 11，
+远小于 H−1=19，size 反而更差：n=600 给 14.3%、n=1000 给 12.3%。
+MA(19) 要求 `b ≥ 19`，而 `n^(1/3)` 要到 n≈4600 才够——这正是
+「600 天可判定」与「H=20」不兼容的地方。
+
+**不在 `pwin` 里单独修。** `settle._daily_clustered_lcb` 走同一个函数，
+`settle.score` 的 `skill_lcb` 因此有同一个洞，而它连 `reliable` 标注都没有。
+换核在 `hac_lcb` 里做，两条路径一起变。
+
+#### 三、验收
+
+- [x] `size` 测试进 CI：等权 MA(19)、n=600、400 次重复，`P(lcb>0) ≤ 8%`
+- [x] 旧核偏差写成断言：`se`/真值 = `sqrt(2/3) ± 0.04`，且 size ≥ 7%
+      （默认值被改回去时两条一起红）
+- [x] `LRV ≥ γ0`：交替正负序列上 `se ≥ se_iid`
+- [x] **已知边界写成断言**：漂移 DGP（MA(19)+AR(1) ρ=0.995）下
+      truncated / bartlett 的 size 都 > 20%。这条测试断言的是「没修好」
+- [x] 真实账本回放（344 个决策日 / 322 个可评估日）四个切片的 verdict 全不变，
+      `n_eff` 52/54/49/50 → 44/49/45/49
+- [x] 句子补上截断前的读数：`等效独立样本 3（按对照天数折算；NW 读出 32）`
+- [x] 句子补上未被摊薄的均值：`322 天摊薄；只看有对照的 72 天是 +0.00039`
+- [x] 决策四个测试文件 `113 passed`
+
+#### 换核之后，仍有四处没解决
+
+- **漂移。** 真实账本的逐日改善可以有几个月量级的持续期（战术胜率有制度性
+  高低）。此时真 `LRV` 远大于 `H·γ0`，而任何带宽 `b ≤ H` 的核都看不见它：
+  同一条 DGP 上三种核的 size 是 28–37%，`n_eff` 却照样报得出 30 以上。
+  「换核把 size 修到 5%」只对「记忆恰为 H−1」成立。
+- **真实账本上偏差没有模型那么大。** 322 天回放里 `LRV_bart/LRV_trunc = 0.907`，
+  `n_eff` 只掉 10%（54 → 49），不是 1.44 倍。原因是实际 `γ_k` 衰减比三角快
+  （`n_eff = 322/49 ⇒ H_eff ≈ 6.6`，不是 20）。所以「按 1.5 倍修正历史读数」
+  会过度保守；2/3 是**模型内**的上界，不是实测值。
+- **单位混用没修（§9.24 已修）。** `truncated_days` 数决策日，`lag+1` 数交易日。每 3 个
+  交易日发一张卡时上限低估 3 倍（`scripts/probe_neff_units.py`：16 vs 48），
+  `_not_testable_remedy` 的「约 630 个可评估日」同样多报 3 倍。门禁想要的
+  恰是稀疏发卡，所以这条路只会越走越错。
+- **`reliable` 仍然答非所问。** 它回答「NW 可不可用」，句子拿它回答「这个数
+  是不是构造值」。回放四个切片全是 cap 值（13 = 262//21、3 = 72//21）配
+  `reliable=True`；现在只在句子里补了原读数，字段没拆。正解是
+  `n_eff_source ∈ {nw, fallback, contrast_cap}`，三态三句话。
+
+### 9.24 单位：分子数决策日，分母数交易日（2026-11-05）
+
+§9.22 把 `n_eff_incremental` 截到「对照日数」，§9.23 换掉了 `se` 的核。
+两节都默认 `k // (lag+1)` 里两个数是同一个单位。它们不是：
+
+    truncated_days  决策日（walk_forward 每评估一天加一）
+    lag + 1         交易日（= horizon_sessions）
+
+只有「每个交易日都发卡」时两者相等——而那正好是门禁**不**想要的那种节奏。
+发卡越稀疏，这个上限低估得越多，且方向单调：**你越按它的要求做，它错得越狠。**
+
+#### 一、反例
+
+同一份账本、同一个交易日历，只改发卡间隔（`scripts/probe_neff_units.py`，
+H=21、window=60、420 个决策日、每张卡 20 个 pick、命中数 iid）：
+
+| 节奏 | 对照日 k | 交易日跨度 | 旧上限 | 新上限 | 真上限 |
+|---|---|---|---|---|---|
+| daily | 337 | 337 | 16 | 16 | 16 |
+| sparse×3 | 337 | 1009 | 16 | **48** | 48 |
+| sparse×5 | 337 | 1681 | 16 | **80** | 80 |
+
+第二个出口是 `NOT_TESTABLE` 的补救句。门槛 `MIN_NEFF × (lag+1)` 的单位是
+**交易日**（30 个独立块 × H 天），与发卡节奏无关；旧句子把它当成「可评估日」
+印出来，于是 daily 和 sparse×3 拿到同一句「约 630 个可评估日」，而 sparse
+真正要的是 210 张卡。
+
+#### 二、修法：给 `walk_forward` 一个交易日历
+
+`walk_forward(..., sessions=...)`（`estimate` / `suggest` 透传，API 两处调用点
+都传 `bars.sessions(data_dir)`——否则 `/pwin` 与建卡会按两种单位报同一个数）。
+
+- `_trading_span` 用二分求首末对照日之间的交易日数，取代「决策日数」；
+  日历缺失、越界、或跨度小于决策日数（日历与账本对不上）时返回 `None`。
+- `_identifiable_sample(..., trading_days=)`：跨度 ≥ 决策日数才采信，否则退回
+  旧口径。**退回只会在稀疏账本上低估，不会高估**——缺日历是「没算对」，不是
+  「放宽门槛」，所以不需要拦截请求。
+- 结果里加两个字段：`truncated_trading_days`（这段对照日跨了几个交易日）与
+  `n_eff_cap_unit ∈ {trading_days, decision_days, None}`。读到 `decision_days`
+  就意味着这个分母可能低估；一天都没截断时是 `None`（没算 ≠ 按决策日算）。
+- `_not_testable_remedy`：门槛写成交易日，再用实测节奏折回卡数——
+  `需要约 600 个交易日（按当前每 3.0 个交易日一张卡，约 201 个可评估日）`。
+- 判据函数 `_incremental_verdict` 也接这两个跨度，不只靠 `walk_forward`
+  传对参数：只修调用点，下个调用点就会绕过去。
+
+#### 三、验收
+
+- [x] 三种节奏的上限 = `交易日跨度 // H`（16 / 48 / 80），旧读数与 `step` 无关
+- [x] 逐日发卡时有无日历**逐位相同**（12 个字段全等）：真实回放 322 个可评估日、
+      `median/abs × window=60/250` 四个切片 `n_eff_incremental` 全是 13/13/3/3，
+      `verdict_incremental` 全是 `NO_INCREMENT × UNKNOWN`——**换单位没有翻动任何结论**
+- [x] 真实行情上改成每 3 个交易日一张卡：`w=30` 上限 3 → 11、`w=60` 2 → 6；
+      `w=250` 的补救句从「600 个可评估日」变成「600 个交易日 ≈ 201 张卡」
+- [x] 无日历时 `n_eff_cap_unit="decision_days"`，读数与改动前逐位相同
+- [x] 新增 `tests/test_decision_neff_units.py`（7 条）；把上限公式改回决策日，
+      其中 3 条立刻红
+- [x] 决策五个测试文件 `120 passed`（113 + 7）
+
+#### 四、这个修法没有解决什么
+
+- **门槛没有变松，只是换了单位。** `n_eff` 由「经过的交易日 ÷ H」决定，
+  不由卡数决定：稀疏发卡不减少单位时间里的证据，只减少卡数。`H=20`、每年
+  250 个交易日 ⇒ 12.5 个独立块／年，要到 30 仍是 2.4 年。所以单位修对之后，
+  面板上那个判定**依然在两年内出不了结论**——该动的是 H，或者把它撤下来。
+  修单位只是让这句话第一次说得准确。
+- **`window` 仍以决策日计数。** `sparse×3` 的 `window=60` 覆盖 180 个交易日，
+  与 daily 的 60 天不是同一段时间。这是**配置语义**（§9.16 特意选的），不是
+  统计量算错；要统一得改 API 契约，不在本节范围内。
+- **`reliable` 仍答非所问**（§9.23 最后一条）：回放四个切片全是 cap 值配
+  `reliable=True`。`n_eff_source ∈ {nw, fallback, contrast_cap}` 没做。
+- **`improvement_vs_clim` 的均值仍被恒等零摊薄**（§9.22）：句子已补上
+  「只看有对照的 k 天」的折算，字段本身没拆。
+
+### 9.25 「30 块」是结构问题，不是时间问题：H 扫描（2026-11-05）
+
+§9.24 的处方是「把 H 降到 8 以下」。那条处方默认 H 是可以为了功效随便拧的
+参数。H 是策略的**持有期**：改 H 就是改预测任务（5 日胜率能不能预测，与 20 日
+胜率能不能预测是两个命题），不是把同一件事量得更准。所以本节对每个 H 都用
+真实行情**重新结算一遍**，不是把同一份账本除以不同的 H
+（`scripts/probe_horizon_budget.py`）。
+
+#### 一、30 块要多少日历
+
+`n_eff = 交易日跨度 // H`，所以 30 块要 `30·H` 个**被截断**的交易日。窗口
+覆盖全部可见日时两个估计量恒等、一天对照都没有，预热期 `w` 不进证据：
+
+    T ≥ 30·H + w
+
+| H | 30·H | 一年（250 个交易日）够吗 |
+|---|---|---|
+| 20 | 600 | 不可能，窗口再短也不行 |
+| 10 | 300 | 不可能 |
+| 5 | 150 | 够，还剩 100 天留给窗口 |
+
+一年预算能容纳的最大 H = `250/30` = 8，且窗口必须为 0。**默认 `window=250`
+就是一年的预热期**：§9.24 的「2.4 年」没含这段，从零部署要 3.4 年。
+
+从**当前账本**（322 个可评估日，`w=60` 已有 262 个对照日）算，还差：
+
+| H | window | 需要 T=30H+w | 已有 | 还差 |
+|---|---|---|---|---|
+| 20 | 60 | 660 | 322 | 338 天 ≈ **1.4 年** |
+| 20 | 250 | 850 | 322 | 528 天 ≈ 2.1 年 |
+| 10 | 60 | 360 | 342 | 18 天 ≈ 1 个月 |
+| 10 | 250 | 550 | 342 | 208 天 ≈ 10 个月 |
+| 5 | 60 | 210 | 352 | 0，已越过（58 块） |
+
+这张表把「等两年」换成了一个可执行的实验：**H=10、`window=60` 的卡再发
+18 个交易日就能判定**，代价是换持有期——那是产品决定，不是统计决定。
+
+#### 二、真实账本（366 个交易日，2025-05-07 … 2026-11-05）
+
+| H | window | 可评估 | 对照日 | 块数 | `n_eff` | 改善 | `se` | `verdict × significance` |
+|---|---|---|---|---|---|---|---|---|
+| 20 | 60 | 322 | 262 | 13 | 13 | −1.77e−04 | 1.72e−03 | `NO_INCREMENT × UNKNOWN` |
+| 20 | 250 | 322 | 72 | 3 | 3 | −3.55e−04 | 2.25e−04 | `NO_INCREMENT × UNKNOWN` |
+| 10 | 60 | 342 | 282 | 28 | 28 | −1.56e−03 | 1.75e−03 | `NO_INCREMENT × UNKNOWN` |
+| 10 | 250 | 342 | 92 | 9 | 9 | −3.04e−04 | 2.04e−04 | `NO_INCREMENT × UNKNOWN` |
+| 5 | 60 | 352 | 292 | 58 | 58 | −9.28e−04 | 9.47e−04 | `NO_INCREMENT × **FAIL**` |
+| 5 | 250 | 352 | 102 | 20 | 20 | −4.10e−05 | 8.86e−05 | `NO_INCREMENT × UNKNOWN` |
+
+三条读数：
+
+- **H=20 上这份数据最多 18 块**（366 ÷ 20）。30 块不是「还没攒到」，是这份
+  历史**取不到**：再发 338 个交易日（1.4 年，`w=60`）才够。
+- 对照日 `72 = 322 − 250` 就是预热期的直接读数：默认窗口下第一年一天对照
+  都没有，`verdict_incremental` 只能是 `NOT_TESTABLE`。
+- 只有 H=5、`window=60` 越过 30 块（58 块），此时 `significance_incremental`
+  从 `UNKNOWN` 翻成 **`FAIL`**——它是唯一走到过判定的一次。
+
+#### 三、越过门槛之后看到什么
+
+H=5、`window=60`：改善 −9.28e−04，单侧 95% 区间 `[−2.49e−03, +6.29e−04]`；
+换 `basis=abs` 是 −1.53e−03、`[−3.09e−03, …]`。区间跨 0 ⇒ 不是「证明更差」，
+是「认证不了增量」。H=20 的 `abs` 口径是唯一正号（+1.66e−03，下界 −1.09e−03），
+13 块，同样不显著。
+
+**这两个字必须分清**：`significance_incremental=FAIL` 的语义是「测过了，
+下界不为正」（`settle.significance_of`），不是「增量为负已被证明」。
+
+#### 四、新字段 `se_incremental`
+
+把「不可判定」翻成「还差多久」只有一条路：门限 `z·se/√B`。而当时唯一的入口
+是 `skill_vs_clim_lcb`——4 位小数的**比值**，真实账本上落在 ±0.0004 的格子里，
+反解出的 `se` 误差可达 25%，正好把「还差两年」和「还差二十年」混成一个数。
+所以这个字段不是附赠品，它是这句翻译的分子。测试断言的是关系
+（`lcb = mean − 1.645·se` 与判定同号），不是数字。
+
+#### 五、没解决的
+
+- **H=5 的 FAIL 不是 H=20 的结论。** 它们检验的是两个不同的预测任务。可用的
+  直接证据只有：四个 H×basis 组合里三个点估计为负、一个为正且 13 块。
+- **窗口仍按决策日计数**（§9.16 的配置语义），预算表里的 `w` 因此也是决策日。
+- **面板还没用上这个结论。** 判定要么接受「H=20 在其生命周期内不出结论」并
+  撤下这一栏，要么只在 H≤8 的卡上展示。改哪一边是产品决定，不在本节范围。
+
+### 9.26 `verdict_incremental` 在平稳过程里恒为 FAIL（2026-11-05）
+
+§9.25 的落点是「H=10 + `window=60` 再发 18 个交易日就能判定」。那条推导只算了
+**什么时候可判定**（`n_eff ≥ 30`），没算**可判定的那一刻会不会过**。本节先给
+被检量的代数，再用发布代码在已知真值的 DGP 上跑功效，最后回真实账本对方向。
+
+结论先行：**它不是功效不够，是被检量的期望恒为负。** 加交易日只会把
+`UNKNOWN` 换成 `FAIL`，H=5/`w=60` 那 58 块给出 FAIL 不是策略差，是这个代数式的
+必然结果。
+
+#### 一、被检量的代数
+
+逐日逐 pick 的增量改善是
+
+    d_i = (p_clim - y)^2 - (p - y)^2
+
+其中 `p` 来自最近 `window` 个已结算决策日，`p_clim` 来自全部已可见决策日。把
+两者写成「真值 + 估计误差」`p = p* + e_w`、`p_clim = p* + e_c`，对 `y` 取期望：
+
+    (p_clim - p)(p_clim + p - 2y) = (e_c - e_w)(e_c + e_w) = e_c² - e_w²
+
+所以
+
+    E[改善] = σ_c² - σ_w²
+
+**与真实胜率 `p*` 无关**，只与两个估计量的方差有关。而窗口估计量用的样本更少
+（`window` 个决策日 vs 全部），`σ_w² > σ_c²` 恒成立 ⇒ `E[改善] < 0` 恒成立。
+
+更要紧的是极限行为：`T → ∞` 时 `σ_c² → 0`，而
+
+    σ_w² ≈ n_w·p(1-p) / (n_w + kappa)²
+
+**停在常数上**——窗口长度不变，它的方差就不会变小。于是改善量收敛到负常数，
+不是收敛到 0。平稳过程里 `P(PASS) → 0`，且**加数据使它更负**（`σ_c²` 变小）。
+
+读法：这一栏实际测的是「两个估计量谁更噪」，不是「近端有没有增量信息」。
+
+#### 二、发布代码上的功效（`scripts/probe_incremental_null.py`）
+
+DGP：`DAYS` 个决策日 ×每日 10 picks，`H=10`、`window=60`、`kappa=20`、
+`basis=median`（`p* = 0.5` 是精确零假设）。每格 `reps` 次独立重抽，直接调
+`pwin.walk_forward`，不复制公式。
+
+| 场景 | 解析 `σ_c²-σ_w²` | 实测均值 | 正值占比 | 可判定率 | PASS 率 |
+|---|---|---|---|---|---|
+| 平稳，360 日（reps=40） | −3.22e−04 | −1.85e−04 | 15% | 0% | **0%** |
+| 平稳，900 日（reps=10） | −3.63e−04 | −2.60e−04 | 0% | 100% | **0%** |
+
+900 日那行是关键：`n_eff` 已经过门槛（可判定率 100%），真胜率**恰好等于**
+0.5，判定仍然 10/10 都是 FAIL。实测比解析值轻 30%，因为 `σ_c²` 沿路径递减
+（早期几天样本少、偏差小），解析值取的是末端值。
+
+变点场景（900 日，最后 120 天把真胜率抬到 `0.5 + a`）：
+
+| a（真实胜率抬升） | 实测改善 | PASS 率 |
+|---|---|---|
+| 0.02 | −2.21e−04 | 0% |
+| 0.05 | −6.23e−05 | 0% |
+| 0.10 | +6.25e−04 | 0% |
+| 0.20 | +3.15e−03 | 40% |
+| 0.30 | +7.41e−03 | 100% |
+
+即：**要出 PASS，胜率得从 50% 持续抬到 80%。** 50% 功率点落在 `a ≈ 0.21`
+（在 0.20 的 40% 与 0.30 的 100% 之间插值）。
+
+#### 三、门槛比自己的检出下限低一个数量级
+
+`MIN_INCREMENTAL_EFFECT = 0.001`。改善量按 `a²` 折算，材料性门槛对应
+
+    a = √0.001 ≈ 3.2pp
+
+而 900 日（`n_eff ≈ 57`）的检出下限约 **21pp**。**门槛（3.2pp）比自己的检出
+下限（21pp）低 6–7 倍**，所以判定只会在 `UNKNOWN` 与 `FAIL` 之间摆动，`PASS`
+是名义上存在的状态：`MIN_NEFF=30` 保证「可判定」，不保证「可检出」，两件事
+在 §9.21–§9.25 里一直被当成一件。
+
+#### 四、真实账本只能当方向证据
+
+§9.25 表里六个格子全为负，与代数同号。但幅度对不上：`H=20/w=250` 实测
+−3.55e−04，该格解析值约 −2.4e−05（`n_w ≈ 2250` picks、`n_c ≈ 2900`），差一个
+量级。说明真实账本里「估计量方差差」与「近期真的变差」混在一起，**这个检验
+分不开两者**。所以真实数据只支持方向，不支持定量。
+
+#### 五、§9.25 的 18 天计划因此作废
+
+它回答的是「什么时候可判定」，不是「可判定时能不能过」。按上表，判定的那
+一刻最可能的输出是 `NO_INCREMENT × PASS`，也就是 **FAIL**。H=5/`w=60` 用
+58 块演示过一次，不是运气。
+
+#### 六、出路（都没实现）
+
+1. **偏差校正**：把被检量换成 `mean(d) - (σ_c² - σ_w²)`，零假设回到 0。改动
+   只在一处（`_mean_se_lcb` 的调用点），但 `improvement_vs_clim` 的语义变了，
+   旧卡上的数不可比。
+2. **换个问题**：这一栏实际在问「近端和全史一样吗」，那就改名成变点检测
+   （CUSUM / Page），按变点检验给零分布，而不是按 skill 给门槛。
+3. **撤栏**：`verdict`（相对常数先验）是良定义的检验，`significance` 也良定义；
+   撤掉增量这一栏，面板少一个永远红着的灯。
+4. 若保留又不校正，`MIN_INCREMENTAL_EFFECT` 必须抬到 MDE 之上，否则是装饰。
+
+#### 七、验收
+
+- [x] 解析式与 DGP 实测同号、同量级（−3.63e−04 vs −2.60e−04）
+- [x] 平稳 DGP 在可判定率 100% 时 PASS 率 0/10（900 日）
+- [x] 变点 DGP 给出功效曲线（`a=0.20` → 40%，`a=0.30` → 100%）
+- [x] 真实账本六格符号全负，与代数同向
+- [x] 偏差校正 / 改名 / 撤栏：三选一 → §9.27 用同一判据把前两个否掉了
+- [ ] `estimate()` 与 `/pwin` 仍未透传 `se_incremental`——但按本节，**先不要**
+      把它接成「还差 N 天」倒计时：那个 N 是到达 FAIL 的日期
+
+#### 八、没解决的
+
+- **真实账本的偏差项没有独立估计**：要分离「方差差」与「真的变差」，得拿到
+  逐日 `p` 与 `p_clim` 序列；`walk_forward` 没有把它们暴露出来。
+- **组内相关没有进代数**：DGP 里同日 picks 独立，真实同日 picks 同涨同跌。
+  它放大 `σ`，不改变 `E[d]` 的符号，但会改功效曲线的位置。
+- **全量测试的 E 块仍未定位**（§9.25 遗留）。本轮跑到 35% 时已有 8 failed /
+  4 errors，与「4 failed」的读数不一致；`TMP`/`TEMP` 被指到仓库内是这轮的
+  变量，不能据此判断 HEAD 基线。
+
+### 9.27 三个乘数：门槛、路径平均、设计效应（2026-11-05）
+
+§9.26 证到 `E[d] = σ_c² - σ_w² < 0`，但留下的三条出路都默认「换掉被检量或门槛
+就能救」。本节把四个统计量放在**同一条判据**下（假警固定 5% 时的 MDE），结论是：
+
+**不是统计量的错。** 门槛、路径平均的稀释、持有期重叠的设计效应，三个乘数乘在
+一起，把 `PASS` 推到了 20pp 的胜率抬升之外。换哪个统计量都搬不动 20pp。
+
+#### 一、判据
+
+    MDE(80%) = 让检出率达到 80% 所需的最小真实胜率抬升 a
+
+每个统计量的门槛取它自己在**平稳 DGP 上的 95 分位**（size 由构造固定为 5%），
+所以列间可比的是信息量，不是谁的门槛更松。四个被告：
+
+| 代号 | 被检量 | 出处 |
+|---|---|---|
+| A | `mean(d)`，`d = (p_clim-y)² - (p-y)²` | 现行实现 |
+| B | `mean(d - (σ_c²-σ_w²))`，逐日 plug-in | §9.26 出路 1 |
+| C | window vs 窗口之前的计数，两比例 z | 经典同质性检验 |
+| D | Page CUSUM，逐日标准化命中数 | §9.26 出路 2 |
+
+A/B 是**全程路径平均**（现行口径），C/D 是**末端读数**。这个差别本身是结果。
+
+自检：自建重放与 `pwin.walk_forward` 逐位对齐（900 日账本，`improvement_vs_clim`
+差 5e-7，可评估日 888 对 888）。
+
+#### 二、结果（`scripts/probe_incremental_power.py`）
+
+DGP：900 决策日 × 10 picks，`H=10`、`window=60`、`kappa=20`、`p*=0.5`，
+变点在最后 120 天。`overlap` 让持有期共享行情冲击（`ρ` 是行情因子占 latent 的
+方差份额），代价是相邻决策日的结果相关——**这才是真实账本的形状**。
+
+| DGP | 600 条 pick ≈ 几个独立观测 | 信息下限 | A | B | C | D |
+|---|---|---|---|---|---|---|
+| `iid`（ρ=0） | 600 | 5pp | 8pp | 8pp | 8pp | 10pp |
+| `overlap` ρ=0.3 | 31（设计效应 19×） | 23pp | >30pp | >30pp | 30pp | >30pp |
+| `overlap` ρ=0.6 | 13（设计效应 46×） | >30pp | >30pp | >30pp | >30pp | >30pp |
+
+三张表的 size 行都是 5%（构造保证），所以表里比的是功率。
+
+两条对 §9.26 出路的直接判决：
+
+1. **A 与 B 几乎逐格相同**（唯一差异是 `a=0.02` 处 15% 对 14%，来自 plug-in
+   方差的抽样噪声）。偏差校正是把被检量平移一个常数，而门槛校准也平移同一个
+   常数——两者是同一个检验。**出路 1 买不到任何功效**，它买到的是「零假设回到
+   0」这个说法本身，不是检出能力。
+2. **D 从未优于 C**，ρ=0.6 时 28% 对 78%。CUSUM 的零分布是**路径最大值**，
+   在强自相关下比末端两比例宽得多；改名成变点检测是换了个更钝的尺子。
+   **出路 2 被实测否掉**，不是「没试过」。
+
+#### 三、三个乘数
+
+以 `iid`/900 日那一格为例（`se_incremental = 2.17e-4`）：
+
+| 乘数 | 实测 | 后果 |
+|---|---|---|
+| 门槛 | `mde = 0.001 + 2.486·se = 0.00154`，是门槛的 **1.5 倍** | 判定要求真实改善 ≥ 0.00154 |
+| 路径平均稀释 | 888 个评估日里只有 120 天带信号（**7.4 倍**） | 单日改善被摊成 1/7.4 |
+| 设计效应 | 600 条 pick ≈ 13–31 个独立观测（**19–46 倍**） | `se` 比掷币公式大 4–7 倍 |
+
+三者相乘，就是实测的功效曲线：`a=0.10` → PASS 0%，`a=0.20` → 16%，`a=0.30` → 100%。
+**要过门槛，胜率得从 50% 持续抬到 80%**——与 §9.26 的读数一致，但现在知道它由
+三个可分离的原因构成，而不是一个「代数式恒为负」。
+
+**§9.26 的「门槛比检出下限低 6–7 倍」在 Brier 单位上其实是 1.5 倍。** 那个 6–7
+是 pp 单位上的比（3.2pp 对 21pp），而 pp 与 Brier 的换算要除以「变点覆盖的账本
+比例」再开方。把两个单位混在一起会高估门槛的罪过：**真正把 PASS 推远的是稀释和
+设计效应，门槛只是第三名。**
+
+#### 四、判决
+
+- **出路 1（偏差校正）**：功效零增益（实测逐格相同），只是把 0 从 −3e−4 挪回 0。
+  要做也可以，但它不解决任何问题——**否**。
+- **出路 2（改名成 CUSUM）**：在三种 DGP 下都不优于末端两比例，强重叠下显著更差。
+  **否。**
+- **出路 3（撤栏）**：唯一与证据一致的方向。`verdict`（相对常数先验）是良定义的
+  检验，撤掉增量这一栏，面板少一个永远红着的灯。
+
+落地分两步：本轮只做**分辨率**（`mde_incremental` + 句子），不动判定语义——
+删字段要改 35 处断言、且 `verdict_incremental` 是封进卡片的字段（改值会改旧卡的
+可读性），那是独立一轮的事。
+
+#### 五、本轮改了什么
+
+- `pwin.MIN_INCREMENTAL_EFFECT` 旁新增 `_MDE_Z = 1.645 + 0.842` 与推导。
+- `walk_forward` / `estimate` 新增 `mde_incremental = 门槛 + 2.486·se`；检验没跑
+  时为 `None`（**不是**「等于门槛」）。
+- 两个 `NO_INCREMENT` 分支的句子都带上分辨率：
+  「要让下界过 0.001，真实改善需 ≥ 0.001539（门槛的 1.5 倍），低于它的增量这个
+  样本分辨不出来」。样本不足（`INCREMENTAL × UNKNOWN`）那一支也印——那里既没
+  分母也没分辨率，读者手上只剩一个负号。
+- 新增 `scripts/probe_incremental_power.py`（四统计量 + 两 DGP + MDE）。
+- 新增 5 条测试：同源、未跑时为 `None`、句子里有分辨率、随账本增长单调下降、
+  `estimate()` 透传。
+
+**没有改**：`verdict_incremental` / `significance_incremental` 的三态语义、
+门槛值、`MIN_NEFF`。
+
+#### 六、验收
+
+- [x] A 与 B 的检出率逐格相同（三张表）
+- [x] D 不优于 C（三种 DGP），ρ=0.6 时 28% 对 78%
+- [x] 设计效应实测 19.3 / 45.5（不是假设值）
+- [x] `mde_incremental` 与 `se_incremental` 同源（测试钉住）
+- [x] 检验没跑时 `mde_incremental is None`
+- [x] `NO_INCREMENT` 的句子自带分辨率（测试钉住）
+- [x] 决策相关测试 128 passed（`-k decision`；其中新增 5 条）
+- [ ] 撤栏（删 `verdict_incremental` / `significance_incremental`）未做
+
+#### 七、没解决的
+
+- **真实账本的 DEFF 没测过**。要测它只需要逐日命中数与 pick 数，现在
+  `walk_forward` 不暴露这两个序列。这是把本节从「模拟」推到「诊断」的唯一缺口。
+- **重叠模型是参数化的**（ρ=0.3/0.6 两档），真实值未知。ρ 越小结论越轻：ρ=0 时
+  8pp 就够，ρ=0.6 时 30pp 都不够。所以「要不要撤栏」在 ρ<0.2 的世界里可以缓一缓。
+- **`mde_incremental` 是路径平均尺度的数**，不是 pp。换算成胜率抬升要除以
+  「变点覆盖的账本比例」再开方；同一个 0.00154 在全程变点下是 4pp，在末 1/7
+  变点下是 15pp 起。报字段时不换算，正是不想把两个单位再混一次。
+- 全量测试的 E 块仍未定位（§9.25 遗留）。
+
+
+### 9.28 独立复核：6.9 是真的，但它不是「零分布形状」的全部（2026-11-05）
+
+§9.27 的表格有一个方法论缺口：每个统计量的门槛都取**它自己在同一 DGP 上的
+95 分位**，于是 size 被构造固定为 5%，表里只剩功效。它回答「谁更灵敏」，
+不回答三件更要紧的事：
+
+1. 零分布的**刻度**对不对（上线时门槛是常数，不是每格现算的）；
+2. 那个 6.9 是 DGP 的产物还是账本的性质；
+3. 修正 CUSUM 的标准化能不能救回功效。
+
+本节用 `scripts/probe_statistic_null.py`（三 DGP × 七统计量 × 名义门槛）和
+`scripts/probe_real_deff.py`（真实账本的矩）独立复核。**结论方向没变，但
+归因和数字变了三处，其中一处推翻 §9.27 的措辞。**
+
+> 同日第二轮：MDE 的**单位**（γ0 被写成 p(1−p)）、**分母**（vs 其余 还是
+> vs 全历史）与**地板**（w 固定时 n→∞ 的极限）三处再改，第二节与末段已按
+> 新读数重写；公式本身的验收见第九节，配对表的计数见第十节。
+>
+> 样本固定：本节所有读数对应 **n=325（2025-06-05 … 2026-09-30）**。缓存会
+> 随行情同步增长（复算时已 326 天），复跑要加 `--nmax=325`，否则 momentum
+> 的 15.9 会变成 16.0、low 的 25.7 会变成 26.1。可复现性是这一节的前提。
+
+#### 一、6.9 复现了，而且不是模拟的产物
+
+把门槛换成**常数**（iid 零分布的 95 分位，等价于上线时定死一条线）：
+
+| DGP | z 的零分布 sd | 门槛 5% 时的实际 size |
+|---|---|---|
+| `iid` | 0.97（=1，自检通过） | 5% |
+| `overlap` ρ=0.6 | **6.79** | **44%** |
+| `surrogate`（真实账本分块重抽） | **5.98** | **43%** |
+
+`surrogate` 不假设任何机制：把真实账本的日胜率按 40 天一块循环重抽，保留
+实测自相关，其它一概不管。它给出 5.98，与参数化的 6.79 只差 12%。**所以
+「sd 不是 1」不是 ρ=0.6 这个选择的产物**——真实序列本身就坐在那一档。
+
+这条读数的后果比 §9.27 写的更硬：`verdict_incremental` 用的不是 z，但
+**任何拿 iid 二项当分母的统计量**（包括面板上任何「命中率 ±1.96·se」的
+展品）在这个账本上的实际误报率是 5% 的**九倍**。不是「偏保守」，是反的。
+
+#### 二、真实账本的 DEFF：从假设变成读数
+
+`scripts/probe_real_deff.py` 读 `data/.probe_per_day.json`（真实行情重建的
+325 个决策日 × 20 picks × H=20，四个策略）。
+
+**先定分母。** 旧版把 `h=n−w` 传进 `mde_two_prop`，算的是窗口对**其余**
+n−w 天；而 `walk_forward` 的 `p_clim` 是**全部**可见日，包含窗口本身。
+两者的差值差一个因子：`D_全 = (1−w/n)·D_其余`，方差差 `(1−w/n)²`。所以
+同一份读数有两个口径，句子必须写清用哪个：
+
+- `vs 其余`（`h=n−w`）：旧版和 `mde_two_prop` 实际算的那个；
+- `vs 全历史`（`p_clim` 的定义）：前值 ×`(1−w/n)`，w=60、n=325 时 ×0.815。
+
+| 策略 | 胜率 | 日 sd | acf lag1 | DEFF(w=60) | n_eff | MDE vs 其余 | MDE vs 全历史 | 块重抽(vs 其余) |
+|---|---|---|---|---|---|---|---|---|
+| momentum_20 | 0.384 | 0.1875 | 0.82 | 9.2 | 6.5 | 19.5 | **15.9** | 19.9 |
+| reversal_20 | 0.468 | 0.1694 | 0.68 | 4.6 | 13.1 | 12.7 | **10.3** | 16.6 |
+| low_turnover | 0.519 | 0.2616 | 0.88 | 10.8 | 5.5 | 31.6 | **25.7** | 31.1 |
+| high_turnover | 0.286 | 0.1499 | 0.72 | 8.3 | 7.2 | 15.2 | **12.4** | 14.0 |
+
+三个读数：
+
+- **37–60pp 是单位错，不是读数。** 旧公式把 `v=p(1−p)`（逐 pick 方差）
+  当成 `γ0`（日胜率方差），等于把 w 天当成 w 条独立 pick：漏了每天 m 条的
+  稀释（`/m`）和日内相关（`DEFF(1)`），两项合起来把隐含 se 退化成**单日**
+  sd（momentum 0.1905 vs 实测 0.1875）。修正后是 **10.3–25.7pp
+  （vs 全历史）/ 12.7–31.6pp（vs 其余）**；旧值高估 2.3–3.7×（前者）
+  或 1.9–3.0×（后者）。结论不变：仍是 3.2pp 目标的 5–8 倍。
+- **`window=120` 的「全部改善」是分母的算术，不是发现。** 两种口径下
+  w=120 的 MDE 都低于 w=60（vs 其余 13.9/9.1/26.6/12.3 vs
+  19.5/12.7/31.6/15.2），**4/4，没有反转**——会反转的是 DEFF 本身：
+  low 10.8→12.0、high 8.3→8.7，这两档的序列并没有变得更可估，改善全部
+  来自 w 翻倍。而 `vs 全历史` 的 MDE 对 w **单调递减**：w→n 时
+  `(1−w/n)→0`，MDE→0。
+  也就是说 w=200、w=250 会「更好」，那只是窗口吞掉了对照。同一账本在
+  `vs 其余` 下才有内点（四个策略都在 120–160 天附近最低）。所以「w 应当等于 120」不成立，
+  §9.27 把「窗口太短」记到设计效应头上这笔账也要撤——窗口该由样本外的
+  净收益或预注册的对照定义来选，不由 MDE 选。
+- **「平台 DEFF 远大于 acf」也不成立。** 同口径比较（分块 DEFF 对
+  acf×日内膨胀）：B=20 时比值 0.77–1.47，B=60 时 1.29–1.85。旧文写的
+  「1.3–1.4×」是对 B≥20 那条**仍在上升**的曲线取平均得到的，而 B≥40
+  只有 4–8 块，χ² 区间跨 2–3 倍。能说的只有「分块曲线到 B=80 仍在上
+  升，含真实漂移」；幅度不可判定，见第五节。
+
+> **复核补记（同日，n=325）。** B=20 的「0.77–1.47」复现不出来。按本脚本
+> 的口径（连续块、块均值方差 ÷ `v/(B·m)`、acf 侧乘 `γ0·m/v`）重算，四个
+> 策略是：
+>
+> | B | momentum | reversal | low | high |
+> |---|---|---|---|---|
+> | 20 | 0.89 | 0.94 | 0.92 | 0.96 |
+> | 40 | 1.36 | 0.62 | 0.98 | 1.51 |
+> | 60 | 1.85 | 1.38 | 1.29 | 1.35 |
+>
+> **符号不稳定出现在 B=40（0.62–1.51），不在 B=20。** B=20 时四个都低于 1，
+> B=60 时四个都高于 1，交叉点在 B≈40。结论不变（曲线到 B=80 仍上升、
+> 幅度不可判定），但归因要从「B=20 就正负不定」改成「短块一致低估、
+> 长块一致高估，交叉点在 40 附近」。B=60 那一档逐位复现。
+
+#### 三、CUSUM：修好刻度只买到 validity，买不到 power
+
+`probe_incremental_power.py` 的 `D` 除以逐日方差 γ0，而路径方差是 n·LRV
+= n·γ0·DEFF。于是门槛被放大 √DEFF 倍。新增 `D_lrv`（除以截断核 LRV）：
+
+| | 名义门槛 size | MDE(80%) |
+|---|---|---|
+| D（γ0） | **92–97%** | >30pp |
+| D（LRV） | **2–4%** | >30pp |
+
+**这不是「换了个更钝的尺子」，是尺子的刻度错了。** 修好之后 size 回到 5%
+以下（略保守），但 MDE 一格没动——因为约束不在刻度，在「对 780 个候选变点
+取最大值」这个动作：多重比较惩罚随路径长度增长，而 C 只比一个位置。
+
+**但 §9.27 说「D 从未优于 C」也过头了。** 变点位置一变，排序就翻：
+
+| DGP | 变点位置 | C 检出 | D 检出 |
+|---|---|---|---|
+| overlap | 末端 120 天 | 44% | **14%** |
+| overlap | 中段（400 起） | 18% | **51%** |
+| surrogate | 末端 120 天 | 40% | **6%** |
+| surrogate | 中段（400 起） | 18% | **28%** |
+
+C 是「末端 vs 历史」的**匹配检验**：变点在末端时它就该赢。D 是「路径上某处」
+的检验：变点不在末端时它才赢。两者不是钝与利，是**问的不是同一个问题**。
+账本要问的是前者（「这个 window 还有没有增量」），所以选 C 是对的；但理由
+要改成「C 与问题匹配」，不是「C 更利」。
+
+#### 四、分块长度必须等于相关长度，不是持有期
+
+| 统计量 | size（overlap） | size（surrogate） |
+|---|---|---|
+| E：按 H=10 分块 | 14% | 15% |
+| E40：按 40 分块 | **4%** | **7%** |
+
+按 H 分块只消掉持有期重叠，消不掉更慢的那一层（实测 acf 到 lag 40 仍有
+0.1 量级）。**「不重叠块 = 独立观测」这个等式只在块长 ≥ 相关长度时成立。**
+§9.27 的「600 picks ≈ 6 块」用的是 H=10 分块，那个 6 是下界；按 40 天分块
+是 15 块，但每块内部仍相关——真实 n_eff 见第二节，5.5–13。
+
+#### 五、这一节没能解决的，以及为什么它不改变结论
+
+- **DEFF 含真实漂移，所以它是这份序列的方差，不是「保守假设」。** 零假设
+  要求 p 不随时间变，而真实序列的 p 确实在变。观测到的自相关无法区分
+  「重叠/同股票」与「边际在漂」，账本里也没有持仓明细或重复实验能分开。
+  把漂移拆掉会得到一个更小的 DEFF，但那等于换零假设（允许边际漂移），
+  不是同一个检验。所以第二节的 15.9–25.7pp 是这份账本在现行定义下的刻度，
+  不能再当成「可以打折的上界」。
+- **`surrogate` 的 A 不可比。** 分块重抽保的是日级序列，重抽不出逐 pick 的
+  离散性，所以 Brier 那一列在 surrogate 行留空（打印 `—`），不硬凑。
+- **没做**：把 `daily_hits` / `daily_picks` 接进 `/pwin` 的响应。字段已在
+  `walk_forward(with_daily=True)` 上，但 `estimate()` 不透传——一张卡存
+  300–900 个整数会撑大契约，而唯一的下游是离线诊断。
+
+#### 六、本轮改了什么
+
+- 新增 `scripts/probe_statistic_null.py`：三 DGP（iid / overlap / 真实分块
+  重抽）× 七统计量 × **常数**名义门槛，另加变点位置与窗口扫描。
+- 新增 `scripts/probe_real_deff.py`：真实账本的 acf、分块方差曲线、DEFF、
+  n_eff 与 MDE，四个策略逐条打印。
+- `pwin.walk_forward` 新增 `with_daily`：返回 `daily_hits` / `daily_picks`
+  （与 `evaluated` 同序）。默认 `None`，`estimate()` 不透传。
+- `probe_incremental_power.py` 的 CUSUM 新增 `scale="lrv"`，表格加 `D_lrv`
+  一列；两个口径并排，刻度差异可读。
+- 新增 2 条测试：逐日序列与 `oos_days` 同长、默认不返回；样本不足时为 `None`。
+
+同日复算（第二轮，单位错之后）：
+
+- `probe_real_deff.py`：`mde_two_prop` 改吃 `γ0 = Var(日胜率)`，`v=p(1−p)`
+  只保留给 DEFF 的基线；新增 `block_sd()`（40 天循环块、固定种子）与
+  「vs 其余 / vs 全历史」双列。
+- 新增 `probe_mde_truth.py`：AR(1) 已知 DGP，γ0 与 acf 闭式，20k 次对比
+  解析 se 与模拟 se，两个口径各一条判定带。
+- 新增 `probe_paired_diff.py`：6 对策略的逐日差分，HAC（截断核、lag=40、
+  LRV≥γ0）与 40 天块重抽两种 se 并排，附带名义/ Bonferroni 两行计数。
+
+#### 七、验收
+
+- [x] iid 下 z 的 sd = 0.97（自检），名义 5% 的实际 size = 5%
+- [x] 重叠下 z 的 sd = 6.79，真实分块重抽下 = 5.98（相差 12%，不是参数产物）
+- [x] 真实账本 DEFF(w=60) = 4.6–10.8；MDE = **15.9–25.7pp（vs 全历史）**
+      / 19.5–31.6pp（vs 其余）；块重抽 14.0–31.1pp，解析/重抽 0.76–1.08
+- [x] `window=120` 在两种口径下都低于 `window=60`，但 `vs 全历史` 对 w
+      单调（w→n 时 →0）⇒ **不作为选窗依据**，原验收条废除
+- [x] CUSUM 换 LRV 后 size 从 92–97% 回到 2–4%，MDE 不变
+- [x] 变点在中段时 D 优于 C（51% vs 18%），在末端时反之（14% vs 44%）
+- [x] 按 40 分块的 size（4–7%）优于按 H 分块（14–15%）
+- [x] 已知 DGP 蒙特卡洛：解析/真值 = 1.007（ρ=0.68）/ 1.006（ρ=0.82），
+      两个口径都在 [0.95, 1.05]；`test_decision_mde_truth.py` 4 条钉住
+- [x] 配对差分：名义 p<0.05 为 **5/6**（HAC 与块重抽一致），Bonferroni
+      p<0.0083 为 **3/6**，恰好是 |t|>3.5 的三对
+- [x] `pytest -k decision` 全绿（新增 2 + 4 条）
+
+#### 八、对 §9.27 的三处更正
+
+1. **「D 从未优于 C」→「D 在末端变点上劣于 C，在中段变点上优于 C」。**
+   前者是匹配检验的必然，后者是扫描统计量的主场。理由要写成「问题匹配」。
+2. **「6–7 倍」的更正只说对了一半。** §9.27 说那是 pp 与 Brier 的单位混用，
+   对的；但**真正把 PASS 推远的是设计效应**。不过实测值比 §9.27 用的
+   「>30pp」**更小**，不是更大：15.9–25.7pp（vs 全历史）——方向上 §9.27
+   是保守的。真正的高估不在这条，在 MDE 的单位（见第二节）。
+   门槛的 1.5 倍在三者里仍然排第三。
+3. **「600 picks ≈ 13–31 个独立观测」在真实账本上是 5.5–13 个（按天），
+   折算成 picks 是 110–260 条。** 数量级对，但 §9.27 那个 13 是模拟值，
+   不是读数——现在有读数了。
+
+**判决不变：撤栏。** 但依据从「模拟显示 ρ=0.6 时 30pp 都不够」换成
+「真实账本四个策略的 MDE 是 **15.9–25.7pp（vs 全历史）**，是 3.2pp 目标的
+5–8 倍」。§9.25 那条「再攒样本就能判定」的路线，在 H=20 上**没有解**，
+而且理由比原文更硬：
+
+- `vs 其余` 口径下 MDE 有地板：w=60 固定、n→∞ 时收敛到 18.2 / 11.6 /
+  27.6 / 13.9pp。当前 19.5 只是「h 还不够大」带来的一点点加成，攒到无限
+  历史也只降到 18.2。
+- `vs 全历史` 口径下方向是**反的**：MDE 随 n **上升**，momentum 从 325 天的
+  15.9 → 5,000 天的 18.1 → 上确界 18.2。因为 `p_clim` 含窗口本身，历史越长，
+  窗口在对照里的权重越小，`(1−w/n)` 越接近 1。所以「再攒历史」不会让这个
+  数变小，只会让它变大。
+- 原文的「~7.9 万个决策日（约 300 年）」和按 `vs 全历史` 反平方缩放得到的
+  「3,400–21,000 天（13–83 年）」都是把一条**上升**曲线当下降曲线解出来的。
+  方程 `MDE=3.2pp` 在这里唯一的解是 n≈62–66，即 w=60 时对照样本只剩
+  2–6 天——那里差值本身趋于 0，不是「攒够了」。
+
+这不是时间问题，是这个问题在这个账本上不可回答。要让它可回答，得换
+估计量（配对差分，见第十节）或换问题（净收益、预注册目标），不是加样本。
+
+#### 九、MDE 公式的验收：已知 DGP，不是账本
+
+第二节的四个数是**样本矩代进公式**得到的，公式本身一直没被单独验过。
+拟议的验收条是「解析/块重抽 ∈[0.85,1.15]」，这条在 reversal 上会
+直接失败（12.7/16.6 = 0.76），但失败的不是公式：n=325、L=40 只有 8 块，
+bootstrap sd 自身的相对误差约 27%，±15% 的带子比估计量的噪声还窄。
+把实现细节当验收标准，得到的是「块长选得好不好」，不是「公式对不对」。
+
+换成已知真值的 DGP：AR(1)，`γ0=1`、`ρ^k` 都是闭式，n=325、w=60、20k 次，
+两个口径各测一次。解析式仍是 `γ0(DEFF_w/w + DEFF_h/h)`，`vs 全历史`
+再乘 `(1−w/n)`：
+
+| ρ | 口径 | 解析 se | 模拟 se | 解析/真值 |
+|---|---|---|---|---|
+| 0.68 | vs 其余 | 0.3216 | 0.3195 | **1.007** |
+| 0.68 | vs 全历史 | 0.2622 | 0.2605 | **1.007** |
+| 0.82 | vs 其余 | 0.4381 | 0.4352 | **1.006** |
+| 0.82 | vs 全历史 | 0.3572 | 0.3549 | **1.006** |
+
+三件事被钉住：
+
+- **公式代数是对的。** 真实账本的 0.76 是估计噪声（8 块）或长程依赖，
+  不是公式错。判定带 `[0.95,1.05]` 放在 MC 上，`test_decision_mde_truth.py`
+  用 4,000 次就能稳定通过（sd 的相对误差约 1.1%）。
+- **单位错会被同一个带子抓住。** 把 `γ0` 换回 `p(1−p)`，se 被放大
+  `sqrt(v/γ0)=2.6` 倍（momentum：0.2366/0.0352），比值直接落到 2.6。
+  这条写成回归测试，改回去就红。
+- **一个没验的边界**：解析式忽略了窗口与「其余」的协方差。AR(1) 下这项
+  只有方差的约 1%（ρ=0.82、w=60 时 0.0016 vs 0.154），所以 1.006 成立；
+  换成长记忆或强趋势 DGP 时这项不再可忽略，公式要重推。这不是现在的账本。
+
+#### 十、配对差分：名义 5/6，校正后 3/6
+
+`probe_paired_diff.py` 把 6 对策略的逐日胜率差做成表。两条 se 并排：
+HAC（截断核、lag=40、`LRV≥γ0`，与 `settle.hac_lcb` 同约定）和 40 天
+循环块重抽（固定种子）：
+
+| 对照 | Δ(pp) | se_HAC | se_块 | t_HAC | p_HAC | Bonferroni |
+|---|---|---|---|---|---|---|
+| momentum − reversal | −8.37 | 3.50 | 4.03 | −2.39 | 0.0166 | 否 |
+| momentum − low | −13.43 | 5.31 | 6.70 | −2.53 | 0.0114 | 否 |
+| momentum − high | +9.86 | 2.77 | 2.86 | 3.56 | 0.0004 | **是** |
+| reversal − low | −5.06 | 2.89 | 6.02 | −1.75 | 0.0796 | 否 |
+| reversal − high | +18.23 | 1.76 | 2.84 | 10.36 | <0.0001 | **是** |
+| low − high | +23.29 | 5.67 | 5.67 | 4.11 | <0.0001 | **是** |
+
+**「4 对过关」在任何一种规则下都复现不出来。** 名义 p<0.05 是 5/6
+（HAC 与块重抽都给 5），按 6 次 Bonferroni（p<0.0083）是 3/6，恰好是
+|t|>3.5 的那三对。三对的 Δ 分别是 9.9 / 18.2 / 23.3pp，另两对贴线
+（p=0.017/0.011），换块重抽后走到 0.038/0.045——仍在 0.05 内，
+但已经没有余量，任何一次多重比较校正都会把它们拿掉。
+
+两条 se 的差也不是固定的 0.1–0.5pp：本表是 0.0–3.2pp，随 HAC 带宽在
+L=20…108 之间移动。reversal−high 上 L=40 给 1.76、块给 2.84，t 从 10.4
+掉到 6.4——差 1.1pp 就够改一个结论的措辞。
+
+**配对买到的是分母，不是排名。** 与「两个水平各自 HAC 再相加」相比，
+配对只把 se 压到 0.96–1.78 倍；看起来的 3–4 倍来自把「策略间差分」和
+「窗口对历史」两个不同估计量放在一起比。这张表能支撑的是「配对差分的
+se 在 1.8–6.7pp」，不能支撑「A 比 B 好」——`low` 与 `high` 的 universe
+几乎不重叠，23pp 的差是换了股票，不是方法优劣。
+
+**仍未做**：删 `verdict_incremental` / `significance_incremental`（91 处引用、
+0 前端）。没有 gate，所以这不是统计问题，是信息价值问题。3.2pp 这个目标
+已经换成 `docs/decision-target-prereg.md` 里的两个锚：**成本 19bp（经济门槛）
+与 200bp（下一段样本的可确认效应）**；0.001 Brier 只保留为预测质量门槛，
+不再用于样本量。在有人认领之前，字段留着。
+
+#### 十一、换估计量：净收益口径把「无解」变成「差 10–31 倍」（2026-11-05 追加）
+
+第九、十节仍在胜率口径里。胜率不是经济目标：`0.001` Brier 的开方是 3.2pp，
+而成本是 19bp/往返——单位不同，也没有换算关系。`probe_window.py` 现在同时
+写连续 `exc`（对截面中位数的 20 日超额），`probe_net_diff.py` 据此算每笔 bp：
+
+| 策略 | 均值(bp) | se_块 | MDE(80%) | 净 LCB | MDE/成本 | p | Holm | 判定 |
+|---|---|---|---|---|---|---|---|---|
+| momentum | +43.2 | 236.7 | 588 | −329 | 31.0 | 0.457 | 0.457 | UNRESOLVED |
+| reversal | +122.0 | 81.4 | 202 | −29 | 10.7 | 0.100 | 0.200 | UNRESOLVED |
+| low_turnover | +185.2 | 86.4 | 215 | +27 | 11.3 | 0.027 | 0.081 | ECON+（校正后不成立） |
+| high_turnover | −405.5 | 148.9 | 370 | −661 | 19.5 | 0.002 | 0.008 | ECON− |
+
+成本 19bp = 佣金 2bp×2 + 滑点 5bp×2 + 卖出印花 5bp；块重抽 B=40、5% 分位
+单侧，p 由重抽分布直接数（不用正态近似，这个分布是偏的）。
+
+**但上表的基准是全样本中位数，而被选中的 20 只并不在成交额中位**：
+momentum 0.90、reversal 0.59、low 0.48、high 0.93。把基准换成**同一成交额
+五分位内的中位数**，同一批 picks 的读数变成：
+
+| 策略 | 成交额分位 | vs 全样本 | se | vs 同层 | se | t(同层) |
+|---|---|---|---|---|---|---|
+| momentum | 0.90 | +43.2 | 236.7 | **+192.8** | 157.7 | 1.22 |
+| reversal | 0.59 | +122.0 | 81.4 | **+194.5** | 81.0 | 2.40 |
+| low_turnover | 0.48 | +185.2 | 86.4 | **+212.1** | 97.6 | 2.17 |
+| high_turnover | 0.93 | −405.5 | 148.9 | **−251.3** | 115.1 | −2.18 |
+
+**基准一换，四个读数位移 27–155bp，符号不变、幅度和显著性都变**：high 的
+−405 缩到 −251（t 从 −2.72 到 −2.18），reversal / low 从 t=1.50 / 2.14
+升到 2.40 / 2.17，momentum 的 +43 变成 +193（仍不显著）。位移量与 MDE
+同阶，说明**效应量本身对基准选择敏感**——「5–8 倍目标」这类幅度陈述
+不能只报一个基准。
+
+五个读数：
+
+- **分辨率是成本的 10–31 倍。** 20 只/日、20 日重叠，325 天只有约 16 个
+  独立块。要分辨「刚过成本」的 19bp，reversal 需约 3.7 万天、momentum
+  约 31 万天；要确认观测到的 122bp，reversal 累计约 890 天。**同一份账本，
+  「确认大效应」可行，「确认刚过成本的效应」不可行**——这两件事必须
+  分开说，pre-reg 的 19bp/200bp 就是这个区分。
+- **唯一在 Holm 校正后站得住的是 high_turnover 的负号，但它不是「信号
+  好坏」。** 全样本 −405（t=−2.72、Holm 0.008），同层 −251（t=−2.18、
+  边缘）；幅度掉 38%，其中一部分是流动性 beta，剩下的仍可能被行业/
+  波动率解释。reversal / low 在同层基准下也到 t=2.40 / 2.17，但主基准下
+  p=0.10 / 0.027、Holm 0.081——**事后换基准换不出正结论**。
+- **胜率与净收益排序相反。** momentum 胜率 38.4%，每笔均值却是 +43bp：
+  赢的次数少、赢得大。去最好 5 天后均值 −4bp，所以它不可信；但这条
+  足以说明**用胜率 MDE 选策略会选错**——它测的不是盈亏。
+- **配对差的 MDE 更大（316–699bp），不是更小。** 同名配对消掉了共同
+  行情，但两个策略的残差差本身很噪；名义 3/6、Bonferroni 2/6。跨池
+  配对仍是「换股票」，不能读成方法优劣。
+- **样本必须固定。** 重算缓存后是 326 天（多了 2026-10-08），同一份代码
+  给出 16.0/10.4/26.1/12.4，与表里的 15.9/10.3/25.7/12.4 差 0.1–0.4。
+  三个 probe 已加 `--nmax=325`，本节读数用它复现。
+
+经济目标见 `docs/decision-target-prereg.md`：19bp 是经济门槛，200bp 是
+下一段样本的可确认效应。两者相差 10 倍这件事本身就是结论——这份账本
+能证明「很大的效应」，不能证明「刚过成本的效应」。**「撤栏」的依据由此
+从「胜率 MDE 是 3.2pp 的 5–8 倍」换成两条：净收益 MDE 是 19bp 成本的
+10–31 倍；同一批 picks 换个基准就位移 27–155bp。前者说明分辨率不够，
+后者说明效应量对基准敏感——两条都不依赖 Brier 换算。**
+
+本轮新增/修改：
+
+- `probe_window.py`：同时写 `.probe_per_day_exc.json`（连续 `exc`），加
+  `--rebuild`；两份缓存的日序与 picks 一一对应。
+- 新增 `probe_net_diff.py`：水平/配对/成本三张表，块重抽 5% 分位 + Holm。
+- 新增 `probe_selection_tilt.py`：成交额分位与同层中位数基准。
+- `probe_real_deff.py` / `probe_paired_diff.py`：加 `--nmax`，样本可固定；
+  前者的「DEFF 是上界、MDE 偏悲观」改成「这是这份序列的方差，拆漂移等于
+  换零假设」——与第五节一致，原措辞是同一处逻辑倒置的另一半。
+- 新增 `docs/decision-target-prereg.md`：19bp / 200bp / 250 天 / Holm。
+- 新增 5 条测试（`test_decision_net_diff.py`）：成本、`_MDE_Z`、块重抽、
+  分位、单侧 p 的符号。
+
+---
+
+### 9.29 全截面 IC：宽度买到 1.1–3.2 倍，而且它换了一个对象（2026-11-05）
+
+§9.28 的结论是「20 只/日、20 日重叠，325 天只相当于十几个独立块」（设计推算
+n/20≈16）。本节把 n_eff 实测出来，是 25–35——比推算宽松，但仍是三位数天内只有
+两位数独立块。自然的下一步是「把扔掉的 99% 截面捡回来」：既然每天只用 20 只，
+全市场 5,500 只的秩相关应该把 MDE 压下去一个量级。本节按同一批决策日
+（`--nmax=325`）、同一份 `kline_daily_enriched` 把它做出来，结论有三条，其中
+一条推翻了 §9.28 的一半。
+
+#### 一、IC 的读数：t=3.64 是真的，但它不是 bp
+
+| 策略 | IC | se_HAC | se_块 | t | MDE_IC | 层内 IC | 层内 t |
+|---|---|---|---|---|---|---|---|
+| momentum | −0.0535 | 0.0260 | 0.0289 | −1.85 | 0.0717 | −0.0361 | −1.48 |
+| reversal | +0.0535 | 0.0260 | 0.0289 | +1.85 | 0.0717 | +0.0361 | +1.48 |
+| low_turnover | +0.1111 | 0.0221 | 0.0306 | +3.64 | 0.0760 | +0.0791 | +3.28 |
+| high_turnover | −0.1111 | 0.0221 | 0.0306 | −3.64 | 0.0760 | −0.0791 | −3.28 |
+
+N≈5,419 只/日，σ₂₀=1,330bp，z̄_top20=1.73。「层内 IC」是成交额五分位**内**的
+秩相关按样本量加权——§9.28 的「同层中位数基准」在 5,500 只上的高分辨率版本：
+控制规模/流动性后 turnover 仍有 t=3.28，动量降到 t=−1.48。
+
+先记三条口径事实：
+
+- **reversal 与 momentum、high 与 low 的 IC 逐位互为相反数**。四个策略是
+  **两个信号 × 两个方向**，不是四个独立假设。Holm 按 4 次算是保守的；按 2 个
+  信号算是 0.0003（turnover）与 0.064（动量，不显著）。
+- 层内相关只掉 29%（0.111→0.079），比 20 只口径的同层位移小得多。**§9.28 说的
+  「选股坐在成交额 0.93 分位」解释不了 turnover 效应的大头。**
+- IC 的 MDE 是 0.072–0.076（IC 单位）。**它不能写成 bp**，理由见第四节。
+
+#### 二、宽度确实压 se —— 但压的是另一个泛函
+
+同一批决策日、同一目标（每笔 20 日 bp），四个估计量并排：
+
+| 策略 | 20 只（产品） | top10% vs 中位数 | 十分位多空 | IC×σ×z̄（秩映射） |
+|---|---|---|---|---|
+| momentum | +43.2 / 236.7 / MDE 588 | +145.7 / 176.6 / 439 | −137.0 / 234.0 / 582 | −114.5 / 73.5 / 183 |
+| reversal | +122.0 / 81.4 / 202 | **+180.1 / 43.5 / 108** | −23.7 / 200.3 / 498 | +114.5 / 73.5 / 183 |
+| low_turnover | +185.2 / 86.4 / 215 | **+209.8 / 46.6 / 116** | +194.6 / 176.8 / 439 | +242.5 / 77.2 / 192 |
+| high_turnover | −405.5 / 148.9 / 370 | **−9.4 / 121.6 / 302** | −615.3 / 174.4 / 434 | −242.5 / 77.2 / 192 |
+
+（均值 / se_块 / MDE，bp。）
+
+**宽度是有效的**：同口径 top10% 把 reversal 的 MDE 从 202 压到 108（t 1.50→4.14）、
+low 从 215 压到 116（t 2.14→4.51）。这是这份账本第一次把这两个策略推到 t>4。
+但同一张表里，high_turnover 从 −405 变成 **−9.4（t=−0.08）**。
+
+原因在配对尾差（同日 `top20 − top10%`）：
+
+| 策略 | 尾差(bp) | se_块 | t |
+|---|---|---|---|
+| momentum | −102.6 | 100.2 | −1.02 |
+| reversal | −58.1 | 56.0 | −1.04 |
+| low_turnover | −24.6 | 57.7 | −0.43 |
+| high_turnover | **−396.0** | 107.0 | **−3.70** |
+
+四个都为负：**极端 0.4% 系统性差于同方向顶层 10%**；high 的差是 −396bp，t=−3.70，
+是这张表里唯一显著的。也就是说 high_turnover 的 −405bp 不是「高换手这个因子」
+的效应，是「换手率最高那 20 只」的效应——同一方向铺到 540 只就归零。
+单日核对过（2026-06-01：top20 +183bp、top10% +1,337bp），不是实现错。
+
+#### 三、IC→bp 的换算率不是常数
+
+把实际 bp 对 IC 做无截距回归，斜率就是这份账本的隐含换算率；理论上它应等于
+σ·z̄=2,295bp。四个策略各估一次：
+
+| 策略 | 实际 bp/IC | σ·z̄ | 比值 | corr(bp,IC) | R² |
+|---|---|---|---|---|---|
+| momentum | 3,911 | 2,295 | 1.70 | 0.54 | 0.30 |
+| reversal | 1,318 | 2,295 | 0.57 | 0.36 | 0.13 |
+| low_turnover | 1,841 | 2,295 | 0.80 | 0.68 | 0.47 |
+| high_turnover | 3,027 | 2,295 | 1.32 | 0.60 | 0.35 |
+
+比值 0.57–1.70，R² 0.13–0.47。**IC 与「20 只等权均值」不是同一个泛函**，一个刻度
+常数折不过去。最刺眼的是 momentum：IC=−0.0535 而实际 top-20 是 +43bp，符号相反。
+分位形状解释了这件事：
+
+```
+momentum 十分位（bp，去当日截面均值，1=最弱 10=最强）
+  −16  −2   9  15  18  21  18   5  −19  −50
+```
+
+倒 U，峰在第 6 层，最高一层是最差的一层。20 日动量不是单调信号；IC 测的是
+整条秩关系（受第 10 层拖累而变负），top-20 测的是极端尾部（+43bp，t=0.18）。
+两个都对，都不是 bp 意义上的「动量有效」。
+
+#### 四、结论：50bp 这条路关了
+
+预注册 §10 把全截面 IC 写成「唯一可能把 MDE 从 200bp 压到 50bp 的设计改动」。
+**这条不成立，而且不是差一点：**
+
+1. **IC 口径的 MDE 是 0.072–0.076**，换算成 bp 需要第三节那个不稳定比值，
+   折出来的 183–192bp 是刻度巧合，不是分辨率。
+2. **同口径宽度（top10%）的 MDE 是 108–302bp**，比 20 只好 1.1–1.9 倍，
+   但仍离 50bp 差 2–6 倍；且它估的是「顶层 10%」，不是产品持有的极端 20 只
+   （high 上两者差 396bp，t=−3.70）。
+3. **时间序列才是约束**：等价独立日数 n_eff 只有 25（momentum/reversal）/
+   35（turnover），325/25=13，即每个独立块相当于 13 天——比 20 日持有期还短，
+   说明重叠不是唯一的自相关来源，但足以让 325 天只剩 25 个独立块。宽度
+   压掉的是横截面的特定风险，压不掉因子路径的日间波动——后者占方差的大头
+   （日内 sd/只 2,616bp，除 √20 是 585bp，而实测 se 只有 237bp，说明 20 只
+   高度同向，有效宽度远小于 20；再铺宽到 540 只，se 也只从 237 降到 177）。
+
+把下一段 250 天（合计 575）按 se∝n^(−1/2) 外推：
+
+| 策略 | 20 只 MDE@575 | top10% MDE@575 | 确认 200bp 所需天数（20 只 / top10%） |
+|---|---|---|---|
+| momentum | 442 | 330 | 2,812 / 1,566 |
+| reversal | 152 | 81 | 333 / 95 |
+| low_turnover | 161 | 87 | 375 / 109 |
+| high_turnover | 278 | 227 | 1,114 / 742 |
+
+**pass/fail 的分布不随估计量变**：575 天上只有 reversal / low 能进 200bp 以内，
+momentum / high 不能。§6 的功效预算因此是稳健的——它不依赖 20 只这个口径。
+而 19bp 那一档，20 只口径要 3.7 万–31 万天，top10% 要 1.1 万–17 万天：
+**「刚过成本」在任何宽度下都不可确认**，这句结论比 §9.28 更硬。
+
+#### 五、被推翻的那一半：high_turnover 是尾部，不是因子
+
+§9.28 写「唯一在 Holm 校正后站得住的是 high_turnover 的负号」。现在这句要拆开：
+
+- **长边（low_turnover）是稳的**：20 只 +185、top10% +210、尾差 −25（t=−0.43），
+  层内 IC 0.079（t=3.28）。宽度、基准、层内三重检查下符号和量级都不变。
+- **短边（high_turnover）只在极端尾部成立**：20 只 −405（t=−2.72）、top10% −9.4
+  （t=−0.08）、尾差 −396（t=−3.70）。铺宽就归零，说明它不是「高换手」的因子
+  收益，是「换手率尖峰那 20 只」的路径。这类标的常伴涨停/连板，20 日后的
+  反转不能外推到「所有高换手股」。
+
+所以「撤 high_turnover 栏」的依据要改写：不是「高换手是负 alpha」，而是
+**「这一栏的负号只存在于它自己那 20 只构成的尾部里，不可外推、不可复制」**。
+对产品决策这不改变动作（仍然是撤），但改变了理由，也改变了它对其他标的的
+推广能力——这点必须写进对外表述。
+
+#### 六、为什么「改构造」不是答案
+
+分位表容易被读成「峰在第 8 层，所以该买第 8 层」。三处核对后这个读法不成立：
+
+- **对 low_turnover，位置不是瓶颈**：尾差只有 −24.6bp（t=−0.43），极端 20 只与
+  整层没有可分辨的差别；真正的差距是宽度（se 86 vs 47）。
+- **移动 20 只的位置不会降 se**：仍是 20 只，MDE 仍约 215bp。要拿到 116bp 必须
+  铺到 540 只，那已经不是「每天 20 只」的产品，是另一个产品。
+- **200bp 门槛本来就能达到**：575 天时 20 只口径是 161bp（§四表）。不需要为了
+  分辨率改产品。
+
+所以这条不进下一步，只记一条负面结果：**在 20 只这个形态下，215bp 是 MDE 的
+地板**——宽度换不到（换的是泛函）、位置换不到（尾差不显著）、估计量换不到
+（换算率不稳）。要更好只能改产品形态，而预注册的 200bp 门槛并不要求改。
+
+#### 七、本轮改了什么
+
+- 新增 `scripts/probe_cs_ic.py`：全截面秩 IC、层内 IC、四个估计量、换算率、
+  尾差、块长四档、十分位形状、天数预算。`--nmax=325` 与 `--rebuild`，缓存
+  `data/.probe_cs_ic.json`；决策日列表从 `.probe_per_day_exc.json` 读，
+  缺日直接报错（不静默跳过）。
+- 修正一处自造错误：`n_eff` 初版写成 `n·(sd/se)²`，把 n 乘了两次，输出
+  8,218（>n）。正确式是 `(sd/se)²`，为 25/25/35/35。**这个错不会报错**，
+  只会给出一个「独立日数比天数还多」的数；已加注释与测试。
+- 新增 6 条契约测试（`test_decision_cs_ic.py`）：成本外常数 `MDE_Z`、标准化
+  秩的 ddof、z̄ 的解析值 1.726（正态分数会给 2.6，差 50%）、秩相关端点、
+  层内相关的单调端点、缓存日序与 `probe_net_diff` 同源。
+- `pytest -k decision`：**145 passed**（139 + 6）。
+
+#### 八、验收
+
+- 325 天逐位：20 只口径 +43.2 / +122.0 / +185.2 / −405.5，与 §9.28 一致；
+  IC −0.0535 / +0.0535 / +0.1111 / −0.1111（互为镜像，符合构造）。
+- 层内 IC 与 `probe_selection_tilt.py` 方向一致（turnover 仍显著、动量不显著）。
+- 尾差在单日（2026-06-01）独立核对：top20 +183bp、top10% +1,337bp，符号与
+  量级一致。
+
+### 9.30 `verdict_incremental` 的 size 与 power：它不是功效低，是对效应量非单调（2026-11-05）
+
+§9.26 用发布代码跑过平稳与变点两个 DGP，§9.27 又把 `mde_incremental` 接进
+了句子。但那份证据有三个缺口，使它只能当方向证据，不能当验收读数：
+
+1. 零效应只有 iid 一种。真实账本的 `y` 有 19 天持有期重叠，iid 零分布会把
+   `se` 低估 3–5 倍，于是 size 看起来很干净，其实只是没造出真实的自相关。
+2. 「目标效应」从来没有写成一个可核对的数。§9.26 的注释把
+   `mde_incremental` 开方读成「3.2pp 的胜率抬升」，这个读法没有在任何实验里
+   对上过。
+3. PASS 率只在 2–3 个 a 上取过点。如果检出力对 a 非单调，单点读数会把倒 U
+   的峰误读成单调。
+
+本节用 `scripts/probe_incremental_size.py` 直接调 `pwin.walk_forward` 补上
+这三条：800 个决策日 × 20 picks、H=20、window=60（`n_eff≈35`，刚过
+`MIN_NEFF=30`）、末 120 天抬升、每个格子 40–100 次重复。
+
+#### 一、零效应覆盖率：三种零分布都是 0%，但原因不是同一个
+
+| 零分布 | PASS | 95% CI | 可判定 | 改善 | mde | se |
+|---|---|---|---|---|---|---|
+| iid | 0.0% | 0–3.7% | 100% | −1.40e−4 | 0.00127 | 1.10e−4 |
+| ma20 | 0.0% | 0–3.7% | 100% | −1.72e−3 | 0.00425 | 1.31e−3 |
+| block | 0.0% | 0–3.7% | 100% | −4.47e−3 | 0.00881 | 3.14e−3 |
+
+- **iid**：门槛 `0.001` 是零分布 `se=1.1e−4` 的 **9 倍**。它不是「检验严格」，
+  是门槛远在噪声之外，任何样本量下都过不了。
+- **ma20**（共同因子为 20 日移动平均，只有重叠、没有因子持续性）：门槛是
+  `se=1.31e−3` 的 **0.76 倍**，已经在噪声里；但 `E[d]=σ_c²−σ_w²<0` 把
+  `lcb` 压住，仍然过不了。真实账本的日命中 acf(1)=0.68–0.88（§9.28），
+  比 ma20 的 0.37 更高，所以 ma20 是「自相关」这一维的下界。
+- **block**（真实行情账本 40 天循环块自助）：门槛是 `se=3.14e−3` 的
+  **0.32 倍**，同样在噪声里。它的改善是 −4.47e−3，因为块自助保留了账本
+  自己的负漂移（momentum 胜率 38.4%），漂移把 `lcb` 推到门槛以下。
+  **所以 block 的 0% 不能读成「size 受控」**——它是被漂移压住的，不是被
+  检验挡住的。
+
+一句话：0% 的 size 不是同一个事实的三种证据，是三种不同的失败方式。
+
+#### 二、目标效应功效：倒 U，峰值 30%，a=0.5 时归零
+
+| a（末段真实抬升） | iid PASS | ma20 PASS | block PASS | 改善(iid) | mde(iid) | se(iid) |
+|---|---|---|---|---|---|---|
+| 0.05 | 0% | 0% | 0% | +7.2e−5 | 0.00149 | 2.0e−4 |
+| 0.10 | 10% | 0% | 0% | +7.1e−4 | 0.00239 | 5.6e−4 |
+| 0.15 | 22% | 2% | 0% | +1.8e−3 | 0.00398 | 1.2e−3 |
+| **0.20** | **30%** | 6% | 0% | +3.3e−3 | 0.00625 | 2.1e−3 |
+| **0.25** | **30%** | 8% | 2% | +5.2e−3 | 0.00907 | 3.2e−3 |
+| **0.30** | 16% | **12%** | 2% | +7.4e−3 | 0.01247 | 4.6e−3 |
+| 0.40 | 0% | 2% | **6%** | +1.3e−2 | 0.02133 | 8.2e−3 |
+| 0.50 | 0% | 0% | 0% | +2.1e−2 | 0.03286 | 1.3e−2 |
+
+三条读数，每一条都反直觉：
+
+1. **峰值只有 30%（iid）/ 12%（ma20）/ 6%（block）**，而名义功效应该是 80%。
+   这不是样本不够——800 天、`n_eff=35`、可判定率 100%。
+2. **三条曲线都是倒 U**：iid 峰在 0.20–0.25，ma20 在 0.30，block 在 0.40。
+   a 从峰值加到 0.50（真实胜率从 75% 抬到 100%），PASS 率全部掉回 0%。
+3. **改善本身是单调上升的**（+5.2e−3 → +2.1e−2），但 `se` 涨得更快
+   （3.2e−3 → 1.3e−2）。`lcb = mean − 1.645·se` 因此变负。
+
+#### 三、为什么必然倒 U
+
+`d_i = δ_i·(δ_i + 2(p*−y_i))`，其中 `δ_i = p_clim,i − p_i`。分两种日子：
+
+    变点后：δ ≈ a(1−share)  ⇒  E[d | 变点后] = δ² = a²(1−share)²
+    变点前：δ ≈ 0           ⇒  d ≈ 0
+    全样本：E[d] ≈ share·a²(1−share)²           （∝ a²）
+
+`share` 是变点后样本占可评估日的比例（本节 120/778≈0.15）。`se(d)` 的主导项
+是 `2δ·(p*−y)`，所以它也与 `δ` 同阶，即 `se ∝ a`——比例常数由 share 与有效
+样本决定，这里不写死（本节实测 se 从 2.0e−4 涨到 1.3e−2，跨两个数量级）。
+于是
+
+    lcb(a) ≈ A·a² − B·a − 1.645·c,   A = share(1−share)²,  B ∝ 1/√n_eff
+
+**`a²` 的系数是常数，`a` 的系数也是常数，门槛 `0.001` 还是常数。** 这是一条
+开口向上的抛物线减一条直线：在 `a = B/(2A)` 处取最大，之后必然下降。峰值
+位置随 `share` 与 `n_eff` 移动（iid 在 0.20–0.25、ma20 在 0.30、block 在
+0.40），但**下降本身不随任何参数消失**。
+
+这解释了 30% 峰值：它不是系统性功效，是 `se` 分布左尾里那些偶然很小的格子；
+也解释了为什么加大 a 反而归零——**不是因为效应太小才测不出，是因为效应变大
+时噪声按同阶变大**。
+
+这也是 §9.27 的「三个乘数」只对了一半的原因：门槛 1.5×、路径平均 7.4×、
+设计效应 19–46× 都是真的，但即使把三个乘数全部消掉，倒 U 仍然在——它是
+`d_i` 这个统计量的形状，不是样本量的形状。
+
+#### 四、`mde_incremental` 开方读成胜率：差 30 倍，这个读法要撤回
+
+零效应下 `mde_incremental = 0.00127`，开方（减门槛后）得 **1.65pp**。
+如果这个读法成立，a=0.05（5pp）就该有可观功效；实测 0%，a=0.20 才 30%，
+a80 在 50pp 以上都到不了。**差 30 倍以上。**
+
+原因有两层：
+
+1. **刻度**：`mde_incremental` 是 `d` 的 MDE，单位是 Brier²。把它开方只在
+   `E[d]=a²` 时才是胜率；实际 `E[d]=share·a²(1−share)²`，所以正确的零阶反解是
+   `a = √(mde / (share(1−share)²))`，share=0.15 时是 10.8pp，不是 3.6pp。
+2. **正反馈**：`mde_incremental` 用的是**当前观测到的** `se`，而 `se ∝ a`。
+   效应一大，`se` 跟着涨，MDE 也涨。这一步没有不动点以外的闭式解——要迭代，
+   而迭代的结果就是本节测出的倒 U。
+
+所以：
+
+- §9.26 的「门槛 0.001 对应 3.2pp」、§9.27 的「可检出下限约 20pp」都要
+  改成「**在特定 share 与 se 下的等效值**」，不能当通用换算。
+- `mde_incremental` 这个字段本身没有错（它确实是 `d` 的分辨率），但它的
+  句子读法错了。卡上印「这个样本能分辨 0.0032 的改善」时，读者会以为
+  「0.0032 的 Brier 改善」≈「3.2pp 胜率」，这两个不是一回事；而且那个
+  0.0032 只在「效应小到 se 不变」时成立。
+
+#### 五、结论：这一栏该撤，理由从「功效不够」升级为「刻度错了」
+
+§9.27 说「撤栏是三选一的产品决定」，当时依据是功效不足。本节把依据换成
+更硬的一条：
+
+- **size=0 不是优点**：三种零分布用三种不同的方式失败，其中两种是门槛落在
+  噪声里、被负偏压住。一个 size=0 且 power 峰值 30% 的检验，不提供信息。
+- **power 非单调**：真实增量越大，越检不出。任何「等样本够了就能判」的计划
+  都建立在单调性上，而这里没有。
+- **刻度不可解释**：`mde_incremental` 开方差 30 倍，句子里的「3.2pp」是错的。
+
+三条合起来，`verdict_incremental` / `significance_incremental` 不是「暂时
+不可判定」，是「判定了也不该信」。**建议删除这两个字段**（连同 `estimate()`
+透传、API 两个键、前端一栏、35 处断言）。这是破坏性变更，影响面清单见下，
+等产品确认后执行：
+
+```
+backend/app/decision/pwin.py        walk_forward 返回 2 键 + 4 个分支文案
+backend/app/decision/pwin.py        estimate() 透传 2 键
+backend/app/api/decision.py         2 处字段
+frontend/src/pages/Decision.tsx     1 栏
+backend/tests/test_decision_pwin.py  ~30 条断言
+backend/tests/test_decision_api.py   ~5 条
+```
+
+保留 `improvement_vs_clim` / `se_incremental` / `truncated_days`：它们是
+**描述**（近端与全历史的 Brier 差是多少、分母有多大），不是**判定**。
+描述可以留，判定要撤。
+
+#### 六、边界
+
+- `block` 用的是 325 天探索样本循环到 800 天，块会重复，长程结构是造出来的。
+  它只回答「这份账本的结构下读数是多少」，不能反证真实账本有增量。
+- `ma20` 的日命中 acf(1)=0.37，低于真实账本的 0.68–0.88，所以它是自相关
+  这一维的下界；真实结构只会让 `se` 更大、power 更低。
+- a 的定义是「末 120 天相对前 680 天的绝对胜率抬升」，不是「全样本平均抬升」。
+  换段长会改 `share`，从而改 `Δ`；本节的倒 U 结论对段长不敏感（只要
+  `0<share<1`），但具体峰值位置会移动。
+
+#### 七、本轮改了什么
+
+- 新增 `scripts/probe_incremental_size.py`：三种零分布、八档变点、Wilson
+  区间、`a80` 插值、MDE 开方对照。
+- 新增 7 条契约测试（`test_decision_probe_size.py`）：ma20 的边际校准
+  （√1.05·Φ⁻¹(p)，不是 2(p−0.5)）、acf 衰减与 20 日断崖、block 的 bump 是
+  绝对抬升不是翻转率、pick 数不变、`_interp80` 插值、倒 U 形状、Wilson 端点。
+- `pytest -k decision`：**157 passed**（145 + 12，含 §9.31 的 5 条）。
+### 9.31 行业×规模中性化：low_turnover 掉了一半，但 t 反而升了（2026-11-05）
+
+> ⚠️ **§9.32 已推翻本节的产品结论**：本节所有 bp 读数都减的是**格内中位数**，
+> 而 `fwd` 右偏，均值−中位数 ≈ 195bp（大盘格 92bp、中盘格 208bp）。换成
+> 与组合 P&L 同中心的格内均值后 low_turnover 是 **+7.0bp（t=0.14）**，不是
+> +99。本节的**统计描述**（行业分布、格子集中度、回退率、快照前视方向）
+> 仍然有效；凡涉及效应量、「行业内仍有 +110」「对外表述按 +99」的句子，
+> 以 §9.32 为准。
+
+§9.29 把所有基准都只按成交额分层。成交额是规模/流动性的代理，不是行业。
+低换手策略选出来的 20 只如果集中在银行、电力、港口、公路这些「天生低换手」
+的板块，那 +185bp 里就混着行业 beta——它对「换手率是不是信号」一点证据都
+没有。预注册 §2 把这条写成硬条件：**换成行业×规模双重分层前，任何对外表述
+都不成立**。本节就是那一层，也是账本里最后一个没被证伪的稳健性缺口。
+
+#### 一、五个基准，逐步加控制
+
+同一批 325 个决策日、同一批 picks（20 只等权、H=20），只换基准：
+
+| 策略 | 全样本 | 成交额5 | 行业 | 行业×规模 | 回归残差 | MDE(全) | MDE(行×规) |
+|---|---|---|---|---|---|---|---|
+| momentum | +43.2 (0.18) | +192.8 (1.22) | +138.1 (0.77) | +138.7 (0.86) | +65.8 (0.41) | 588 | 403 |
+| reversal | +122.0 (1.50) | +194.5 (2.40) | +128.8 (1.74) | +135.5 (1.85) | +133.1 (1.86) | 202 | 182 |
+| low_turnover | +185.2 (2.14) | +212.1 (2.17) | +110.0 (2.66) | **+99.0 (2.30)** | +147.6 (1.96) | 215 | **107** |
+| high_turnover | −405.5 (−2.72) | −251.3 (−2.18) | −333.9 (−2.73) | −324.0 (−2.70) | −384.9 (−3.08) | 370 | 299 |
+
+（均值 bp，括号内 t；se 用 40 天循环块重抽。行业=同花顺一级 90 个，
+规模=流通市值三分位，格内 <8 只退回行业内中位数。回归残差 =
+`fwd ~ 行业哑变量 + log(流通市值)` 的残差，再减当日中位数。）
+
+先记三条口径事实：
+
+- **四个策略在五个基准下全部同号**。预注册 §2 的「双基准同号」条件满足，
+  而且是在比它更细的两层上满足的。
+- **残差与格内基准不是同一个中心**。OLS 残差以均值为中心，`fwd` 右偏
+  （均值 − 中位数 ≈ +200bp），不减中位数会让残差列系统性低 150–200bp，
+  看起来像「控制后归零」。本表已减，这一条修之前 low 的残差是 −2.5bp。
+- **t 不能跨列比大小**。行业基准的 t 从 2.14 升到 2.66，但均值从 +185 掉到
+  +110——t 上升完全来自分母（se 86→41），不是分子。看到 t 变大就说「更显著」
+  是这张表最容易犯的错。
+
+#### 二、low_turnover：行业解释 41%，规模几乎不解释
+
++185.2 → +110.0 是行业，−75.2bp（−41%）；+110.0 → +99.0 是规模，−11bp（−6%）。
+所以「低换手溢价」里有四成是「选了哪个行业」，不是「选了什么股」：
+
+```
+low_turnover 的行业分布（325 天平均持仓只数占比）
+  银行 19.9%  电力 9.9%  石油加工贸易 7.3%  港口航运 6.8%
+  公路铁路运输 5.6%  保险 5.5%  煤炭开采加工 5.2%  通信服务 3.3%
+```
+
+前七名合计 60%，全部是低估值/高股息/低换手的成熟行业。这是行业 beta 的
+直接读数，比任何 p 值都直观。
+
+但**行业内仍然有 +110bp（t=2.66）**：同一个行业里，换手率低的那 20 只仍然
+跑赢同行业中位数。所以「换手率是信号」这句话在控制行业后仍然成立，只是
+量级要按 110bp 报，不是 185bp。
+
+#### 三、精度红利：MDE 从 215 掉到 107，而且不用换持仓
+
+行业基准把 se 从 86.4 压到 41.4（−52%），MDE 从 215 降到 107。§9.29 第六节
+写「20 只形态下 215bp 是 MDE 的地板」，**这句要限定为「相对全市场基准的
+地板」**：换成同行业基准，同一批 20 只、同一个持有期，分辨率翻倍。
+
+机制不是样本变多，是基准变稳：全样本中位数每天随行业轮动漂，同行业中位数
+不漂。日序列的方差因此小一半，`se ∝ sd` 跟着小一半。
+
+这条**不能**拿来当主口径。预注册 §2 写死了主基准是全样本中位数，理由正是
+防止「哪个基准 t 高用哪个」。行业基准的用途是敏感性：它证明效应不是行业
+beta 造出来的，不证明效应比 185bp 更大。而且它换了一个问题——「同行业内
+选股是否有效」与「这个组合是否跑赢大盘」是两件事，后者才是产品口径。
+
+附带一个可执行的读数：如果产品的业绩口径愿意写成「同行业超额」，200bp 的
+确认门槛在 **325 天就已经达到**（MDE 107），不必等 575 天（161）。这是基准
+选择带来的，不是样本带来的。
+
+#### 四、momentum 与 reversal 在行业中性后几乎重合
+
++138.7 (t=0.86) vs +135.5 (t=1.85)，差 3bp。全样本下它们是 +43 vs +122，
+差 79bp。也就是说：
+
+**「动量」与「反转」在 20 日尺度上的差别，主要是行业暴露，不是时序方向。**
+
+这与 §9.29 的倒 U 分位形状是同一件事的两面：20 日动量的 IC 为负（−0.054）
+而 top-20 为正（+43），因为最高一层最差；行业内中性化把行业那一段拿掉后，
+两个方向的读数都回到 +136 附近，谁也没有方向性。所以「momentum 是反转的
+镜像」这个观察在**信号层**成立（IC 逐位相反），在**产品层**不成立（收益
+不一样），而在**行业中性层**又成立（又一样了）。三层各是一个对象。
+
+#### 五、high_turnover 不变：仍是尾部，不是行业
+
+−405.5 → −324.0（t=−2.70），只掉 81bp（20%）。行业中性化没有救它，也没有
+推翻它：结合 §9.29 的 top10% 归零（−9.4）与尾差 −396（t=−3.70），结论仍是
+「这一栏的负号只存在于它自己那 20 只构成的尾部里」。行业不是它的解释，
+宽度才是——而宽度一铺，它就没了。
+
+#### 六、口径与前视：两个快照，方向已知
+
+- 行业分类是 **2026-11-05 的同花顺一级快照**（5,579 只），不是历史版本。
+  回测跨 2025-06 起，期间的重组/改名/新股归类都没有历史。
+- 流通股本是同一快照；`float_mv = raw_close_t × float_shares` 只有股本是
+  前视，价格是当日的。
+- 两个偏差都让**中性化变弱**：用错的行业去控制，残差里会留下本可控掉的
+  暴露，于是「控制后仍有超额」更容易成立。所以本节的**否定性结论是稳的**
+  （行业确实吃掉了 75bp），**肯定性结论可能偏高**（+110 可能还含未控尽的
+  行业）。
+
+#### 七、本轮改了什么
+
+- 新增 `scripts/probe_neutral.py`：五个基准、格子集中度、回退率、行业分布、
+  规模分位，`--nmax=325` 与 §9.28/§9.29 同源同序。
+- 新增 5 条契约测试（`test_decision_neutral.py`）：五个基准的减法恒等、
+  格内中位数只在本格、小格子回退、FWL 残差只剩噪声、残差中位数为 0。
+- `pytest -k decision`：**157 passed**（145 + 12，含 §9.30 的 7 条）。
+
+#### 八、验收
+
+- 全样本列逐位复现 §9.28：+43.2 / +122.0 / +185.2 / −405.5。
+- ~~四个策略在五个基准下同号；low 的行业内 t=2.66 是四列里最高的。~~
+  §9.32：五个基准都是中位数（同一个泛函的五个精度），同号不构成独立确认；
+  均值口径下 low 的行业内读数是 +4.4bp（t=0.10）。
+- 格子集中度：最大格 21%（low），远低于「picks 自己决定基准」的 60% 线；
+  回退率 12%，90×3 的切分没有过细。
+- 规模分位：low 0.79（大盘）、high 0.46（中盘）、mom 0.66、rev 0.45——
+  与「低换手=大盘价值」的先验一致。
+
+### 9.32 中位数基准不是 P&L 基准：随机组合也「跑赢」194bp（2026-11-05）
+
+§9.31 的结论是「控制行业与规模后 low_turnover 仍有 +99bp」。那句话建立在
+一个从未被检验的假设上：**减掉截面中位数的剩余，是选股能力**。本节用一个
+安慰剂把这个假设拆掉。结论先说：+99bp 里的绝大部分不是能力，是偏度；
+换成与组合 P&L 同中心的均值基准，low_turnover 是 **+7.0bp（t=0.14）**。
+
+#### 一、安慰剂：没有任何信号，也「跑赢」194bp
+
+`scripts/probe_bench_placebo.py`：325 个决策日，每天从同一可交易池里**均匀
+随机**抽 20 只（无排序、无信号），每日重复 20 次取均值，按日序列做 40 天
+循环块重抽。
+
+| 口径 | 均值 | se | t |
+|---|---|---|---|
+| 减截面中位数 | **+194.0** | 33.8 | **5.75** |
+| 减截面均值 | −1.6 | 2.9 | −0.56 |
+
+随机组合减中位数，`t=5.75`。同一个组合减均值，`t=−0.56`。
+
+**截面均值 − 中位数 = +195.7bp/日**，这就是那个偏移的全部来源。`fwd` 右偏
+（20 日收益的截面分布有长右尾），而任何**多头**组合的 `mean(fwd_picks)` 都
+落在截面均值附近；减去中位数，等于把「均值 − 中位数」这个常数收进超额。
+它与选股无关，与信号无关，只与「你是不是只做多」有关。
+
+#### 二、偏移不是常数 195，等于**那一个基准格**的均值−中位数
+
+同一批 picks，只换基准中心，读数差如下（bp）：
+
+| 策略 | 全样本 | 行业×规模 | 回归残差 | 格内中心偏移 |
+|---|---|---|---|---|
+| | med → mean | med → mean | med → mean | |
+| momentum | +43.2 → **−152.5** | +138.7 → **−68.9** | +65.8 → −84.3 | 207.6 |
+| reversal | +122.0 → **−73.7** | +135.5 → **−16.0** | +133.1 → −17.1 | 151.5 |
+| low_turnover | +185.2 → **−10.5** | +99.0 → **+7.0** | +147.6 → **−2.5** | 92.0 |
+| high_turnover | −405.5 → **−601.1** | −324.0 → **−522.4** | −384.9 → −535.0 | 198.4 |
+
+偏移大小由 picks 落在哪类格子决定：low 选的是大盘（规模分位 0.79），大盘
+收益分布相对对称，偏差 92bp；momentum 偏中盘，偏差 208bp。所以「+99 掉到 0」
+不是巧合，是 92bp 的偏移被拿掉之后剩下的 7bp。
+
+复现：`probe_neutral.py --basis=mean`（`--basis=median` 与 §9.31 逐位一致：
++43.2 / +122.0 / +185.2 / −405.5）。
+
+#### 三、按均值中心重读：四个策略没有一个是正的
+
+- **low_turnover +7.0bp（t=0.14）**，OLS 残差 −2.5bp（t=−0.03）。两套控制
+  模型（饱和格内均值 vs 行业哑变量+log 市值）给出同一个零。**「低换手溢价」
+  在控制行业与规模后不存在**；+185 是「跑赢中位数」，不是「跑赢平均持仓」。
+- **momentum −68.9、reversal −16.0**：两个方向都是负的，且不可区分。
+  §9.31 第四节「中性化后几乎重合」在均值中心下仍然成立，但共同值从 +136
+  变成 −69 与 −16，不是「都有效」。
+- **high_turnover −522.4（t=−4.65）**：唯一的强读数，而且比中位数口径更负。
+  换手率信号的真实形态是**高换手在扣掉同格均值后大幅跑输**，不是「低换手
+  跑赢」。对只做多的产品，这条只能当排除规则用。
+
+「四个策略在五个基准下全部同号」这句话在 §9.31 里是真的，但五个基准全是
+中位数——同一个泛函的五个精度，不是五个独立检验。换成均值中心，三个为负、
+一个为零，同号性消失。
+
+#### 四、预注册的问题不在 MDE，在估计量
+
+预注册 §2 把估计量写成 `exc_i = fwd_i − median_j(fwd_j)`，§4 又用
+`net = mean(exc) − 19bp > 0` 当 PASS 条件。两句话拼起来意味着：
+
+    随机组合：net = 194.0 − 19 = +175bp，t = 5.2，MDE = 84bp
+
+**按 §4 的字面规则，一个零信号的随机组合会拿到 PASS**（主基准净值为正、
+Holm 显著、MDE ≤ 200bp）。所以 §4 判不出能力，它判的是「这个组合是不是
+多头」。§9.31 第三节「MDE 107 ⇒ 200bp 门槛已达到」也跟着失效：107 是那个
+错误估计量的分辨率，不是经济效应的分辨率；均值中心的格内 se 是 51.5，
+对应 MDE ≈ 128bp，而观测值是 +7.0bp。
+
+§2 自己写过「vs 截面中位数是选择收益，不是 alpha」，但 §4 仍然拿它当 P&L
+检验。**这是 §9.30 那个单位混淆往上再挪一层**：那里混的是 Brier 与 pp，
+这里混的是「跑赢典型股票」（命中率口径，中位数是正确中心）与「跑赢平均
+持仓」（P&L 口径，均值是正确中心）。
+
+#### 五、哪一半不受影响
+
+`p_win` 的 `median` 口径**不受影响**：它的因变量是 `outcome_med = 1[fwd >
+截面中位数]`，是一个 50/50 的分类目标，中位数就是它的自然中心，偏度不进
+标签。受影响的只有「用 bp 报超额」的那条线：§9.28–§9.31 的 bp 读数、预注册
+§2/§4/§6 的效应量与 MDE、以及一切「对外表述按 +99bp」的措辞。
+
+#### 六、复现与验收
+
+- `probe_neutral.py --basis=median` 逐位复现 §9.31；`--basis=mean` 给出上表
+  右列。两个口径共用同一份数据、同一批 picks、同一个块重抽。
+- `probe_bench_placebo.py --nmax=325 --draws=20 --seed=0` 给出 +194.0（t=5.75）
+  与 −1.6（t=−0.56）。换 seed 或 draws，前者不动，后者仍应在 ±2 内。
+- 判定：中位数基准的安慰剂 |t| 大而均值基准的 |t| 小 ⇒ 基准中心错了；
+  两者都接近 0 ⇒ 本节的推理被证伪。
+
+#### 七、下一步（按信息增益）
+
+1. 预注册 §2/§4 的估计量换成均值中心，并在**读取确认段之前**记入变更记录；
+   两个中心同时报，中位数只作命中率诊断。
+2. 确认段的 PASS 规则在换中心之前不具备判别力，不应执行。
+3. §9.31 的六条产品结论按第四节撤回，代码层面的 `verdict_incremental` 清理
+   顺延——它要改的文档理由有三条刚刚被证伪，先改口径再删代码。
+
+### 9.33 基准中心的校准：200 只零能力组合全部被判成 ECON+（2026-11-05）
+
+§9.32 给出的是一个**点估计**（随机组合减中位数 +194bp）。本节把两件事做实：
+换中心后的 §4 全流程判定，以及零能力被判成 ECON+ 的**频率**。
+
+结论先说：**中位数口径下 200/200 只零能力组合全部 ECON+，且 100% 满足
+MDE≤200；均值口径 0/200。** §4 在中位数口径下不是「可能」被零能力通过，
+是必然。
+
+§9.32 的数值全部复现（+195.7bp 的偏移、PASS 可达），本节改的是它的两处
+**措辞与机制**：偏移在**全样本层**是严格常数（第一节），以及零能力的 MDE
+比策略更小（第五节）。
+
+#### 一、换中心只平移一个常数：+195.7bp，离散度 0.00
+
+`probe_window.py --rebuild --basis=mean|mcap` 重算 picks 的 `exc`，
+`probe_net_diff.py --basis=...` 走同一条判定链。同一批 picks、325 天：
+
+| 策略 | median | mean | mcap | Δ(med−mean) | Δ(mean−mcap) |
+|---|---|---|---|---|---|
+| momentum | +43.2 | **−152.5** | −147.1 | +195.7 | −5.4 |
+| reversal | +122.0 | **−73.7** | −68.2 | +195.7 | −5.4 |
+| low_turnover | +185.2 | **−10.5** | **−5.1** | +195.7 | −5.4 |
+| high_turnover | −405.5 | **−601.1** | −595.7 | +195.7 | −5.4 |
+
+位移的离散度 **0.00bp**（`probe_net_diff.py` 第四节自己算这个离散度，>0.2 就报 ✗）。
+这比 §9.32 的说法更硬：在**全样本**这一层，偏移是严格常数，中位数口径的整张
+表就是均值口径的平移副本。§9.32 说「偏移不是常数 195」指的是**格内**层
+（92–208bp，随格子变），两句话不矛盾，但要标明是哪一层。
+
+市值加权与等权的差只有 −5.4bp：这段样本里等权与市值加权的 20 日收益几乎一样，
+所以「买得起的市场组合」与「等权均值」在这里不构成分歧。**这是样本的性质，
+不是一般结论**——换一段小盘占优的行情，两者会分开。
+
+#### 二、配对差与中心无关 ⇒ 账本的相对结论全部存活
+
+常数在相减时消掉，所以配对表在三个中心下逐位相同：
+
+| 对照 | Δ | se_块 | t | p |
+|---|---|---|---|---|
+| low_turnover − high_turnover | +590.6 | 190.0 | **3.11** | 0.0019 |
+| reversal − high_turnover | +527.5 | 142.0 | **3.71** | 0.0002 |
+| momentum − high_turnover | +448.6 | 185.2 | 2.42 | 0.0154 |
+
+这是账本里唯一**不需要重算**的一类数。要撤回的只有「A 相对 0 有多少」，
+不是「A 比 B 好多少」。
+
+#### 三、§4 全流程：十二格里没有一格能 PASS
+
+净 LCB 与 Holm 并列（判定列只是区间条件；§4 的 PASS 还要 Holm<0.05 与
+MDE≤200）：
+
+| 策略 | median | mean | mcap |
+|---|---|---|---|
+| momentum | 43.2｜LCB −328.7｜.457 | −152.5｜−476.4｜.486 | −147.1｜−445.2｜.594 |
+| reversal | 122.0｜−28.5｜.200 | −73.7｜−233.2｜.486 | −68.2｜−295.5｜.594 |
+| low_turnover | 185.2｜**+26.9**｜.081 | −10.5｜−206.4｜.486 | −5.1｜−230.4｜.594 |
+| high_turnover | −405.5｜−660.5｜.008 | −601.1｜−819.2｜.000 | −595.7｜−826.6｜.000 |
+
+**按 §4 的字面规则，十二格全部是 UNRESOLVED**：MDE 是 202–588，没有一格
+≤ 200；low_turnover 在 median 下 Holm 0.081 也过不了。
+
+这一条很重要，它改变了处置方向：**§4 的 PASS 门槛从来没有被跨过**。偏移不是
+从 PASS 那道门进来的，是从**「ECON+ / 对外表述」这条侧门**进来的——§9.31
+写「对外表述只能按 +99bp 报」，用的是区间条件，不是 PASS。所以要修的是
+估计量的中心与措辞，不是阈值。
+
+#### 四、安慰剂校准：单只组合，200 只，100% / 0% / 0%
+
+`probe_basis_calibration.py --nmax=325 --draws=200 --reps=1000`：每天从同一
+可交易池均匀抽 20 只，**每只组合每日只抽一次**；200 只 × 325 天；判定用
+`probe_net_diff.evaluate_series`，与上面的策略表同一条代码路径。
+
+| 中心 | 偏移 | 组合均值 | ECON+ 率 | MDE 中位 | 同时过 MDE≤200 |
+|---|---|---|---|---|---|
+| median | +195.7 | +196.0 | **100.0%** | 91 | **100.0%** |
+| mean | +0.0 | +0.4 | **0.0%** | 37 | 0.0% |
+| mcap | +5.4 | +5.8 | 0.0% | 144 | 0.0% |
+
+偏移必须等于组合均值——随机组合的期望就是这个常数，与信号无关。两者对上了
+（+195.7 vs +196.0），说明这不是抽样波动。
+
+**为什么必须用单只而不是日平均**：§9.32 的「每日 20 次取均值」se 是 33.8，
+本节单只组合 se 是 36.6，几乎相同。也就是说日序列的方差**不由抽签噪声决定**，
+而由「均值 − 中位数」这个偏移在日间的波动决定。所以 §9.32 的构造没问题，
+它的结论也不需要修正；区别只是当时只有一个点估计，现在有 200 只的频率。
+
+#### 五、机制：为什么零能力的 MDE 反而更小
+
+这是本节最反直觉的读数，也是必须写下来的原因。
+
+**`MDE≤200` 这道门，四个策略一个都过不了，200 只零能力组合全部过得了。**
+
+| | MDE 范围 |
+|---|---|
+| 四个策略（三个中心 × 十二格） | 202–588 |
+| 零能力组合（median / mean / mcap 的中位） | 91 / 37 / 144 |
+
+原因不是安慰剂更「干净」，而是**它每天重抽**：随机组合的日序列近似独立
+（今天的 20 只与明天无关），而策略的 picks 高度持续（低换手股明天还是低换手），
+40 天块重抽下有效样本小得多。持续性推高 se，se 推高 MDE，MDE 卡住判定。
+
+所以 §4 的实际筛选方向是反的：**它筛选「序列平稳」，不筛选「有超额」**。
+一个每天乱买、从不重复的组合，比一个坚持同一套规则的策略更容易过门。
+
+这条也解释了为什么 §9.31 会写出「200bp 门槛在 325 天已达到」：那句话成立，
+但它成立的代价是把基准换成格内中位数——偏移最大的口径。
+
+#### 六、§4 的两条要求互相打架
+
+- **分辨率**要细口径：20 只 / 20 日 / 325 天下，只有**格内**口径的 MDE 进得了
+  200（low 128bp；全样本均值口径 268bp，全样本中位数 215bp）。
+- **中心**要等权均值：只有它满足 E[exc | 无能力] = 0。
+- 而**格内中位数**恰好是偏移最大的那个口径（low 92bp、momentum 208bp）。
+
+两条要求指向不同口径，且**能过 MDE 门槛的那个口径偏移最大**。这不是巧合：
+格内中位数把「同格里有几只大涨」直接变成超额，格子越细，这个成分越大。
+
+出路是**格内均值**：MDE 128 ≤ 200，中心无偏，读数 +7.0bp（se 51.5，t=0.14）。
+要 PASS 需毛超额 > 19 + 1.645×51.5 = **103.7bp**，观测 7.0bp，差 97bp。
+所以 low_turnover 在正确口径下是**探索样本上可判定的 FAIL**，不是 UNRESOLVED：
+分辨率够，效应不在。（**不是** §4 的确认判定——预注册 §5 禁止拿这 325 天做
+确认，见 §9.34 第五节。）
+
+**这个结论不依赖选哪个均值口径**：全样本 −10.5、成交额五分位 −12.9、行业
++4.4、格内 +7.0、回归残差 −2.5，五档全部 ≤ +7。选格内只是为了让 MDE 进
+200，不是为了挑一个好看的数字。
+
+#### 七、处置
+
+1. **撤回**：§9.28–§9.31 一切「vs 中位数」的 bp 读数；预注册 §1/§2/§6 的
+   效应量与 MDE；「对外表述按 +99bp」。
+2. **保留**：配对差（第二节）、`p_win`（中位数是 50/50 分类的自然中心）、
+   §9.31 的行业/规模集中度诊断（与中心无关）。
+3. **唯一存活的强读数**：high_turnover 在三个中心下都是 −522…−601bp
+   （t = −4.2…−4.7）。它只能当**排除规则**用，不能当「低换手溢价」的反面。
+4. **代码清理继续压住**：要改的六节文档里三节的数字刚被证伪，先改口径。
+
+#### 八、复现与验收
+
+```bash
+python scripts/probe_window.py --rebuild --basis=mean
+python scripts/probe_window.py --rebuild --basis=mcap
+python scripts/probe_net_diff.py --nmax=325 --basis=median   # 逐位复现 §9.31
+python scripts/probe_net_diff.py --nmax=325 --basis=mean
+python scripts/probe_basis_calibration.py --nmax=325 --draws=200 --reps=1000
+```
+
+可证伪的验收条件：
+
+- `--basis=mean` 与 `--basis=median` 的位移必须是 **+195.7 ± 0.1bp 的常数**，
+  且对四个策略都相同（脚本自己算离散度并断言 <0.2）。若随策略变 ⇒ picks
+  在换中心时动了，本节不可比。
+- 安慰剂的 ECON+ 率在 median 下必须是 **100%**（200/200），在 mean 下必须是
+  **0%**（0/200）。换 seed 或 draws，前者应恒为 100%、后者应 ≤ 5%。
+  若 median 的率掉到 50% 以下 ⇒ 偏移没有 195bp 那么大，本节结论被证伪。
+- 安慰剂的 MDE 中位必须 < 策略的 MDE（37–144 vs 202–588）；若反过来，说明
+  「持续性」这个解释错了。
+- `pytest -k decision`：**165 passed**（158 + 本节 7 条）。
+
+#### 九、下一步
+
+1. 预注册 v5：主口径换成**行业×规模格内均值**，median 降为命中率诊断；
+   全样本均值 / 成交额五分位均值 / 市值加权作为敏感性，四档同号才算同号。
+2. 这一步必须在**第一次读取确认段之前**落定（§11 的处理意见已经写了这条）。
+3. 不再在 325 天上找「更好的基准」：五档均值口径全部 ≤ +7bp，换基准换不出
+   效应，只能换来分辨率。
+
+### 9.34 确认段闸门：一句「没读」值多少钱（2026-11-05）
+
+§9.33 的处置全部落在文字上：「换中心发生在读取任何确认段结果之前」。这句话
+无法被证伪，因此也无法被信任。本节把它拆成三件可复核的事，并顺手发现：
+**漏洞不是过去的某次操作，是明天开盘后的第一次例行重建。**
+
+#### 一、漏洞按时钟打开，不按人的意图打开
+
+`probe_window.build()` 的决策日边界是 `len(cal)-HORIZON`，**没有日期上限**。
+2026-11-05 有 366 个交易日（索引 0…365），决策日可取 `i ∈ [20, 345]`，
+共 326 天，末日 2026-10-08。再落一根 2026-11-06 的 bar，索引变 0…366，
+`i = 346`（2026-10-09）立刻进入可算范围——第 327 个决策日，确认段的第一天。
+
+从那一刻起，`python scripts/probe_window.py --rebuild` 会把确认段写进三个
+`exc` 缓存和胜率缓存，**不打印任何提示**；而 `probe_net_diff.py --nmax=325`
+只是决定打印 325 行，不决定算过什么。也就是说：即使一个人完全诚实，只要
+他第二天照常重建一次，`git status` 里就会多出一份含确认段数值的文件。
+
+#### 二、签字时能证明什么
+
+`scripts/decision_gate.py audit`（2026-11-05T23:38+08:00）：
+
+| 项 | 值 |
+|---|---|
+| 价格日历 | 366 天（2025-05-07 … 2026-11-05） |
+| 可算决策日 | 326，末日 2026-10-08 |
+| 其中确认段 | **0**（2026-10-09 的 t+20 要 2026-11-06 收盘才齐备） |
+| 4 个缓存的确认段决策日 | **0 / 0 / 0 / 0** |
+
+第二行是这个节的关键：**签字时不存在可读的确认段结果**。这不是「我读了但
+没看」，是分母为零。任何「你 10 月 9 日之后改了口径，一定偷看过」的质疑，
+在这一行面前要么给出反例（某个产物里有 ≥ 2026-10-09 的决策日），要么撤回。
+
+一个必须写明的口径：确认段的采样单位是**决策日**，不是价格日历。
+2026-10-08 的决策要用 2026-11-05 的收盘价，那是它的 20 日收益。把价格日历
+也截到 10-08，会把第 326 天丢掉，样本从 326 变 325——那是另一种错。
+
+#### 三、闸门做了什么，没做什么
+
+| 机制 | 管什么 |
+|---|---|
+| `cap_calendar()` | 决策日截到 2026-10-08，保留 t+20 所需价格 |
+| `require_exploration()` | 缓存/日历含确认日则拒绝运行；`--include-confirmation` 才放行 |
+| `log_read()` | 放行时追加一行，带上一行哈希；`verify_log()` 查改写与删行 |
+| `seal()` | 冻结 4 个脚本 + 4 个缓存的哈希，写进 `docs/decision-seal.json` |
+
+**管不住的**：有人直接 `scan_parquet` 打印一个数。那只能按预注册 §5.1 定义
+为「读取」，靠日志为空 + 封签未漂移来反证，不能靠代码阻止。把这条写进文档
+比假装闸门完备有用——闸门的作用不是让人读不到，是让「读过」留痕。
+
+`cap_calendar()` 当天重跑中位数口径，与原缓存**逐字节相同**（`cmp` 通过，
+326 天、末日 10-08）：截断没有改动任何已有样本，只关掉了明天会开的那扇门。
+
+#### 四、封签为什么不能覆盖文档
+
+`seal_sha256` 要写进预注册 §12。若把预注册本身哈希进去，改一次文档就改一次
+哈希，改一次哈希又要改文档——循环，永远对不上。所以封签只覆盖**代码与产物**，
+文档只负责「引用」这个哈希。这条不是实现细节：它决定了封签能证明的是
+「分析代码没动过」，不是「文档没动过」。后者由 git 负责。
+
+#### 五、措辞更正：FAIL 是探索样本的标签
+
+§9.33 第六节写「low_turnover 在正确口径下是一个可判定的 FAIL」。这句话在
+**探索样本**上成立（+7.0bp，se 51.5，MDE 128 ≤ 200），但它不是 §4 的确认
+判定：预注册 §5 明文规定这 325 天只能定样本量。确认段的 §4 至今一格未执行，
+四个策略没有任何一个拥有 PASS/FAIL 的确认结论。把探索诊断写成 FAIL，等于
+把「分辨率够、效应不在」偷换成「预注册的检验拒绝了它」——后者没有发生。
+
+#### 六、未执行：v5 之下，确认段能改变什么决定
+
+把 §4 的 MDE 门代进 575 天（325 + 250）的预算。只用**已验证的均值全样本
+MDE**（515 / 218 / 268 / 328，`probe_net_diff --basis=mean` 实跑），按
+`se ∝ n^{-1/2}` 外推——这是近似，不是承诺：
+
+| 策略 | MDE@325 | MDE@575 | 575 天能出 §4 判定？ | 探索读数 |
+|---|---|---|---|---|
+| momentum | 515 | 387 | **否**——要 se 再降 6.6 倍（≈2,150 天） | −152.5 |
+| reversal | 218 | 164 | 是 | −73.7 |
+| low_turnover | 268 | 202 | 是，但只因主基准换到格内（128 → 约 96） | −10.5（格内 +7.0） |
+| high_turnover | 328 | 247 | 否——负向结论另说，见候选 3 | −601.1 |
+
+（其余三档的格内 MDE 没有按均值口径报过，不外推；§6 表里那几列仍是中位数
+遗留，不能拿来填这张表。）
+
+所以 250 天确认段的**预期信息增益是「把两个接近零的读数确认一遍」**：
+能出判定的只有 reversal 与 low，而两者在探索样本上是 −73.7 与 +7.0。
+momentum 即使真实效应 +200bp 也永远过不了这道门——不是样本不够，是规则把
+「pick 持续」当成了「分辨率不足」，而持续性恰恰是这套策略的定义特征。
+high 的 −601bp 是账本里最强的读数，却在字面上被判 UNRESOLVED。
+
+三个候选，**均未采纳**（改 §4 必须在第一次读取之前，现在仍然合法）：
+
+1. **把配对差 low−high 升为共同主终点。** 它中心不变（§9.33 第二节），
+   325 天已 t=3.11、p=0.0019、LCB +278bp，是账本里唯一现在就站得住的经济
+   陈述，而且正好是产品要做的选择（买低换手还是高换手）。代价：Holm 族
+   从 4 个假设变成 5 个，阈值不变。
+2. **把 MDE 从 PASS 门槛降为必报诊断。** MDE 不控制第一类错误（Holm 与
+   LCB 控制），只筛精度；当精度与持续性负相关时，它系统性偏向高换手、
+   低持续的组合——200 只零能力组合 100% 过门（§9.33 第五节）是这个方向的
+   极端。降级后四个策略在 575 天都能出判定，代价是 PASS 会带着很宽的区间
+   发布。
+3. **把「已排除」从 PASS/FAIL 里独立出来。** 这是三条里最像 bug 的一条：
+   §4 用**正向** MDE 去判**负向**结论是否可判定。MDE 的定义是「能检出的
+   最小正效应」，把它套在负向主张上是范畴错误——high_turnover 的
+   t=−4.65、净 LCB −819bp，`evaluate_series` 判 ECON−，而 §4 的字面规则
+   （MDE>200 即 UNRESOLVED，即使 p<0.05）判 UNRESOLVED。两个都叫
+   UNRESOLVED 的东西不是同一件事，这个命名撞车本身也该修。修法不改任何
+   阈值：`ECON− 且 Holm<0.05` 即「已排除」，MDE 门只对 `ECON+` 与 `FAIL`
+   适用。
+
+三条都改「能得出什么结论」，不改「怎么算」。留给下一次签字决定。
+### 9.35 判定表不是分区：v6 的三项修补与一项拒绝（2026-11-05）
+
+§9.34 第六节留了三个候选。本节把闸门的验收实验**提前**做完，又顺手查出
+两处 v5 没看见的洞，并对候选 ① 给出了否定的理由——理由是决策集合，不是统计。
+
+#### 一、闸门的验收实验不必等到明天
+
+§9.34 的验收标准是「明日 11-06 落盘后 `--rebuild` 仍必须是 326 天」。
+这一天不必等：把真实日历后面接上 301 个合成交易日，逐个重算
+`cap_calendar()` + `decision_days()`：
+
+| bar 末日 | 日历长度 | 截断后 | 决策日 | 末日 |
+|---|---|---|---|---|
+| 2026-11-06 | 367 | 366 | 326 | 2026-10-08 |
+| 2026-11-09 | 368 | 366 | 326 | 2026-10-08 |
+| 2027-12-31 | 667 | 366 | 326 | 2026-10-08 |
+
+301 个交易日的决策日集合只有一个元素 `{326, 2026-10-08}`。**闸门不是
+「明天能挡住」，是对整个确认期恒等。** 这比一天的抽查强一档：单日通过可能
+只是边界没走到。
+
+同时补做 §9.34 只做了一半的检查：拿真数据跑一次 `--rebuild`，与封签前的
+缓存逐字节比对——`.probe_per_day.json` 与 `.probe_per_day_exc.json` 均
+`cmp` 通过，重建后 `verify-seal` 仍未漂移。也就是说**日常重建不会自己
+把封签弄坏**，封签一旦漂移，原因只剩「改代码」或「历史数据被重算」。
+
+（一个必须写下来的反例边界：若数据源回补/复权重算，探索日的 `exc` 会变，
+封签会漂。那不是误报，是封签在替你发现「同一段历史不再是同一段历史」。）
+
+#### 二、封签没有对 import 闭合
+
+`probe_net_diff.py` 的配对 p 值与 se_HAC 来自 `probe_paired_diff.py`：
+
+```python
+ppd = _load("probe_paired_diff", "scripts/probe_paired_diff.py")
+se_hac, p_two_sided = ppd.se_hac, ppd.p_two_sided
+```
+
+而 `SEALED` 里只有 `probe_window / probe_net_diff / probe_basis_calibration /
+decision_gate`。改一行 `p_two_sided` 就能换掉整张配对表，`verify-seal` 不会响。
+受影响的不只是表：候选 ① 的全部论据（Δ=+590.6、p=0.0019、LCB +278）就是
+这条未封签路径算出来的。
+
+修法不是往清单里补一个文件名，是让清单**可被检查**：
+`test_seal_is_closed_over_loaded_scripts` 解析被封签脚本里所有
+`_load(..., "scripts/*.py")`，任何不在 `SEALED` 里的目标直接变红。这条测试
+在这次修补时立刻抓到了 `probe_paired_diff`。
+
+#### 三、重签会抹掉上一版（已修）
+
+`seal()` 只写一份 `decision-seal.json`。重签 = 覆盖，于是「改到哈希对得上
+为止」这条路是敞开的。现在每次签字追加一行到
+`docs/decision-seal-history.jsonl`，`prev` 存**上一版的封签哈希**（不是链哈希
+——它要回答「我接在哪一次签字后面」），`verify-seal` 额外校验历史末行与当前
+封签一致。把旧封签原样放回来时，文件哈希全部对得上，只有历史链会响。
+
+#### 四、§6 的 575 天是合并口径，§5 说的是 250 天
+
+§6 表头 `MDE@575（+250 天）` 把 325 探索日与 250 确认日加在一起算。但 §4 说
+判定「对确认样本执行」，§5 说那 325 天「只能用于定样本量」。合并等于让 56%
+的确认样本来自已经看过的数据。
+
+`se ∝ n^{-1/2}`，325→250 是 1.14 倍 MDE，方向与「再攒 250 天分辨率变好」相反：
+
+| 策略 | MDE@325 | 合并 575（作废） | 确认 250 |
+|---|---|---|---|
+| momentum | 515 | 387 | **587** |
+| reversal | 218 | 164 | **249** |
+| low（全样本） | 268 | 202 | **306** |
+| low（格内，主基准） | 128 | 96 | **146** |
+| high | 328 | 247 | **374** |
+
+结论翻转：按 §4/§5 字面执行，250 天只能给 low 一个可判定结论，reversal 从
+「能判定」变成 249——正好在门外。§6.1 已按此重写。
+
+> **v12 更正**：上表第三列的 `146` 是 `128 × √(325/250)` 的**外推**，不是 250
+> 天上的读数。格内序列落盘后重算：窗中位 **122.7**，逐窗 cohort 改正后
+> **128.9–141.8**（中位 134.7）。结论不变（仍在 200 内，余量 58bp），但这个数
+> 从此不能当读数引用。见预注册 §6.6 与 `backend/tests/test_decision_neutral_series.py`。
+
+#### 五、为什么拒绝候选 ①（把 low−high 升为共同主终点）
+
+数字是好的：Δ=+590.6、t=3.11、LCB +278、p=0.0019，而且中心是常数、配对
+消掉了共同行情。拒绝的理由不在统计，在**决策集合**：
+
+1. **它是排名，不是收益。** 两腿的绝对净区间：low `[−206.4, +152.9]`、
+   high `[−819.2, −390.4]`。「low 比 high 好」与「low 赚钱」不同，上线门槛
+   是后者。
+2. **只要「一个都不上」还在选项里，绝对检验支配排名检验。** 四个策略的净
+   收益点估计全为负（−171.5 / −92.7 / −29.5 / −620.1），点估计上的支配选项
+   是 `ship nothing`。排名只在「必须挑一个」时才是决策相关的估计量——那是
+   产品约束，应该由产品方明确写下来，而不是由预注册替它假设。
+3. **配对差对成本免疫，而成本恰恰是它的主要内容。** 两腿都减同一个 19bp，
+   差分里成本项直接消掉。这张表**结构上**看不见「高换手腿成交成本远高于
+   低换手腿」，而那正是这个价差的主要来源。把一个对唯一重要成本项免疫的
+   量放到结论位置，是 v4→v5 那次偏移的同一个形状，只是换了门。
+
+因此配对表继续报、继续标探索性，但不进 Holm 族、不产生 PASS。要让它进 §4，
+需同时满足：`ship nothing` 移出决策集合，且成本改成随换手率变化并重跑。
+
+候选 ② （MDE 降为诊断）也不必做：③ 落地后，负向结论走 `net_hi<0`，不再被
+MDE 门卡住；而 MDE 对**跨线**那一格仍然是对的过滤器——它挡的是「拿噪声的
+形状当结论」，不是「负向结论」。
+
+#### 六、v6 改了什么
+
+| 文件 | 改动 |
+|---|---|
+| `scripts/probe_net_diff.py` | `classify()` 四格分区；`decide()` 把方向与 Holm 分开；`MDE_GATE=200` 只作用于跨线格 |
+| `scripts/decision_gate.py` | `SEALED` 加入 `probe_paired_diff.py`；封签历史哈希链；`verify-seal` 查历史末行 |
+| `backend/tests/test_decision_verdict_table.py` | 新，5 条：分区穷尽、门只管跨线格、Holm 对称、真实读数重放 |
+| `backend/tests/test_decision_gate.py` | +5 条：`_load` 闭合、重签保历史、换回旧封签可查、删行可查、**活封签进 CI**（`test_live_seal_verifies`） |
+| `docs/decision-target-prereg.md` | §4 重写为四格；§4.1/4.2 写明理由；§6.1 更正分析样本 |
+
+325 天探索样本在新旧规则下的均值、分位、MDE、p **逐位相同**，只有判定标签
+变化：high_turnover 从 `UNRESOLVED` 变成 `EXCLUDED`。这是本节唯一想改变的
+东西——让账本里最强的读数可以被引用。
+
+③ 的原表述是「MDE 门只对 ECON+ 与 FAIL 适用」。实现时把它从 PASS 里也拿掉了：`net_lo > 0` 本身已经是方向性结论（区间下界高于成本），再要求 MDE ≤ 200 等于要同一个检验同时证明两件强度不同的事。要回退，只需在 `decide()` 的 `ECON+` 分支加 `and mde <= MDE_GATE` 一行，阈值不用动。

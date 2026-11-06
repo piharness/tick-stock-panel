@@ -203,3 +203,13 @@ export const IconData = make(
     <rect x="4.5" y="15.5" width="15" height="5" />
   </>,
 )
+
+/** 决策账本 — 封存的卡 + 右下角核对勾 (预登记 → 结算) */
+export const IconDecision = make(
+  <>
+    <rect x="4" y="3" width="11.5" height="18" />
+    <line x1="7" y1="7.5" x2="12.5" y2="7.5" strokeWidth="1.5" strokeOpacity="0.75" />
+    <line x1="7" y1="11" x2="10.5" y2="11" strokeWidth="1.5" strokeOpacity="0.75" />
+    <path d="M13.5 15.5L16 18L21 13" />
+  </>,
+)

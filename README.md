@@ -622,6 +622,7 @@ PORT=3018                      # 服务端口
 | [docs/strategy-iteration.md](./docs/strategy-iteration.md)                                         | AI 策略迭代协议:台账 / 证据包 / 门槛判定 / 提示词卡片                |
 | [docs/mining.md](./docs/mining.md)                                                                 | 因子与策略挖掘口径、防泄漏、任务隔离和发布边界                       |
 | [docs/market-phase.md](./docs/market-phase.md)                                                     | 市场情绪周期 6 阶段与概念/行业主线识别的口径与设计                   |
+| [docs/decision-ledger.md](./docs/decision-ledger.md)                                               | 决策账本:预登记哈希 / K1–K4 三态门禁 / 结算与 Brier 校准口径         |
 | [docs/plugin-development.md](./docs/plugin-development.md)                                         | 数据源插件开发规范(以 fuyao 为参考实现)                  |
 | [外部数据源插件安装](./docs/external-data-source-packages.md) | ZIP 安装、Key 配置、版本维护和开发模板 |
 | [docs/secondary-development.md](./docs/secondary-development.md)                                   | 代码二次开发、前端插槽、后端策略接口与 AI 开发模板                   |

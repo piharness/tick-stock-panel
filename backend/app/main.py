@@ -19,6 +19,7 @@ from app.api import (
     backtest,
     config_backup,
     data,
+    decision,
     definitions,
     events,
     ext_data,
@@ -665,6 +666,7 @@ app.include_router(indices.router)
 app.include_router(overview.router)
 app.include_router(pages_admin.router)
 app.include_router(paper.router)
+app.include_router(decision.router)
 app.include_router(abnormal.router)
 app.include_router(regime.router)
 app.include_router(analysis.router)

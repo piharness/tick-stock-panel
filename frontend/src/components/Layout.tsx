@@ -56,6 +56,7 @@ import {
   IconRegime,
   IconIndices,
   IconData,
+  IconDecision,
   type BrandIconProps,
 } from './BrandIcons'
 import { Logo } from './Logo'
@@ -94,6 +95,7 @@ const nav = [
   { to: '/regime',           label: '市场环境', icon: IconRegime },
   { to: '/indices',          label: '指数',     icon: IconIndices },
   { to: '/data',             label: '数据',     icon: IconData },
+  { to: '/decisions',        label: '决策账本', icon: IconDecision },
 ] as const
 
 /** 亮/暗主题切换 — 状态存 localStorage, 生效见 lib/theme.ts */

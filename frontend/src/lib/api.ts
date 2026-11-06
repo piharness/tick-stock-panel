@@ -2725,7 +2725,136 @@ export interface LabReport {
 }
 
 // ===== API surface =====
+// ===== 决策账本 (Decision Ledger) =====
+// 三态门禁: PASS / TRIGGERED / UNKNOWN。UNKNOWN 不是 PASS, UI 必须分开显示,
+// 否则"读不到"会被读成"没问题" —— 这正是这一层存在的理由。
+export type DecisionCheckStatus = 'PASS' | 'TRIGGERED' | 'UNKNOWN'
+export type DecisionGateDecision = 'GO' | 'GO_WITH_UNKNOWNS' | 'STOP_NEW' | 'STOP_NEW_AND_REVIEW'
+
+export type DecisionCheck = {
+  id: string
+  rule: string
+  status: DecisionCheckStatus
+  detail: string
+  evidence: Record<string, unknown>
+}
+
+export type DecisionGates = {
+  as_of: string
+  decision: DecisionGateDecision
+  blocked: boolean
+  checks: DecisionCheck[]
+  notes: string[]
+}
+
+export type DecisionCardSummary = {
+  card_id: string
+  as_of: string
+  created_at: string
+  strategy_id: string | null
+  account_id: string | null
+  horizon_sessions: number
+  benchmark: string
+  picks: number
+  gates_decision: DecisionGateDecision | null
+  override: { reason: string } | null
+  sealed_sha256: string | null
+}
+
+export type DecisionScore = {
+  basis?: 'abs' | 'median'
+  n: number
+  not_filled: number
+  pending: number
+  days?: number
+  hit_rate: number | null
+  brier: number | null
+  brier_const: number | null
+  /** 三个基线分开报告：random=p=0.5；clim=展开 climatology（决策时点可知的最优常数）；
+   *  insample=样本内命中率（事后最优，恒 ≥ 任何常数预测器，只做诊断）。
+   *  abs 口径的 `skill` 分母是 clim，不是 insample——后者会让 skill 恒 ≤ 0。 */
+  brier_random?: number | null
+  brier_clim?: number | null
+  brier_insample?: number | null
+  skill: number | null
+  /** 相对展开基线的 skill。与 `skill` 的差 = 基础胜率本身贡献的那部分。 */
+  skill_vs_clim?: number | null
+  skill_lcb?: number | null
+  /** 读数：`skill_lcb > 0` 吗。它不回答「这个下界可不可信」——那是 `significance`。 */
+  skill_lcb_positive?: boolean
+  /** 结论三态。`UNKNOWN` = 有效样本不足（`n_eff < 30` 或 Newey-West 不可用），
+   *  既不是 PASS 也不是 FAIL。读这个字段区分「测过了，没有」和「测不了」。 */
+  significance?: 'PASS' | 'FAIL' | 'UNKNOWN'
+  /** 向后兼容：等价于 `significance === 'PASS'`。新代码请读 `significance`。 */
+  significant?: boolean
+  /** 等效独立样本数。`n` 是观测数、`days` 是决策日数，都不回答「有几个独立样本」：
+   *  20 日持有期让相邻决策日重叠 19 天，386 条观测 / 40 天可能只值 1–2 个。 */
+  n_eff?: number | null
+  /** HAC 滞后阶数 = 最长持有期 − 1。 */
+  hac_lag?: number | null
+  /** false ⇒ `n_eff` 是构造值（不重叠窗口数，MA(H−1) ⇒ n/H），不是 NW 估计值。
+   *  此时 `skill` / `skill_lcb` 只能读作「不可判定」——`significance` 会是 UNKNOWN。 */
+  n_eff_reliable?: boolean
+  logloss: number | null
+  ret_median: number | null
+  excess_mean: number | null
+  excess_lcb: number | null
+  verdict: 'INSUFFICIENT' | 'BEATS_CONSTANT' | 'NO_INFORMATION'
+  reason: string
+  /** 按 p_win 出处分组：ledger（账本自举）/ prior（冷启动常数）/ unknown（人手填或旧记录）。
+   *  合并分数会被没有信息的那段稀释，所以后端同时给出拆分。 */
+  by_source?: Record<string, {
+    n: number
+    days: number
+    hit_rate: number
+    brier: number
+    skill: number | null
+    verdict: 'INSUFFICIENT' | 'BEATS_CONSTANT' | 'NO_INFORMATION'
+  }>
+}
+
+export type DecisionPrior = {
+  p0: number | null
+  /** 采样日之间的标准误。横截面观测高度相关，不能用 n_obs 算。 */
+  p0_se?: number | null
+  p0_range?: [number, number] | null
+  n_dates: number
+  n_obs: number
+  horizon: number
+  sample?: number
+  step?: number
+  sample_dates?: string[]
+  note?: string
+  reason?: string
+}
+
+export type DecisionOverview = {
+  as_of: string
+  gates: DecisionGates
+  cards: number
+  latest_cards: DecisionCardSummary[]
+  settlements: number
+  score: DecisionScore
+  /** 选股口径：因变量是「跑赢同日全市场中位数」，常数基线精确为 50%。 */
+  score_median?: DecisionScore
+}
+
 export const api = {
+  // ===== 决策账本 =====
+  decisionOverview: (asOf?: string) =>
+    request<DecisionOverview>(`/api/decision/overview${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`),
+  decisionCards: (limit = 50) =>
+    request<{ total: number; cards: DecisionCardSummary[] }>(`/api/decision/cards?limit=${limit}`),
+  decisionSettle: () =>
+    request<{ cards: number; considered: number; written: number; pending: number; not_filled: number }>(
+      '/api/decision/settle',
+      { method: 'POST' },
+    ),
+  decisionScore: (includePrior = false) =>
+    request<{ score: DecisionScore; prior?: DecisionPrior }>(
+      `/api/decision/score?include_prior=${includePrior ? 'true' : 'false'}`,
+    ),
+
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
 
   // ===== Auth (访问认证) =====

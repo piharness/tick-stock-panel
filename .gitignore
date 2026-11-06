@@ -66,6 +66,9 @@ backend/user_prompts/
 # ===== AI IDE =====
 .trae/
 .zcode/
+# WorkBuddy 会话数据/记忆/任务清单 (含个人工作上下文, 不入库)
+.workbuddy/
+.workbuddy-ai/
 
 # ===== TypeScript build cache =====
 frontend/tsconfig*.tsbuildinfo
