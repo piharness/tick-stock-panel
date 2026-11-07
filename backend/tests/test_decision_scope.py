@@ -144,3 +144,31 @@ def test_nb_is_a_proxy_for_block_length_not_a_floor_on_count(ser) -> None:
     #: 三格的 nb 是 5/5/7，比值却是「坏/好/好」——块数不是那个变量。
     assert -(-250 // 60) == -(-190 // 40) == 5
     assert -(-250 // 40) == 7
+
+
+def test_section_12_14_declares_the_judgment_unit() -> None:
+    """§12.14 必须同时钉住「判定单位 = t/IR」与「MDE 只当附注」两半。
+
+    只写前一半，MDE 会从筛选器「降级为附注」再悄悄爬回判据；只写后一半，
+    跨线格的分辨率标签（FAIL/UNDERPOWERED，§4.1）会被误伤。条款的证据锚
+    少一个，条款就退回口说：2.486（恒等绑定）、1.103（log|μ|~log(se) 斜率，
+    ρ=+0.17 只是它的影子）、3.15/3.79（40 配置族系临界）、
+    2.39 + 19/se（IR_min 不是常数）。
+    """
+    text = PREREG.read_text(encoding="utf-8")
+    start = text.find("### 12.14 ")
+    assert start >= 0, "预注册里没有 §12.14"
+    nxt = text.find("\n### ", start + 1)
+    body = text[start:nxt if nxt != -1 else len(text)]
+    # 两半：单位条款与「不得进筛选器」的禁止面。
+    assert "判定单位 = t" in body, body[:400]
+    assert "不得进入任何" in body, body[:400]
+    # 冻结扩展与族系重算：只冻三元组不够，临界值不能沿用。
+    assert "(H, TOP_N, 基准, 判定单位, 多重比较族及其临界值)" in body, body[:400]
+    assert "重算 max-|z| 临界值" in body, body[:400]
+    # 证据锚（对 data/.probe_mde_matrix.json 复核过的数）。
+    for token in ("2.486", "1.103", "+0.17", "3.15", "3.79", "2.39 + 19/se", "12/40"):
+        assert token in body, token
+    # 边界：不触碰既有判定表达式的语义（§4 / v13b / v13c）。
+    assert "CONFIRM_GATE=176.0" in body, body[:400]
+    assert "不改 §4 的任何符号语义" in body, body[:400]
