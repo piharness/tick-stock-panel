@@ -194,6 +194,10 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
         "p_win_n": meta.get("n"),
         "p_win_verdict": meta.get("verdict"),
         "recorded_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        #: 窗口内事件的累计复权因子。先落 None（不成交 / 缺价的行就停在 None），
+        #: 真正算出收益的分支再覆盖它。放在 `base` 里是为了让每一行的键集一致：
+        #: 账本逐行追加，键集随分支漂移，读的人只能靠 `.get()` 猜。
+        "window_ex_factor": None,
     }
     if fill["status"] != "FILLED":
         return {**base, "fill": {**fill, "date": entry}, "exit": None,
@@ -217,20 +221,35 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
         exit_close_f = float(exit_close)
     except (TypeError, ValueError):
         exit_close_f = None
+    try:
+        exit_raw_f = float(exit_raw)
+    except (TypeError, ValueError):
+        exit_raw_f = None
 
-    if f_entry is not None and exit_close_f is not None:
+    # 首选口径：不复权价 × 窗口内除权事件因子。它**不读** enriched 的 `close`。
+    # 那条序列是按日增量重算的派生列，事件到达与全历史重算出清之间天然有滞后；
+    # 滞后窗口里入场、出场两端被同一个陈旧因子除过，因子约掉，分红整段消失，
+    # 而这一行写完就被 `done` 键固化。事件表是输入而非派生列，不受那段滞后影响，
+    # 所以它能把因子重新带回算式里。
+    window_fac = bars.ex_factor_product(data_dir, [symbol], entry, exit_day)
+    if window_fac is not None and exit_raw_f is not None:
+        fac: float | None = window_fac.get(symbol, 1.0)
+        ret = exit_raw_f * fac / fill_price - 1.0
+        price_basis = "EVENT"
+    elif f_entry is not None and exit_close_f is not None:
+        fac = None
         entry_adj = fill_price * f_entry
         ret = exit_close_f / entry_adj - 1.0
         price_basis = "ADJUSTED"
     else:
-        try:
-            ret = float(exit_raw) / fill_price - 1.0
-        except (TypeError, ValueError):
+        fac = None
+        if exit_raw_f is None:
             return {**base, "fill": {**fill, "date": entry}, "exit": None,
                     "outcome": None, "brier": None, "logloss": None,
                     "excess": None, "benchmark_ret": None,
                     "median_ret": None, "excess_med": None, "outcome_med": None,
                     "invalid": "到期日缺少可用价格"}
+        ret = exit_raw_f / fill_price - 1.0
         price_basis = "RAW"
 
     benchmark_ret = _benchmark_ret(data_dir, str(card.get("benchmark") or "000300.SH"),
@@ -251,6 +270,7 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
                                                   else float(exit_raw), 4),
                  "ret": round(ret, 6)},
         "price_basis": price_basis,
+        "window_ex_factor": None if fac is None else round(fac, 8),
         "benchmark_ret": None if benchmark_ret is None else round(benchmark_ret, 6),
         "excess": None if benchmark_ret is None else round(ret - benchmark_ret, 6),
         "median_ret": None if median_ret is None else round(median_ret, 6),
@@ -317,6 +337,11 @@ def _settle_locked(data_dir: Path, *, as_of: str | None = None) -> dict[str, Any
         # median 口径需要当天全市场分区；缺分区时 outcome_med 为 None，
         # 该样本在 median 计分里被排除。这里如实报告覆盖率，而不是让它静默缩水。
         "median_covered": sum(1 for r in appended if r.get("outcome_med") is not None),
+        #: 收益口径分布。`EVENT` 是唯一把分红算进去的读法；`ADJUSTED` / `RAW` 是
+        #: 事件表缺位时的降级。降级必须出现在管道结果里——否则「今天结算了 20 条」
+        #: 与「今天结算了 20 条不含分红的」在日志里长得一样。
+        "return_basis": {b: sum(1 for r in appended if r.get("price_basis") == b)
+                         for b in ("EVENT", "ADJUSTED", "RAW")},
     }
 
 
