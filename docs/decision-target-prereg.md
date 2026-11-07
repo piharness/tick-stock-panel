@@ -1609,7 +1609,7 @@ v13b→v13c；新增 `backend/tests/test_decision_probe_confirm.py`（12 条）�
 | 判定路径未动 | `pytest -k decision` | 全绿 | 探索层改动渗进了判定 |
 
 **13s 不建立什么**：不建立「生存偏差 ≤ 13bp」这个结论（它只对低换手 20% 层的
-**均值**成立，产品口径的 mom 前 100 不可识别，见账本 §9.43 五）；不改
+**均值**成立，产品口径的 mom 前 100 不可识别，见账本 §9.42 五）；不改
 `probe_survivorship_bound.py` 的封签状态（脚本仍不封，改它不必重签，这是治理
 选择，残留风险已写进账本 §7）。
 
@@ -1645,7 +1645,7 @@ v13b→v13c；新增 `backend/tests/test_decision_probe_confirm.py`（12 条）�
 2. `protocol.forced` 写「入层率见 `injection[].synth_in_layer`」，该列不存在，
    一个自称「上界」的臂，读者查不到它有几成真的进了层；
 3. 「闭式锚」挂在 `all_present_pool_mean_bp` 上，而它是**构造面板后重算**的模拟
-   值；真算术是 `identity_bp`，两者 K=155 时差 **6.78bp**，产物里两个数并存、
+   值；真算术是 `identity_bp`，两者 K=155 时差 **6.77bp**，产物里两个数并存、
    无一字记录差因。
 
 第 1、2 条是纯字符串改动，产物字节不变 ⇒ 闸门不响。所以「重跑才红」这条防守，
