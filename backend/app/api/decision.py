@@ -33,6 +33,20 @@ def _data_dir(request: Request) -> Path:
     return request.app.state.repo.store.data_dir
 
 
+def _load_settlements_or_409(data_dir: Path) -> list[dict[str, Any]]:
+    """结算流水读取的**唯一** HTTP 出口：坏行一律 409，不落到通用 500。
+
+    `load_settlements` 改成 fail-closed 之后，未包装的调用点会在损坏账本上
+    抛 `LedgerCorruptError`——它是 `ValueError` 的子类，会被同文件里那些
+    `except ValueError -> 400` 的分支误判成参数错误。所以每个调用点都走这里，
+    把「账本坏了」固定映射成 409（可修复的状态冲突），而不是 400（请求写错了）。
+    """
+    try:
+        return ledger.load_settlements(data_dir)
+    except ledger.LedgerCorruptError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 class PickModel(BaseModel):
     symbol: str
     limit_price: float
@@ -105,13 +119,17 @@ def overview(request: Request, as_of: str | None = Query(default=None)) -> dict[
         pending = settle_mod.outstanding(data_dir)
     except ledger.LedgerCorruptError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    rows = ledger.load_settlements(data_dir)
+    rows = _load_settlements_or_409(data_dir)
     return {
         "as_of": gate.as_of,
         "gates": gate.to_dict(),
         "cards": len(cards),
         "latest_cards": [_card_summary(c) for c in cards[-5:][::-1]],
         "settlements": len(rows),
+        # 账本可读性。放在这里而不是只放在 /health，是因为「0 条」这句话
+        # 就出现在这个端点上：读者需要就地看到它是「从未写入」还是「读不出」。
+        # 同一个 `data_dir` 再扫一遍，代价是一次 jsonl 顺序读——比读错的代价便宜。
+        "health": ledger.ledger_health(data_dir),
         # 两个口径并列返回，不做取舍：`abs` 回答"赚没赚"，`median` 回答"选得准不准"。
         # 它们的样本量含义完全不同，混在一起看会得出相反结论。
         "score": settle_mod.score(rows, pending=pending, basis=settle_mod.BASIS_ABS),
@@ -175,6 +193,12 @@ def _resolve_picks(req: CardModel, data_dir: Path, *, allow_prior: bool,
             "hint": ("这是失败关闭：账本里没有证据支撑一个 p_win。"
                      "先补登历史卡并结算，或传 allow_prior=true "
                      "显式用先验常数建卡（卡上记 source=prior）。"),
+        }) from exc
+    except ledger.LedgerCorruptError as exc:
+        # 账本坏了 ≠ 没有证据。两者都是 409，但下一句话不同：这个要修文件。
+        raise HTTPException(status_code=409, detail={
+            "message": str(exc),
+            "hint": "结算流水有损坏行：先修文件，再建卡。GET /api/decision/health 看问题行号。",
         }) from exc
 
 
@@ -273,7 +297,7 @@ def get_score(request: Request, strategy_id: str | None = Query(default=None),
               include_prior: bool = Query(default=False),
               basis: str = Query(default=settle_mod.BASIS_ABS)) -> dict[str, Any]:
     data_dir = _data_dir(request)
-    rows = ledger.load_settlements(data_dir)
+    rows = _load_settlements_or_409(data_dir)
     try:
         pending = settle_mod.outstanding(data_dir)
     except ledger.LedgerCorruptError as exc:
@@ -304,7 +328,7 @@ def get_pwin(request: Request, strategy_id: str | None = Query(default=None),
     这是建卡前该看的东西：`reliable=false` 意味着历史胜率对未来没有预测力，
     此时 `p_win` 这个数字不该被当作信息使用。
     """
-    rows = ledger.load_settlements(_data_dir(request))
+    rows = _load_settlements_or_409(_data_dir(request))
     try:
         return pwin_mod.estimate(rows, strategy_id=strategy_id, horizon=horizon,
                                  basis=basis, window=window, kappa=kappa,
@@ -317,5 +341,17 @@ def get_pwin(request: Request, strategy_id: str | None = Query(default=None),
 
 @router.get("/settlements")
 def list_settlements(request: Request, limit: int = Query(default=100, ge=1, le=1000)) -> dict[str, Any]:
-    rows = ledger.load_settlements(_data_dir(request))
+    rows = _load_settlements_or_409(_data_dir(request))
     return {"total": len(rows), "settlements": rows[-limit:][::-1]}
+
+
+@router.get("/health")
+def get_ledger_health(request: Request) -> dict[str, Any]:
+    """账本健康快照——**永不 409**，它的全部意义就是「账本坏了也要能问」。
+
+    与其余端点的分工：那些端点回答「账本说了什么」，读不出来就 409；这个
+    端点回答「账本现在能不能读、以及读不出来是哪一种」，所以它自己必须永远
+    可读。`status` 四态见 `ledger.ledger_health`（`never_written` 尤其重要：
+    它与「有卡但读不出」在别的端点上同为「0 条」）。
+    """
+    return ledger.ledger_health(_data_dir(request))

@@ -281,20 +281,173 @@ def append_settlements(data_dir: Path, rows: list[dict[str, Any]]) -> int:
     return len(rows)
 
 
-def load_settlements(data_dir: Path) -> list[dict[str, Any]]:
-    path = settlements_path(data_dir)
-    if not path.exists():
-        return []
-    out: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
+def _scan_settlements(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    """逐行读结算流水，返回 (可解析的记录, 问题清单)。**不抛异常**。
+
+    问题清单每一条都带行号：只报「有几处坏」而不报「哪一行」，读者只能把
+    整份文件重看一遍——而这份文件的每一行都是一次已经发生的结算。
+
+    重复键计入问题：`settle()` 的幂等性保证同一 key 只写一次，出现两行同键
+    说明要么写入中断后重试、要么多进程并发（§9.36 二 的已知边界）。
+    这两种情形下 `score()` 都会把一笔样本计成两笔，静默收下等于让分数无声
+    失真。
+    """
+    rows: list[dict[str, Any]] = []
+    problems: list[str] = []
+    seen: dict[str, int] = {}
+    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
         if not line:
             continue
         try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            problems.append(f"第 {lineno} 行 JSON 解析失败（{exc.msg}）")
             continue
-    return out
+        if not isinstance(row, dict):
+            problems.append(f"第 {lineno} 行不是对象")
+            continue
+        if row.get("kind") != SETTLEMENT_KIND:
+            problems.append(f"第 {lineno} 行 kind 非结算记录")
+            continue
+        key = row.get("key")
+        if not key:
+            # `settle()` 的幂等性靠 key；缺 key 的行既不会被跳过、也不会被覆盖，
+            # 它会在每次读到时被当成一条新样本。这不是「不完整」，是不可用。
+            problems.append(f"第 {lineno} 行缺 key")
+            continue
+        key = str(key)
+        if key in seen:
+            problems.append(f"第 {lineno} 行 key 重复（同第 {seen[key]} 行）")
+            continue
+        seen[key] = lineno
+        rows.append(row)
+    return rows, problems
+
+
+def load_settlements(data_dir: Path) -> list[dict[str, Any]]:
+    """全部结算记录，按写入顺序（jsonl 只追加，顺序即写入时间序）。
+
+    损坏行（解析失败 / 不是对象 / kind 非结算记录 / 同键重复）直接抛
+    `LedgerCorruptError` 并列出问题行号——fail-closed，与 `load_cards` 同构。
+
+    这条曾经是 `except: continue`。静默跳过一行的后果不是「少一个样本」，
+    而是**两个下游看到两份不同的账本**：`settle()` 认为该 key 没写过，于是
+    重算并再写一行（同键重复，从此永久双计）；`score()` 认为样本少了一条。
+    同一份文件被两处以两种方式读错，而两处都不报错。
+
+    目录不存在仍是空账本（从未写入），不是损坏——两者要靠
+    `ledger_health()` 区分，不能都读作「空」。
+    """
+    path = settlements_path(data_dir)
+    if not path.exists():
+        return []
+    rows, problems = _scan_settlements(path)
+    if problems:
+        more = "" if len(problems) <= 10 else f"；…共 {len(problems)} 处"
+        raise LedgerCorruptError(
+            f"结算流水有 {len(problems)} 处损坏，拒绝在残缺账本上继续"
+            f"（fail-closed）：" + "；".join(problems[:10]) + more
+        )
+    return rows
+
+
+#: `ledger_health()` 的四态。它不是 `load_*` 的返回值，是**解释**：
+#: 同一句「0 条记录」至少有三种成因，而这三种的下一步动作完全不同。
+HEALTH_NEVER_WRITTEN = "never_written"
+HEALTH_OK = "ok"
+HEALTH_DEGRADED = "degraded"
+HEALTH_CORRUPT = "corrupt"
+
+
+def ledger_health(data_dir: Path) -> dict[str, Any]:
+    """账本的可判定性快照。**从不抛异常**——它的职责是替你分辨「0 条」是哪一种。
+
+    三种「0 条记录」：
+
+    - `never_written`：`<data_dir>/user_data/decision` 不存在。账本从未被写过，
+      所以「没有结算」等于「还没有开始计时」，不是「计时坏了」；
+    - `corrupt`：目录在、文件在，但有行读不出来。此时 `load_cards` /
+      `load_settlements` 会抛错，而**任何统计量都不该在这份账本上计算**；
+    - `degraded`：全部能读，但存在**已被 `done` 键固化、永远不会重算**的残缺行
+      （`outcome` 缺失却已成交、或 `outcome_med` 缺失）。它们不会自己好。
+
+    第三种最容易被误读成第二种的轻症。`settle()` 按 `done` 集合永久跳过已写
+    key，所以一条 `outcome_med=None` 的行是终态：`median_covered` 会一直小于
+    `written`，而每一份读数都仍然「正常」。这里把它数出来，就是为了让
+    「读数正常但分母在缩水」在事发当时可见。
+
+    `status` 只看这四态；细项在 `cards` / `settlements` 两个块里，字段名即口径。
+    """
+    base = root(data_dir)
+    cards = cards_dir(data_dir)
+    spath = settlements_path(data_dir)
+
+    cards_info: dict[str, Any] = {
+        "dir": str(cards),
+        "dir_exists": cards.is_dir(),
+        "count": 0,
+        "error": None,
+    }
+    try:
+        cards_info["count"] = len(load_cards(data_dir))
+    except LedgerCorruptError as exc:
+        cards_info["error"] = str(exc)
+
+    settle_info: dict[str, Any] = {
+        "path": str(spath),
+        "exists": spath.exists(),
+        "lines": 0,
+        "rows": 0,
+        #: 每一处都带行号；空列表表示整份文件逐行可解析。
+        "problems": [],
+        #: 已成交却读不出读数（到期日缺价）——`done` 键已固化，重跑不会修。
+        "filled_without_outcome": 0,
+        #: 有绝对读数但没有中位数读数（当日全市场分区不足）——同上，永久缺。
+        "median_missing": 0,
+    }
+    if spath.exists():
+        rows, problems = _scan_settlements(spath)
+        text = spath.read_text(encoding="utf-8")
+        settle_info["lines"] = sum(1 for line in text.splitlines() if line.strip())
+        settle_info["rows"] = len(rows)
+        settle_info["problems"] = problems
+        settle_info["filled_without_outcome"] = sum(
+            1 for r in rows
+            if (r.get("fill") or {}).get("status") == "FILLED" and r.get("outcome") is None)
+        settle_info["median_missing"] = sum(
+            1 for r in rows
+            if r.get("outcome") is not None and r.get("outcome_med") is None)
+
+    frozen = settle_info["filled_without_outcome"] + settle_info["median_missing"]
+    if not base.exists():
+        status = HEALTH_NEVER_WRITTEN
+        detail = (f"{base} 不存在：账本从未被写过。「没有结算」在此只等于"
+                  f"「还没开始计时」，不是「计时坏了」。")
+    elif settle_info["problems"] or cards_info["error"]:
+        status = HEALTH_CORRUPT
+        detail = (f"账本可读性受损：结算流水 {len(settle_info['problems'])} 处问题、"
+                  f"决策卡 {'有' if cards_info['error'] else '无'}问题。"
+                  f"在此之上算出的任何统计量都不成立。")
+    elif frozen:
+        status = HEALTH_DEGRADED
+        detail = (f"全部可解析，但有 {frozen} 条残缺结算行已被 `done` 键固化："
+                  f"{settle_info['filled_without_outcome']} 条已成交无读数、"
+                  f"{settle_info['median_missing']} 条缺中位数读数。"
+                  f"重跑 `settle()` 不会修它们——它们已不在待结算集合里。")
+    else:
+        status = HEALTH_OK
+        detail = "账本可读且无固化残缺行。"
+
+    return {
+        "status": status,
+        #: 账本根目录。它是否存在，是「从未写入」与其余各态的唯一分界。
+        "root": str(base),
+        "root_exists": base.exists(),
+        "cards": cards_info,
+        "settlements": settle_info,
+        "detail": detail,
+    }
 
 
 def settlement_key(card_id: str, symbol: str) -> str:
