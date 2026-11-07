@@ -5,9 +5,10 @@
 
 1. **覆盖**：扫描范围里每个断言行要么锚定到产物（值逐项比对），要么在封存
    名单里。
-2. **身份粒度**：身份是**数字向量**（行里全部数字，剔掉 §章节号与 v版本号），
-   不是整行文本。改字（错字、标点、措辞）不许触发；改任何一位数——**包括裸
-   整数**——必须触发。这一对必须同时存在：只有「改数会红」的话，把整行哈希当
+2. **身份粒度**：身份是**数字向量**（行里全部数字连同前置符号，剔掉 §章节号与
+   v版本号），不是整行文本。改字（错字、标点、措辞）不许触发；改任何一位数、
+   或翻转 `+`/`−`/`±`——**包括裸整数**——必须触发。这一对必须同时存在：只有
+   「改数会红」的话，把整行哈希当
    身份也能过，而错字会天天假红；只有「改字不红」的话，身份退化成「只认小数」，
    `323 个可评估日` 改成 `324` 就没人管了。
 3. **记账**：同一文件里两行写着同一组数时，不能互相顶替（少一条要红，
@@ -25,7 +26,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -130,23 +133,96 @@ def test_digit_identity_covers_bare_integers():
     assert CHECKER.fingerprint("样本量是 323 个可评估日，区间 44–49。") == base
 
 
-def test_only_doc_coordinates_are_exempt():
-    """豁免只有两类：`§9.39` 的章节号与 `v13c` 的版本号。
+def test_only_doc_coordinates_and_list_marks_are_exempt():
+    """豁免只有三类：`§9.39` 的章节号、`v13c` 的版本号、行首有序列表编号。
 
     日期**不**豁免——「2026-11-05 的快照」是对数据新鲜度的声称，改日期该重核。
-    全角数字不是另一个数。
+    全角数字不是另一个数。列表编号是排版：给它换序号不该重核，而 `2.57` 这种
+    以「数字+点」开头的读数一个字符都不许吃（`(?!\\d)` 守这一条）。
     """
     assert CHECKER.digits("见 §9.39 与 v13c：收窄 0.42 倍") == ["0.42"]
     assert CHECKER.digits("2026-11-05 的快照，5,579 只") == ["2026", "11", "05",
                                                            "5", "579"]
     assert CHECKER.digits("\uff10\uff0e\uff14\uff12") == ["0.42"]
+    # 三类豁免里的第三类
+    assert CHECKER.digits("1. **§6.1 的算术**：MDE@250 = MDE@325") == ["250", "325"]
+    assert CHECKER.digits("3) 实测 3 倍") == ["3"]
+    assert CHECKER.digits("（2）实测 3 倍") == ["3"]
+    # 小数点不是列表编号
+    assert CHECKER.digits("2.57–2.71 倍") == ["2.57", "2.71"]
+    assert CHECKER.digits("0.01bp 的容差") == ["0.01"]
+
+
+def test_sign_is_part_of_identity():
+    """符号翻转必须换身份——它不是错字，是把结论翻了个面。
+
+    同时钉住四种「长得像符号、其实不是」的东西：日期连字符、数字区间、
+    markdown 项目符号、以及排版等价的减号变体。
+    """
+    a = CHECKER.fingerprint("实测验证段 −4.19%，训练段 +4.45%。")
+    assert CHECKER.fingerprint("实测验证段 +4.19%，训练段 +4.45%。") != a
+    assert CHECKER.fingerprint("实测验证段 −4.19%，训练段 −4.45%。") != a
+    # 排版等价：ASCII / Unicode / 全角减号是同一个符号
+    assert CHECKER.fingerprint("实测 −4.19%") == CHECKER.fingerprint("实测 -4.19%")
+    assert CHECKER.fingerprint("实测 −4.19%") == CHECKER.fingerprint("实测 －4.19%")
+    # 日期连字符、数字区间、项目符号都不进符号
+    assert CHECKER.digits("2026-11-05 的快照") == ["2026", "11", "05"]
+    assert CHECKER.digits("区间 44-49、44–49") == ["44", "49", "44", "49"]
+    assert CHECKER.digits("- 250 天窗") == ["250"]
+    # 指数符号与公式里的紧邻符号要进身份
+    assert CHECKER.digits("1e-05") != CHECKER.digits("1e+05")
+    assert CHECKER.digits("MA(horizon-1)")[-1] == "-1"
+    assert CHECKER.digits("lag+1")[-1] == "+1"
+    # `±` 是独立符号，不是 `+` 的别名
+    assert CHECKER.digits("实测 ±12%") == ["±12"]
+    assert CHECKER.digits("实测 ±12%") != CHECKER.digits("实测 +12%")
+
+
+def test_sign_flip_in_a_real_file_turns_red(tmp_path):
+    """端到端：封存行把 `−` 翻成 `+`，必须是 `STALE` + `UNREGISTERED`。
+
+    这是 13n 的回归——旧身份按纯数字取值，这个改动全绿，只在 `PROSE_DRIFT`
+    里留一条提示。符号不是「只改字」。
+    """
+    rel = "backend/app/decision/sample.py"
+    old = "实测验证段 −4.19%，训练段 +4.45%。"
+    new = "实测验证段 +4.19%，训练段 +4.45%。"
+    assert CHECKER.fingerprint(old) != CHECKER.fingerprint(new)
+    _write(tmp_path, rel, _doc(old))
+    reg = {"entries": [], "frozen": [
+        {"file": rel, "text": old, "sha": CHECKER.fingerprint(old)}]}
+    assert CHECKER.check(tmp_path, reg, CFG).ok
+
+    _write(tmp_path, rel, _doc(new))
+    kinds = CHECKER.check(tmp_path, reg, CFG).kinds()
+    assert kinds == {"STALE", "UNREGISTERED"}, kinds
+
+
+def test_renumbering_an_ordered_list_keeps_identity(tmp_path):
+    """给 docstring 的列表插一条、后面全部重编号 ⇒ **不该红**。
+
+    13q 之前 `1. ` 里的 `1` 在身份里：在列表中间插一条，后面每一条都换了身份，
+    8 行同时 `STALE` + `UNREGISTERED`。人只会去跑 `--rebaseline`，于是真改动
+    （同一批里的读数变化）也跟着被一起重签——**假红把真红洗掉了**。
+    """
+    assert CHECKER.fingerprint("1. 实测 3 倍。") == CHECKER.fingerprint("2. 实测 3 倍。")
+    rel = "backend/app/decision/sample.py"
+    reg = {"entries": [], "frozen": [
+        {"file": rel, "text": "1. 实测 3 倍。"}]}
+    _write(tmp_path, rel, _doc("2. 实测 3 倍。"))
+    rep = CHECKER.check(tmp_path, reg, CFG)
+    assert rep.ok, [f["kind"] for f in rep.failures]
+    assert [n["kind"] for n in rep.notes] == ["PROSE_DRIFT"]   # 文字变了，看得见
+    # 但列表里的读数本身改了，仍然要红
+    _write(tmp_path, rel, _doc("2. 实测 4 倍。"))
+    assert CHECKER.check(tmp_path, reg, CFG).kinds() == {"STALE", "UNREGISTERED"}
 
 
 def test_every_digit_in_the_repo_is_identity_bearing():
     """真仓库的断言行：每一位数都承重，一个都不能是哑的。
 
-    这条是主断言——「检查器不许悄悄放宽身份」的护栏。豁免必须恰好由 §章节号
-    与 v版本号解释掉，多剔一种（例如把日期也剔了）就会红。
+    这条是主断言——「检查器不许悄悄放宽身份」的护栏。豁免必须恰好由 §章节号、
+    v版本号与行首列表编号解释掉，多剔一种（例如把日期也剔了）就会红。
     """
     lines = CHECKER.scan(REPO, CFG)
     assert len(lines) >= 90, f"只扫到 {len(lines)} 条断言行"
@@ -163,13 +239,37 @@ def test_every_digit_in_the_repo_is_identity_bearing():
         raw, kept = len(CHECKER.DIGITS.findall(ln.text)), len(CHECKER.digits(ln.text))
         if raw != kept:
             exempt = sum(len(CHECKER.DIGITS.findall(m.group(0)))
-                         for rx in (CHECKER._SECTION_REF, CHECKER._VERSION)
+                         for rx in (CHECKER._SECTION_REF, CHECKER._VERSION,
+                                    CHECKER._LIST_MARK)
                          for m in rx.finditer(ln.text))
             if raw - kept != exempt:
                 unexplained.append(f"{ln.file}:{ln.lineno} 少了 {raw - kept} 个数字，"
-                                   f"§/v 只解释了 {exempt} 个")
+                                   f"§/v/列表编号只解释了 {exempt} 个")
     assert not blind, "这些数字改了不换身份：" + "; ".join(blind[:5])
     assert not unexplained, "\n".join(unexplained[:5])
+
+
+def test_repo_census_matches_the_quoted_numbers():
+    """模块 docstring 里的 94 / 315 / 294 必须是**算出来的**，不是抄的。
+
+    检查器自己不进入扫描范围（否则「94 条」这条断言行会把 94 改成 95，形成自指），
+    所以这一层只能由断言兜底：扫描口径一变，这里先红，docstring 才有机会同步。
+    13n 的教训是——136 写在 docstring 与账本里，谁也没法验，包括作者。
+
+    `315 − 13 §/v 坐标 − 8 行首列表编号 = 294`：13q 之前那 8 个编号在身份里，
+    给 docstring 插一条列表项就会让后面 8 行一起假红。
+    """
+    lines = CHECKER.scan(REPO, CFG)
+    assert len(lines) == 94
+    assert sum(len(CHECKER.DIGITS.findall(ln.text)) for ln in lines) == 315
+    assert sum(len(CHECKER.digits(ln.text)) for ln in lines) == 294, \
+        "315 − 13 个文档坐标 − 8 个行首列表编号 = 294 个承重数字"
+    groups = Counter((ln.file, ln.key) for ln in lines)
+    assert sum(1 for n in groups.values() if n > 1) == 2, \
+        "同指纹撞键组数变了，检查器 docstring 与账本 §9.41 四的 2 组要同步"
+    # 分母不钉死（写一句带数字的话就会变），但天花板要有人看：射程暴增是信号。
+    assert 94 < CHECKER.check(REPO, _registry(), CFG).numbered < 400, \
+        "claim 段落带数字行数翻倍了，扫描口径或 docstring 出了事"
 
 
 def test_bare_integer_edit_in_a_real_file_turns_red(tmp_path):
@@ -306,8 +406,71 @@ def test_registry_drift_is_rejected(tmp_path):
                                                          "VALUE_MISMATCH"}
 
 
+def test_claimed_value_must_be_a_whole_token(tmp_path):
+    """`claimed` 必须是**整枚数字**，不能靠子串命中。
+
+    旧实现 `f"{claimed:g}" in text`：`claimed=1` 命中 `17.5`，`claimed=7` 也命中
+    `17.5`。于是「1 条偏宽」改成「2 条偏宽」、登记表仍写 1，R2(b) 照样过——对
+    个位数声称值来说那条检查几乎空的。这是活的假绿，不是休眠缺陷。
+    """
+    assert CHECKER._claimed_in_text("实测 0.7–17.5%、1 条偏宽 10.1%", 1)
+    assert not CHECKER._claimed_in_text("实测 0.7–17.5%、2 条偏宽 10.1%", 1)
+    assert not CHECKER._claimed_in_text("实测 0.7–17.5%", 7)
+    assert not CHECKER._claimed_in_text("实测 0.72 倍", 7)
+    assert not CHECKER._claimed_in_text("实测 0.72 倍", 2)
+    assert CHECKER._claimed_in_text("区间 44–49", 44)
+    assert not CHECKER._claimed_in_text("区间 44–49", 4)
+
+    # 端到端：登记表与正文不同步，必须红
+    rel = "backend/app/decision/sample.py"
+    _write(tmp_path, rel, _doc("实测 0.7–17.5%、2 条偏宽。"))
+    _write(tmp_path, "data/.scratch/x.json", json.dumps({"wider": 1}))
+    reg = {"frozen": [], "entries": [{
+        "id": "t", "file": rel, "text": "实测 0.7–17.5%、2 条偏宽。",
+        "artifact": "data/.scratch/x.json", "generator": "scripts/probe_x.py",
+        "checks": [{"path": "wider", "claimed": 1}]}]}
+    assert CHECKER.check(tmp_path, reg, CFG).kinds() == {"REGISTRY_DRIFT"}
+
+
+def test_claimed_sign_must_match(tmp_path):
+    """`claimed` 的符号必须与正文一致，且 `−`/`-` 是同一个符号。
+
+    旧实现：`claimed=4.19` 在 `−4.19` 上命中（假绿）；`claimed=-4.19` 拼出 ASCII
+    `-4.19`，正文是 U+2212，反而不命中（假红）。`entries` 里负声称值今天是 0 条，
+    但这不是「休眠」——只要有人锚定一条负数，它立刻按错的方向工作。
+    """
+    assert not CHECKER._claimed_in_text("实测验证段 −4.19%", 4.19)
+    assert CHECKER._claimed_in_text("实测验证段 −4.19%", -4.19)
+    assert CHECKER._claimed_in_text("实测验证段 -4.19%", -4.19)    # ASCII 减号
+    assert not CHECKER._claimed_in_text("实测验证段 +4.19%", -4.19)
+    assert not CHECKER._claimed_in_text("实测 ±12%", 12)          # ± 不冒充单值
+
+    rel = "backend/app/decision/sample.py"
+    line = "实测验证段 −4.19%，训练段 +4.45%。"
+    _write(tmp_path, rel, _doc(line))
+    _write(tmp_path, "data/.scratch/neg.json", json.dumps({"val": -4.19}))
+    _write(tmp_path, "data/.scratch/pos.json", json.dumps({"val": 4.19}))
+
+    def _reg(claimed: float, artifact: str) -> dict:
+        return {"frozen": [], "entries": [{
+            "id": "t", "file": rel, "text": line,
+            "artifact": artifact, "generator": "scripts/probe_x.py",
+            "checks": [{"path": "val", "claimed": claimed}]}]}
+
+    # 负值锚定项本身能过（旧实现下这条会假红：`-4.19` 拼的是 ASCII）
+    assert CHECKER.check(tmp_path, _reg(-4.19, "data/.scratch/neg.json"), CFG).ok
+    # 登记表说 +4.19、产物也是 +4.19，但正文写 −4.19 ⇒ 只有漂移，没有数值错
+    assert CHECKER.check(tmp_path, _reg(4.19, "data/.scratch/pos.json"),
+                         CFG).kinds() == {"REGISTRY_DRIFT"}
+
+
 def test_missing_artifact_is_skip_not_failure(tmp_path):
-    """产物不在 ⇒ SKIP，不假装通过、也不判失败（CI 上没有 .scratch）。"""
+    """`Report` 层：产物不在 ⇒ SKIP，不判失败（`check()` 不区分「谁的机器」）。
+
+    判定层不这么算——`main()` 见到 SKIP 就退出码 2，见
+    `test_missing_artifact_blocks_the_gate`。两层分开是为了让 `check()` 能被
+    组合进别的检查，而命令行不假装通过。
+    """
     rel = "backend/app/decision/sample.py"
     text = "实测 1.31 倍。"
     _write(tmp_path, rel, _doc(text))
@@ -317,6 +480,44 @@ def test_missing_artifact_is_skip_not_failure(tmp_path):
         "checks": [{"path": "k", "claimed": 1.31}]}]}
     rep = CHECKER.check(tmp_path, reg, CFG)
     assert rep.ok and len(rep.skipped) == 1
+    # `anchored` 是登记条数，`verified` 才是真比过的数——克隆上两者差一个 0。
+    assert (rep.anchored, rep.checks, rep.verified) == (1, 1, 0)
+
+
+def test_missing_artifact_blocks_the_gate(tmp_path):
+    """产物不在 ⇒ `main()` 退出码 2（无法核对），不是 0。
+
+    13p 之前：干净树上 36 项核对全部跳过、`已锚定 12` 照旧打印、退出码 0、
+    `✓ 每个读数都有出处或已封存`。锚定层唯一的用处正好在别人的机器上不存在，
+    而检查器说一切正常。`verify_seal` 早就把「文件不存在」当漂移，这里补齐。
+    """
+    rel = "backend/app/decision/sample.py"
+    text = "实测 1.31 倍。"
+    _write(tmp_path, rel, _doc(text))
+    reg = {"entries": [{"id": "t", "file": rel, "text": text,
+                        "artifact": "data/.scratch/none.json",
+                        "generator": "scripts/probe_x.py",
+                        "checks": [{"path": "k", "claimed": 1.31}]}],
+           "frozen": []}
+    reg_dir = tmp_path / "docs"
+    reg_dir.mkdir(parents=True, exist_ok=True)
+    (reg_dir / "number-provenance.json").write_text(
+        json.dumps(reg, ensure_ascii=False), encoding="utf-8")
+    assert CHECKER.main(["--root", str(tmp_path)]) == 2
+    assert CHECKER.main(["--root", str(tmp_path), "--allow-skip"]) == 0
+
+
+def test_evidence_artifacts_are_shippable():
+    """两个证据产物必须不被 `.gitignore` 挡住——它们是锚定层唯一真在核对的东西。
+
+    `data/**` 曾把它们一起挡在版本控制外：克隆后 36 项核对全 SKIP，判定仍 ✓。
+    """
+    if not (REPO / ".git").exists():
+        pytest.skip("没有 git 仓库，无从判断是否可入库")
+    for p in ARTIFACTS:
+        rel = p.relative_to(REPO).as_posix()
+        proc = subprocess.run(["git", "check-ignore", "-q", rel], cwd=REPO)
+        assert proc.returncode == 1, f"{rel} 仍被 .gitignore 忽略，克隆拿不到"
 
 
 def test_custom_globs_support_other_layouts(tmp_path):

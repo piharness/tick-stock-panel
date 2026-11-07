@@ -1,5 +1,5 @@
 {
- "_doc": "断言行的出处登记。entries = 能 index 到落盘产物的读数（每次运行重算比对）；frozen = 目前没有产物的历史读数（只保证读数不再变，措辞可变）。`sha` 是**数字向量**（行里全部数字，剔掉 §章节号与 v版本号）的指纹，不是整行文本的哈希：任何一位数变了就换身份，错字不换。由 scripts/check_number_provenance.py 读取，见 docs/decision-ledger.md §9.39/§9.41。",
+ "_doc": "断言行的出处登记。entries = 能 index 到落盘产物的读数（每次运行重算比对）；frozen = 目前没有产物的历史读数（只保证读数不再变，措辞可变）。`sha` 是**数字向量**（行里全部数字连同前置符号，剔掉 §章节号、v版本号与行首有序列表编号）的指纹，不是整行文本的哈希：任何一位数或 `+`/`−`/`±` 变了就换身份，错字不换。由 scripts/check_number_provenance.py 读取，见 docs/decision-ledger.md §9.39/§9.41。",
  "entries": [
   {
    "id": "pwin.verdict.lag1",
@@ -297,13 +297,13 @@
    "file": "backend/app/decision/pwin.py",
    "text": "信息使用**。实测中 20 日动量策略就是这种情况——训练段 skill +4.45%，",
    "where": "<module>",
-   "sha": "609d5aa704d5b3ee"
+   "sha": "26dc4386f41d8179"
   },
   {
    "file": "backend/app/decision/pwin.py",
    "text": "验证段 -4.19%，符号翻转。",
    "where": "<module>",
-   "sha": "465d0c8ac1fbb9e3"
+   "sha": "3965b0cb4f4f2d12"
   },
   {
    "file": "backend/app/decision/pwin.py",
@@ -327,7 +327,7 @@
    "file": "backend/app/decision/pwin.py",
    "text": "上限是 `3k/(lag+1)` 而不是 `k/(lag+1)`——低估 3 倍。传了日历就用真实跨度，",
    "where": "_identifiable_sample",
-   "sha": "2f809def612e76ff"
+   "sha": "ebf561f50b874434"
   },
   {
    "file": "backend/app/decision/pwin.py",
@@ -351,7 +351,7 @@
    "file": "backend/app/decision/pwin.py",
    "text": "命中率 15% ⇒ +49%，28% ⇒ +19%。这个数字只说明「胜率离 50% 有多远」，",
    "where": "walk_forward",
-   "sha": "f5ae68153ac75fe3"
+   "sha": "0362b3073b4a37de"
   },
   {
    "file": "backend/app/decision/pwin.py",
@@ -363,7 +363,7 @@
    "file": "backend/app/decision/pwin.py",
    "text": "实测 abs 口径在 window=250 下改善 +0.00011、下界 +0.00003，若只按符号判定",
    "where": "comment#4",
-   "sha": "a6a183f0b1ceb1ba"
+   "sha": "fbbd1ccd339b54df"
   },
   {
    "file": "backend/app/decision/settle.py",
@@ -375,7 +375,7 @@
    "file": "backend/app/decision/settle.py",
    "text": "的日间 sd = 21.4%，p0 的 95%CI 约 ±12%（用 12 个起点）到 ±2.3%（用 223 个）。",
    "where": "<module>",
-   "sha": "76fe632868016cf7"
+   "sha": "d516007278724a5a"
   },
   {
    "file": "backend/app/decision/settle.py",
@@ -471,7 +471,7 @@
    "file": "scripts/probe_incremental_size.py",
    "text": "3. **PASS 率只在 2–3 个 a 上取过点**。如果检出力对 a 非单调（`d_i` 的方差随",
    "where": "<module>",
-   "sha": "640bd0d9f38d997c"
+   "sha": "558093d56c894f6f"
   },
   {
    "file": "scripts/probe_incremental_size.py",
@@ -531,19 +531,19 @@
    "file": "scripts/probe_neutral.py",
    "text": "行业 × 规模中性化：+185bp 里有多少是「选了哪个行业」而不是「选了什么股」。",
    "where": "<module>",
-   "sha": "61a229bae1e90331"
+   "sha": "bd3d8b8a59257349"
   },
   {
    "file": "scripts/probe_neutral.py",
    "text": "银行、公用事业、高速公路这些「天生低换手」的行业，那 +185bp 里就混着行业",
    "where": "<module>",
-   "sha": "61a229bae1e90331"
+   "sha": "bd3d8b8a59257349"
   },
   {
    "file": "scripts/probe_neutral.py",
    "text": "2. **回退率**：格子内样本 < 8 只时退回行业内中位数。回退率高说明 90×3 的",
    "where": "<module>",
-   "sha": "e9ea1235e105812c"
+   "sha": "016ddbbc147f4f04"
   },
   {
    "file": "scripts/probe_neutral.py",
@@ -555,7 +555,7 @@
    "file": "scripts/probe_neutral.py",
    "text": "小数点后的事：`fwd` 右偏，均值 − 中位数 ≈ +200bp，而组合的 P&L 是均值。",
    "where": "<module>",
-   "sha": "27badc983df1780b"
+   "sha": "9fef937cfd51f1c3"
   },
   {
    "file": "scripts/probe_neutral.py",
@@ -567,7 +567,7 @@
    "file": "scripts/probe_pwin_variance.py",
    "text": "实测两个窗口的改善都是负数或微正（−0.00237 / −0.00055 / −0.00548 / +0.00011）。",
    "where": "<module>",
-   "sha": "ecca0da5e9468d44"
+   "sha": "7b9e4ecf009e7e51"
   },
   {
    "file": "scripts/probe_pwin_variance.py",
@@ -597,7 +597,7 @@
    "file": "scripts/probe_real_deff.py",
    "text": "1. **日胜率的自相关**。实测 lag1 = 0.68–0.88，与「持有 20 天」能给出的",
    "where": "<module>",
-   "sha": "be15c912f6610728"
+   "sha": "f66f9af9b83d2468"
   },
   {
    "file": "scripts/probe_real_deff.py",
@@ -663,7 +663,7 @@
    "file": "scripts/probe_statistic_null.py",
    "text": "2. 名义门槛下的实际 size。一个 sd=7 的 z 用 1.645 当门槛，误报率不是 5%。",
    "where": "<module>",
-   "sha": "829275015b23ccff"
+   "sha": "5912cbb1aa8aff37"
   },
   {
    "file": "scripts/probe_window.py",
@@ -681,19 +681,19 @@
    "file": "scripts/probe_window.py",
    "text": "每个多头组合一个 `均值−中位数` 的常数（325 天实测 +195.7bp/日）。市值加权",
    "where": "<module>",
-   "sha": "3aaa3169d10af302"
+   "sha": "a0f33805f1a930de"
   },
   {
    "file": "backend/tests/test_decision_budget.py",
    "text": "1. **§6.1 的算术**：`MDE@250 = MDE@325 × √(325/250)`，输入取当前缓存；",
    "where": "<module>",
-   "sha": "38cb0e3a382165ab"
+   "sha": "3188e50ac08dbd0b"
   },
   {
    "file": "backend/tests/test_decision_budget.py",
    "text": "4. **长块的「低估」是离散度，不是均值**：§6.2 的 0.67 是单条合成序列的低尾，",
    "where": "<module>",
-   "sha": "ed3468713e64d5de"
+   "sha": "dd2f324d090bedf0"
   },
   {
    "file": "backend/tests/test_decision_budget.py",
@@ -711,7 +711,7 @@
    "file": "backend/tests/test_decision_neutral_series.py",
    "text": "1. 落盘的那条序列**就是**封签判定用的那条：`|all` 逐日复现均值缓存（0.01bp），",
    "where": "<module>",
-   "sha": "2a904f77d6747b15"
+   "sha": "312b95ee5a344d2f"
   },
   {
    "file": "backend/tests/test_decision_neutral_series.py",
@@ -723,7 +723,7 @@
    "file": "backend/tests/test_decision_neutral_series.py",
    "text": "2. `146` 是 √(325/250) 的外推，不是 250 天上的读数：窗中位 122.7。",
    "where": "<module>",
-   "sha": "e6bf144b43a5a43d"
+   "sha": "63ccb961812261b9"
   },
   {
    "file": "backend/tests/test_decision_neutral_series.py",
@@ -771,13 +771,13 @@
    "file": "backend/tests/test_decision_pwin.py",
    "text": "这是实测中 20 日动量策略的真实处境：训练段 +4.45%，验证段 -4.19%。",
    "where": "test_walk_forward_unreliable_when_regime_flips",
-   "sha": "0694289ebf83069a"
+   "sha": "3c54ffc96bdfe5e7"
   },
   {
    "file": "backend/tests/test_decision_pwin.py",
    "text": "实测 abs 口径 window=250 就是 `+0.00011 / 下界 +0.00003`。只按符号判定",
    "where": "test_marginal_verdict_when_increment_is_significant_but_tiny",
-   "sha": "a6a183f0b1ceb1ba"
+   "sha": "fbbd1ccd339b54df"
   },
   {
    "file": "backend/tests/test_decision_pwin.py",

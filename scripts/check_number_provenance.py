@@ -30,9 +30,18 @@
 错了**：`READING` 是给**成员资格**（哪一行算断言行）写的，它刻意不收裸整数
 （`250 天`、`20 日` 是定义，收进来名单就没法读了）。拿它当身份，等于让
 「323 个可评估日」改成「324 个」不红。13m 在真实仓库上量了一遍：94 条断言行共
-315 个数字，**136 个改了不换身份**（120 个裸整数 + 12 个章节号 + 3 个日期数字
-+ 1 个版本号），62/94 行至少有一个——「改任何一个数必换身份」当时是假的，和
+315 个数字，**132 个改了不换身份**（116 个裸整数 + 12 个章节号 + 3 个日期数字
++ 1 个版本号），**60/94** 行至少有一个——「改任何一个数必换身份」当时是假的，和
 §9.39/§9.40 是同一个病：性质写进散文，没写进断言。
+
+（13n 复核：账本原先写 136/62。用 `b4322c8` 的完整树与它自己的 `scan()` 复算，
+七个口径（正确替换 / 前缀重复 / 全域替换 / 首个替换 / 首位数 / 不取模 / 数值 +1）
+都得不到 136；**135/62 是变异脚本把 token 前缀重复了一遍**的产物——重复出来的
+数字没有小数点，正好被 `readings()` 吞掉，凭空造出 4 个哑 token（净 +3：另有
+1 个日期 token 被弄坏），其中 2 行原本不盲。而首位数 / 不取模 / 数值 +1 三者的
+盲集合与「正确替换」**逐 token 相同**——132 不依赖 bump 怎么写。七个口径一次
+跑完、逐位比对表里的数，见 `scripts/verify_identity_mutation.py` 与
+`data/.scratch/identity_mutation.json`，机制记在 §9.41 八。）
 
 根因是把两件事挤进一个正则：
 
@@ -43,15 +52,28 @@
 
 - 成员资格 = `readings()`（不变，所以断言行仍是 94 条）；
 - 身份 = `digits()`：剔掉**文档坐标**（`§9.39` 的章节号、`v13c` 的版本号）之后，
-  行里**全部**数字，按出现顺序。于是
+  行里**全部**数字**连同前置符号**，按出现顺序。于是
   - 错字、补标点、改措辞 ⇒ 数字序列不变 ⇒ **不红**（只进 `PROSE_DRIFT` 提示）；
-  - 改任何一位数 ⇒ `STALE`/`STALE_ENTRY` + `UNREGISTERED` 并排。
+  - 改任何一位数、或翻转 `+`/`−`/`±` ⇒ `STALE`/`STALE_ENTRY` + `UNREGISTERED` 并排。
 - 豁免只有那两类，且由 `test_only_doc_coordinates_are_exempt` 钉住：**日期不豁免**
   （「2026-11-05 的快照」是对数据新鲜度的声称，改日期该重核）。
 
+**符号不是字**（13n）：`−4.19%` 改成 `+4.19%` 只动一个字符，却是把结论翻了个面。
+旧身份按纯数字取值，这个改动全绿、只留一条 `PROSE_DRIFT`。现在 `digits()` 把
+一元符号并进 token；日期连字符、数字区间、markdown 项目符号由「前一位不是数字」
+与「符号必须紧邻」两条挡掉，词法细节见 `digits()` 的 docstring。
+
+**有序列表编号不是数**（13q）：`1. ` / `3) ` / `（2）` 是排版。13p 之前它们在
+身份里，于是**给 docstring 的列表插一条、后面全部重编号 ⇒ 8 行同时假红**；而
+`1. ` 这种只有编号的行还会被算成「带数字行」，把覆盖率的分子分母一起污染。
+`_LIST_MARK` 在 `identity_text()` 里剔掉它，`(?![0-9])` 保证 `2.57` 不被吃掉。
+豁免因此有**三类**：`§`章节号、`v`版本号、行首有序列表编号。代价：8 行在
+`frozen` 里重签 `sha`，`94 = 12 + 82` 不变，94 行的承重 token 302 → **294**
+（`315` 这个 token 分母没动，8 个编号仍在 `DIGITS` 里，只是不再承重）。
+
 **代价要写清楚**：把「偏窄 7/8」改成「偏宽 7/8」这种**只改字、不改数**的语义
 翻转，硬检查不会红——它只会在 `PROSE_DRIFT` 里列出来。这一层是留给人和评审的，
-不是留给脚本的（§9.40 会写）。
+不是留给脚本的（§9.40 会写）。符号不在此列：它现在是硬失败。
 
 ## 两条检查（都不跑数据）
 
@@ -66,14 +88,23 @@ R1 · 覆盖。每个断言行必须二选一：
 失败模式**，所以两者都红。
 
 R2 · 锚定完整性。每个 `entries` 必须（a）该行仍在文件里（否则 `STALE_ENTRY`），
-（b）`claimed` 值出现在该行文本里（否则 registry 与 docstring 已不同步），
+（b）`claimed` 值以**整枚数字**出现在该行（token 相等、符号一致，不是子串——
+见 `_claimed_in_text`；否则 registry 与 docstring 已不同步），
 （c）产物存在时逐项与产物比对（`VALUE_MISMATCH` 带偏离量），（d）产物欠缺时
-记 `SKIP`，不假装通过。
+记 `SKIP`，**并且默认退出码 2**——缺产物不是通过，要放行必须显式 `--allow-skip`。
+
+（这条是 13p 补的。13o 之前 `SKIP` 只打一行字、判定照旧 ✓，于是在**没有
+`data/` 的克隆上**：36 项核对全部 SKIP、`已锚定 12` 照旧打印、退出码 0、
+`✓ 每个读数都有出处或已封存`。也就是说锚定层唯一的用处——「数会随数据腐烂，
+每次重跑重算」——正好在别人的机器上不存在，而检查器说一切正常。`verify_seal`
+早就把「文件不存在」当漂移，这里是同一口径补齐。）
 
 ## 同指纹必须记账
 
-身份只由读数决定，于是「同一文件里两行写着同一组数」会撞键（本仓库实测 6 组，
-例如 `pwin.py` 两行都只含 `3 倍`）。撞键不能互相顶替：登记几条就得出现几次。
+身份只由数字决定（措辞不进），于是「同一文件里两行写着同一组数」会撞键。本仓库
+现在仍有 2 组（`probe_neutral.py` 的 `+185bp` 两行、`probe_pwin_variance.py`
+的两句 `0.7–17.5%`）；13j 的读数向量口径下是 6 组，`pwin.py` 两行都只含 `3 倍`
+也曾撞键。撞键不能互相顶替：登记几条就得出现几次。
 少一次 ⇒ `STALE`/`STALE_ENTRY`；多一次 ⇒ `UNREGISTERED`。否则删掉其中一行会
 静默通过。
 
@@ -89,6 +120,10 @@ docstring 与 `_hac_stats` 都写「7 条偏窄 0.7–17.5%、1 条偏宽 10.1%�
 - **抓不到只改字的语义翻转**：见上。`PROSE_DRIFT` 只提示，不判定。
 - **抓不到没写「实测」的段落**：库常数、闭式推导（`267/400`、`2/3`）不在射程
   内。那类要靠符号测试，不是文本检查。
+- **射程本身也是一个数，所以也打印**：claim 段落里**带数字**的行今天有 284 条，
+  进名单的 94 条是「读数形态」那一层，剩下 190 条只含整数/公式/日期。分母不给，
+  `✓` 就等于在说「我看过的地方都对」而读者以为「所有数字都对」——那正是 13p 的
+  SKIP（36 项没核对仍打 ✓）。**宽窄可以争，分母不能藏。**
 - **封存名单是债**：82 处历史读数今天仍然没有产物（见登记表 `frozen`），封存只保证它们**不能再
   悄悄变**，不保证它们是对的。数量写进 `docs/decision-ledger.md` §9.39，每锚定
   一处就从名单里删一处（`--rebaseline` 会自动把它移出 frozen）。
@@ -101,14 +136,16 @@ docstring 与 `_hac_stats` 都写「7 条偏窄 0.7–17.5%、1 条偏宽 10.1%�
     python scripts/check_number_provenance.py --json out.json
     python scripts/check_number_provenance.py --list        # 列出全部断言行
     python scripts/check_number_provenance.py --rebaseline  # 重封存（打印增删）
+    python scripts/check_number_provenance.py --allow-skip  # 无产物环境下放行 SKIP
 
 `root` / `globs` / `claim_keywords` 都可注入（`Config`，命令行上是
 `--root` 与 `--globs`），测试用临时仓库验证「它会不会红」，见
 `backend/tests/test_decision_number_provenance.py`。
 
-退出码非零 ⇔ 有 `UNREGISTERED` / `STALE` / `STALE_ENTRY` / `VALUE_MISMATCH`
-/ `REGISTRY_DRIFT`。`SKIP` 与 `PROSE_DRIFT` 不算失败（前者是产物不在，后者是
-数没变）。
+退出码三档：`0` 全绿；`1` 有 `UNREGISTERED` / `STALE` / `STALE_ENTRY` /
+`VALUE_MISMATCH` / `REGISTRY_DRIFT`；`2` 没有失败但**有锚定项无法核对**
+（产物不在）——它是「没验」，不是「验过了没事」，所以不与 `1` 混用。
+`PROSE_DRIFT` 从不算失败（数没变，只是字变了）。
 """
 from __future__ import annotations
 
@@ -162,7 +199,7 @@ class Config:
 
 @dataclass
 class Line:
-    """一条断言行。**数字向量就是身份**——任何一位数变了就换身份，错字不换。"""
+    """一条断言行。**数字向量就是身份**——任何一位数或符号变了就换身份，错字不换。"""
 
     file: str
     text: str
@@ -190,6 +227,9 @@ _SECTION_REF = re.compile(r"§\s*\d+(?:\.\d+)*")   #: `§9.23` 不是读数
 #: `v13c` / `v6.1` / `v14` —— 文档坐标，不是读数。`[a-z]?` 是 13m 补的：
 #: 初版只认带小数点的 `v6.1`，于是 `v13c` 的 `13` 留在身份里，升版本会假红。
 _VERSION = re.compile(r"\bv\d+(?:\.\d+)*[a-z]?\b")
+#: 行首有序列表编号：`1. ` / `3) ` / `（2）`。排版，不是数字。
+#: `(?!\d)` 是必须的：`2.57–2.71` 以 `2.` 开头，去掉后只剩 `57`——一个都不许吃。
+_LIST_MARK = re.compile(r"^\s*(?:\d+[.)](?!\d)|[（(]\d+[）)])\s*")
 
 
 def readings(text: str) -> list[str]:
@@ -214,23 +254,54 @@ def readings(text: str) -> list[str]:
 #: 不用 NFKC——NFKC 会把 `㎡` 拆成 `m2`，凭空造出一个数字）。
 DIGITS = re.compile(r"\d+(?:\.\d+)?")
 _FULLWIDTH = str.maketrans("０１２３４５６７８９．", "0123456789.")
+#: 排版等价：ASCII 减号与 U+2212 是同一个符号，`−4.19` 改成 `-4.19` 不该重核。
+_SIGN_EQUIV = str.maketrans({"−": "-", "－": "-", "﹣": "-", "＋": "+", "﹢": "+"})
+_SIGN_CHARS = "-+±"
 
 
 def identity_text(text: str) -> str:
-    """把「不承重」的片段挖掉：只剩文档坐标被剔，其余每个数字都是身份的一部分。
+    """把「不承重」的片段挖掉：文档坐标与行首列表编号被剔，其余每个数字都是身份。
 
     日期**不**剔——`2026-11-05 的快照` 是对数据新鲜度的声称，改日期该重核。
     """
-    return _VERSION.sub(" ", _SECTION_REF.sub(" ", text.translate(_FULLWIDTH)))
+    body = text.translate(_FULLWIDTH).translate(_SIGN_EQUIV)
+    body = _LIST_MARK.sub("", body, count=1)
+    return _VERSION.sub(" ", _SECTION_REF.sub(" ", body))
 
 
 def digits(text: str) -> list[str]:
-    """身份向量：行里**全部**数字，按出现顺序。`323` 与 `323.0` 不是同一个。"""
-    return DIGITS.findall(identity_text(text))
+    """身份向量：行里**全部**数字（含前置符号），按出现顺序。
+
+    符号是数字的一部分：`−4.19%` 与 `+4.19%` 必须换身份——本仓库半个 §9 的
+    教训就是符号翻车。符号只在前一位**不是数字**时才算数，这条同时挡掉三种
+    长得像符号的东西：
+
+    - 日期连字符：`2026-11-05` 的 `-11`、`-05`（前一位是数字）；
+    - 数字区间：`44-49`（前一位是数字；`44–49` 的 en dash 根本不是符号）；
+    - markdown 项目符号：`- 250`（符号与数字之间有空格，不紧邻）。
+
+    `1e-05` 的指数符号**算**身份的一部分（前一位是 `e`，不是数字），所以
+    `1e-05` 改成 `1e+05` 会红。行首的 `1. ` / `（2）` 由 `identity_text()` 先剔掉，
+    它不在这里判——列表编号和日期连字符一样，是「长得像数字的排版」。
+    已知缺口：`1 - 4p` / `1-4p` 这类二元减号，
+    前者被空格隔开、后者前一位是数字，都不会被当成符号；它们是公式，不是读数，
+    留给评审。`±` 是独立符号：`±12%` 改成 `+12%` 会红。
+    """
+    body = identity_text(text)
+    out: list[str] = []
+    for m in DIGITS.finditer(body):
+        i = m.start()
+        sign = ""
+        if i >= 1 and body[i - 1] in _SIGN_CHARS:
+            before = body[i - 2] if i >= 2 else ""
+            if before not in "0123456789":
+                sign = body[i - 1]
+        out.append(sign + m.group(0))
+    return out
 
 
 def fingerprint(text: str) -> str:
-    """身份 = 数字序列的哈希。措辞、标点、错字不换身份；任何一位数变了就换。"""
+    """身份 = 数字序列的哈希。措辞、标点、错字不换身份；任何一位数或符号变了就换。"""
     return hashlib.sha256("|".join(digits(text)).encode("utf-8")).hexdigest()[:16]
 
 
@@ -278,9 +349,12 @@ def _blocks(path: Path) -> list[tuple[str, int, list[tuple[int, str]]]]:
     return blocks
 
 
-def scan(root: Path, cfg: Config = Config()) -> list[Line]:
-    """全部断言行。空行与纯文字行不进来。"""
-    out: list[Line] = []
+def _claim_lines(root: Path, cfg: Config = Config()):
+    """claim 段落里的每一条非空行，**未按成员资格筛**。
+
+    分成两层是为了让「分母」可算：`scan()` 只留读数形态，`numbered_lines()` 留
+    全部带身份的行。两层的差就是射程之外的整数/公式/日期。
+    """
     for pat in cfg.globs:
         for path in sorted(root.glob(pat)):
             rel = path.relative_to(root).as_posix()
@@ -290,9 +364,19 @@ def scan(root: Path, cfg: Config = Config()) -> list[Line]:
                         and any(readings(t) for _, t in lines)):
                     continue          # 设计说明段落，不是读数
                 for lineno, text in lines:
-                    if readings(text):
-                        out.append(Line(rel, _norm(text), name, lineno))
-    return out
+                    t = _norm(text)
+                    if t:
+                        yield Line(rel, t, name, lineno)
+
+
+def scan(root: Path, cfg: Config = Config()) -> list[Line]:
+    """全部断言行。空行、纯文字行、以及不带读数形态的行不进来。"""
+    return [ln for ln in _claim_lines(root, cfg) if readings(ln.text)]
+
+
+def numbered_lines(root: Path, cfg: Config = Config()) -> list[Line]:
+    """带身份的行——扫描口径的**分母**。`scan()` 是它的子集（还要求读数形态）。"""
+    return [ln for ln in _claim_lines(root, cfg) if digits(ln.text)]
 
 
 # --------------------------------------------------------------------------- #
@@ -379,18 +463,31 @@ class Report:
     failures: list[dict] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)
     notes: list[dict] = field(default_factory=list)
+    #: 走到「与产物比对」这一步的项数（含产物不在的那些）。
+    #: `anchored` 是**登记条数**，不是核对过的数——两者在克隆上会差一个 0。
+    checks: int = 0
+    #: 扫描口径的分母：claim 段落里**带身份**的行数。`claims` 只是它的读数形态子集。
+    #: 分母不给的 ✓ 会把「我查过的地方都对」读成「所有数字都对」。
+    numbered: int = 0
 
     @property
     def ok(self) -> bool:
         return not self.failures
+
+    @property
+    def verified(self) -> int:
+        """真正逐项比过的数。产物不在的那些进了 `skipped`，不算核对。"""
+        return self.checks - len(self.skipped)
 
     def kinds(self) -> set[str]:
         return {f["kind"] for f in self.failures}
 
     def as_dict(self) -> dict:
         return {"claims": self.claims, "anchored": self.anchored,
-                "frozen": self.frozen, "failures": self.failures,
-                "skipped": self.skipped, "notes": self.notes, "ok": self.ok}
+                "frozen": self.frozen, "checks": self.checks,
+                "verified": self.verified, "numbered": self.numbered,
+                "failures": self.failures, "skipped": self.skipped,
+                "notes": self.notes, "ok": self.ok}
 
 
 def load_registry(path: Path) -> dict:
@@ -400,11 +497,32 @@ def load_registry(path: Path) -> dict:
 
 
 def _claimed_in_text(text: str, claimed: float) -> bool:
-    """`claimed` 必须能在该行找到同写法的数（`2.57` / `44` / `0.817`）。"""
-    forms = {f"{claimed:g}"}
-    if float(claimed) == int(claimed):
-        forms.add(str(int(claimed)))
-    return any(f in text for f in forms)
+    """`claimed` 必须作为**整枚数字**出现在该行，符号也要对。
+
+    13q 之前是子串匹配（`f"{claimed:g}" in text`），两个方向都错：
+
+    - **假绿**：`claimed=1` 会命中 `17.5`。把「1 条偏宽」改成「2 条偏宽」，登记表
+      仍写 1，R2(b) 照样过——单个数字的声称值几乎无法被这条检查证伪；
+    - **假红**：`claimed=-4.19` 拼出 ASCII 的 `-4.19`，正文写的是 U+2212 `−4.19`，
+      同一个数被判成漂移。
+
+    现在按 `digits()` 切 token 比数值：无符号 = 正，`−`/`－`/`﹣` 在
+    `identity_text()` 里已折叠成 `-`。`±` 跳过——登记表表达不了「正负」，宁可
+    报漂移让人写两条 `checks`。
+    """
+    want_neg = float(claimed) < 0
+    want = abs(float(claimed))
+    for tok in digits(text):
+        if tok.startswith("±"):
+            continue
+        neg = tok.startswith("-")
+        try:
+            val = abs(float(tok.lstrip("+-")))
+        except ValueError:      # 理论上不会：`digits()` 的 token 一定是数
+            continue
+        if val == want and neg == want_neg:
+            return True
+    return False
 
 
 def _group(items: list[dict]) -> dict[tuple[str, str], list[dict]]:
@@ -424,7 +542,7 @@ def check(root: Path, registry: dict, cfg: Config = Config()) -> Report:
 
     entries = _group(registry.get("entries", []))
     frozen = _group(registry.get("frozen", []))
-    rep = Report(len(lines), 0, 0)
+    rep = Report(len(lines), 0, 0, numbered=len(numbered_lines(root, cfg)))
 
     # 登记表自身也要自洽：`sha` 是按 `text` 写下的。手改 text 不重签，或身份规则
     # 变了没重签，条目会「看起来还在」——按 text 归组照样能配上行，于是静默通过。
@@ -503,6 +621,7 @@ def _check_entry(root: Path, file: str, text: str, entry: dict, rep: Report) -> 
                         "detail": "entry 缺 artifact"})
             continue
         apath = root / art
+        rep.checks += 1
         if not apath.exists():
             rep.skipped.append({"file": file, "text": text,
                                 "artifact": art, "path": c["path"]})
@@ -561,6 +680,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", type=Path, default=None, dest="json_out")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--rebaseline", action="store_true")
+    ap.add_argument("--allow-skip", action="store_true",
+                    help="产物不在时不算失败（默认算：退出码 2，缺产物不是通过）")
     ap.add_argument("--show", type=int, default=40,
                     help="最多打印多少条失败（0 = 全打）")
     ap.add_argument("--globs", action="append", default=None,
@@ -585,9 +706,12 @@ def main(argv: list[str] | None = None) -> int:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(rep.as_dict(), ensure_ascii=False,
                                             indent=1), encoding="utf-8")
-    print(f"断言行 {rep.claims}：已锚定 {rep.anchored}，已封存 {rep.frozen}，"
-          f"失败 {len(rep.failures)}，跳过 {len(rep.skipped)}，"
-          f"文字漂移 {len(rep.notes)}")
+    print(f"断言行 {rep.claims}：已锚定 {rep.anchored}（登记），已封存 {rep.frozen}，"
+          f"失败 {len(rep.failures)}，文字漂移 {len(rep.notes)}"
+          f"｜逐项核对 {rep.verified}/{rep.checks}"
+          + (f"（{len(rep.skipped)} 项产物不在）" if rep.skipped else ""))
+    print(f"扫描口径：claim 段落带数字行 {rep.numbered}｜其中读数形态 {rep.claims}"
+          f"｜未纳入 {rep.numbered - rep.claims}（整数/公式/日期，按定义不是读数）")
     shown = rep.failures if args.show == 0 else rep.failures[:args.show]
     for f in shown:
         where = f"  [{f['where']}]" if f.get("where") else ""
@@ -600,8 +724,17 @@ def main(argv: list[str] | None = None) -> int:
     for n in rep.notes:
         print(f"  · 文字漂移 {n['file']}（{n['source']}，相似度 {n['similarity']}）"
               f"\n      {n['text'][:100]}")
-    print("判定：" + ("✓ 每个读数都有出处或已封存" if rep.ok else "✗ 有没出处的读数"))
-    return 0 if rep.ok else 1
+    if rep.failures:
+        print("判定：✗ 有没出处的读数")
+        return 1
+    if rep.skipped and not args.allow_skip:
+        print(f"判定：✗ 无法核对——{len(rep.skipped)} 项锚定的产物不在。"
+              "产物不进版本控制（.gitignore 的 `data/**`），克隆后这些数只能 SKIP；"
+              "**缺产物不等于通过**。要在没有产物的环境里跑，显式加 --allow-skip。")
+        return 2
+    print("判定：" + ("✓ 每个读数都有出处或已封存" if not rep.skipped
+                     else "△ 有出处或已封存，但部分锚定项未核对（--allow-skip）"))
+    return 0
 
 
 def _rebaseline(root: Path, reg_path: Path, registry: dict,
@@ -668,8 +801,9 @@ def _rebaseline(root: Path, reg_path: Path, registry: dict,
 _REGISTRY_DOC = (
     "断言行的出处登记。entries = 能 index 到落盘产物的读数（每次运行重算比对）；"
     "frozen = 目前没有产物的历史读数（只保证读数不再变，措辞可变）。"
-    "`sha` 是**数字向量**（行里全部数字，剔掉 §章节号与 v版本号）的指纹，"
-    "不是整行文本的哈希：任何一位数变了就换身份，错字不换。"
+    "`sha` 是**数字向量**（行里全部数字连同前置符号，剔掉 §章节号、v版本号与"
+    "行首有序列表编号）的"
+    "指纹，不是整行文本的哈希：任何一位数或 `+`/`−`/`±` 变了就换身份，错字不换。"
     "由 scripts/check_number_provenance.py 读取，见 docs/decision-ledger.md §9.39/§9.41。"
 )
 
