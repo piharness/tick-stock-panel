@@ -1,20 +1,24 @@
 """§9.38 的「数必须能 index 到产物」——把它变成一次可失败的检查。
 
 被测对象是 `scripts/check_number_provenance.py` 加 `docs/number-provenance.json`。
-本文件钉四件事：
+本文件钉五件事：
 
 1. **覆盖**：扫描范围里每个断言行要么锚定到产物（值逐项比对），要么在封存
    名单里。
-2. **身份粒度**：身份是**读数向量**，不是整行文本。改字（错字、标点、措辞）
-   不许触发；改数必须触发。这一对必须同时存在——只有「改数会红」的话，
-   把整行哈希当身份也能过，而错字会天天假红。
+2. **身份粒度**：身份是**数字向量**（行里全部数字，剔掉 §章节号与 v版本号），
+   不是整行文本。改字（错字、标点、措辞）不许触发；改任何一位数——**包括裸
+   整数**——必须触发。这一对必须同时存在：只有「改数会红」的话，把整行哈希当
+   身份也能过，而错字会天天假红；只有「改字不红」的话，身份退化成「只认小数」，
+   `323 个可评估日` 改成 `324` 就没人管了。
 3. **记账**：同一文件里两行写着同一组数时，不能互相顶替（少一条要红，
    多一条也要红）；一句锚定、一句封存是合法的。
 4. **有牙齿**：在临时仓库里造坏样本（新数没出处 / 改了封存的数 / 数对不上
    产物 / 登记表与源码不同步），检查必须各自报红。**没有这一组，「检查通过」
    只说明它没在看**。
+5. **逃生门自身**：`--rebaseline` 重签后必须仍能区分「哪行是锚定、哪行是封存」，
+   否则名单会在两个状态之间来回摆而一直是绿的。
 
-后三组不碰真实仓库：`check(root, registry, cfg)` 的 root、registry 与扫描
+后四组不碰真实仓库：`check(root, registry, cfg)` 的 root、registry 与扫描
 口径都可注入，就是为了让「它会不会红」本身可测。
 """
 from __future__ import annotations
@@ -111,6 +115,82 @@ def test_fingerprint_ignores_wording_but_not_numbers():
     # 排版差异不算差异：`3 倍` / `3倍`、`44–49` / `44-49`。
     assert CHECKER.fingerprint("实测 3 倍") == CHECKER.fingerprint("实测 3倍")
     assert CHECKER.fingerprint("实测 44–49") == CHECKER.fingerprint("实测 44-49")
+
+
+def test_digit_identity_covers_bare_integers():
+    """裸整数也承重：样本量、天数、条数改成别的值，必须换身份。
+
+    身份曾经只看「读数形态」（小数 / 带量纲 / 区间），裸整数不在里面，于是整类
+    样本量的改动都不红。这是本文件第 2 条真正要守的东西。
+    """
+    base = CHECKER.fingerprint("样本量 323 个可评估日，区间 44–49。")
+    assert CHECKER.fingerprint("样本量 324 个可评估日，区间 44–49。") != base
+    assert CHECKER.fingerprint("样本量 323 个可评估日，区间 45–49。") != base
+    # 只有措辞变、数字没动 ⇒ 同身份
+    assert CHECKER.fingerprint("样本量是 323 个可评估日，区间 44–49。") == base
+
+
+def test_only_doc_coordinates_are_exempt():
+    """豁免只有两类：`§9.39` 的章节号与 `v13c` 的版本号。
+
+    日期**不**豁免——「2026-11-05 的快照」是对数据新鲜度的声称，改日期该重核。
+    全角数字不是另一个数。
+    """
+    assert CHECKER.digits("见 §9.39 与 v13c：收窄 0.42 倍") == ["0.42"]
+    assert CHECKER.digits("2026-11-05 的快照，5,579 只") == ["2026", "11", "05",
+                                                           "5", "579"]
+    assert CHECKER.digits("\uff10\uff0e\uff14\uff12") == ["0.42"]
+
+
+def test_every_digit_in_the_repo_is_identity_bearing():
+    """真仓库的断言行：每一位数都承重，一个都不能是哑的。
+
+    这条是主断言——「检查器不许悄悄放宽身份」的护栏。豁免必须恰好由 §章节号
+    与 v版本号解释掉，多剔一种（例如把日期也剔了）就会红。
+    """
+    lines = CHECKER.scan(REPO, CFG)
+    assert len(lines) >= 90, f"只扫到 {len(lines)} 条断言行"
+    blind, unexplained = [], []
+    for ln in lines:
+        body = CHECKER.identity_text(ln.text)
+        base = CHECKER.fingerprint(ln.text)
+        for mt in CHECKER.DIGITS.finditer(body):
+            _s, e = mt.span()
+            d = mt.group(0)
+            mut = body[:e - 1] + ("1" if d[-1] != "1" else "2") + body[e:]
+            if CHECKER.fingerprint(mut) == base:
+                blind.append(f"{ln.file}:{ln.lineno} 的 {d}")
+        raw, kept = len(CHECKER.DIGITS.findall(ln.text)), len(CHECKER.digits(ln.text))
+        if raw != kept:
+            exempt = sum(len(CHECKER.DIGITS.findall(m.group(0)))
+                         for rx in (CHECKER._SECTION_REF, CHECKER._VERSION)
+                         for m in rx.finditer(ln.text))
+            if raw - kept != exempt:
+                unexplained.append(f"{ln.file}:{ln.lineno} 少了 {raw - kept} 个数字，"
+                                   f"§/v 只解释了 {exempt} 个")
+    assert not blind, "这些数字改了不换身份：" + "; ".join(blind[:5])
+    assert not unexplained, "\n".join(unexplained[:5])
+
+
+def test_bare_integer_edit_in_a_real_file_turns_red(tmp_path):
+    """真文件 + 真登记表：把样本量改一位，端到端必须红。
+
+    这是本轮修法的回归——旧身份只看小数与带量纲的数，这一改动全绿。
+    """
+    rel = "backend/app/decision/pwin.py"
+    src = (REPO / rel).read_text(encoding="utf-8")
+    assert src.count("323 个可评估日 ⇒ 44–49") == 1
+    reg = _registry()
+    reg = {"entries": [e for e in reg["entries"] if e["file"] == rel],
+           "frozen": [f for f in reg["frozen"] if f["file"] == rel]}
+    _write(tmp_path, rel, src)
+    assert CHECKER.check(tmp_path, reg, CFG).ok
+
+    _write(tmp_path, rel, src.replace("323 个可评估日 ⇒ 44–49",
+                                      "324 个可评估日 ⇒ 44–49"))
+    rep = CHECKER.check(tmp_path, reg, CFG)
+    kinds = rep.kinds()
+    assert "UNREGISTERED" in kinds and kinds & {"STALE", "STALE_ENTRY"}, kinds
 
 
 def test_typo_keeps_identity_but_number_edit_breaks_it(tmp_path):
@@ -257,3 +337,46 @@ def test_structural_percent_is_not_a_reading(tmp_path):
     _write(tmp_path, "backend/app/decision/sample.py",
            _doc("实测：返回单侧 95% 下界，名义水平 5%。"))
     assert CHECKER.scan(tmp_path, CFG) == []
+
+
+def test_frozen_sha_must_match_its_own_text(tmp_path):
+    """登记表的 `sha` 必须与它自己的 `text` 对得上。
+
+    `sha` 不参与归组（归组按 text 现算），所以手改 text 不重签时，条目会
+    「看起来还在」而静默通过——这条堵的就是那个洞。
+    """
+    rel = "backend/app/decision/sample.py"
+    text = "实测 1.31 倍。"
+    _write(tmp_path, rel, _doc(text))
+    reg = {"entries": [], "frozen": [{"file": rel, "text": text, "sha": "deadbeef"}]}
+    assert CHECKER.check(tmp_path, reg, CFG).kinds() == {"REGISTRY_DRIFT"}
+
+
+def test_rebaseline_keeps_anchor_and_seal_on_their_own_lines(tmp_path):
+    """同一指纹下一句锚定、一句封存：重签后仍是一锚一封，文本不互换。
+
+    这条守的是逃生门自己。按扫描顺序扣名额的版本会把锚定行写成封存、把封存行
+    预留成锚定；两边 `sha` 都对、检查一直绿，而名单在两种状态之间来回摆。
+    """
+    rel = "backend/app/decision/sample.py"
+    anchored = "实测 1.31 倍，窄 7 条。"
+    sealed = "实测：1.31 倍窄在 7 条序列上。"
+    assert CHECKER.fingerprint(anchored) == CHECKER.fingerprint(sealed)
+    _write(tmp_path, rel, '"""' + anchored + "\n" + sealed + '"""\n')
+
+    reg_path = tmp_path / "docs" / "number-provenance.json"
+    reg_path.parent.mkdir(parents=True, exist_ok=True)
+    reg = {"entries": [{"id": "t", "file": rel, "text": anchored,
+                        "artifact": "data/.scratch/x.json",
+                        "generator": "scripts/probe_x.py",
+                        "checks": [{"path": "k", "claimed": 1.31}]}],
+           "frozen": [{"file": rel, "text": sealed}]}
+
+    CHECKER._rebaseline(tmp_path, reg_path, reg, CFG)
+    once = json.loads(reg_path.read_text(encoding="utf-8"))
+    assert [f["text"] for f in once["frozen"]] == [sealed]
+    assert CHECKER.check(tmp_path, once, CFG).ok
+
+    CHECKER._rebaseline(tmp_path, reg_path, once, CFG)
+    twice = json.loads(reg_path.read_text(encoding="utf-8"))
+    assert [f["text"] for f in twice["frozen"]] == [sealed], "重签不幂等：名单在摆"
