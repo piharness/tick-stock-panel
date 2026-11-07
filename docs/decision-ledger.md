@@ -78,7 +78,12 @@
 - [x] 常数预测的 skill = 0、判 `NO_INFORMATION`；样本 < 8 判 `INSUFFICIENT`
 - [x] 真实数据只读验证：门禁 0.01s、常数基线 0.06s（6 个采样日 / 33,090 个观测，p0 = 35.69%）
 
-**尚未验证（诚实登记）**：没有跑过"真实策略信号 → 卡"的自动生产者；当前建卡是显式 API 调用。
+**已补上（2026-11-07 更新）**：「真实策略信号 → 卡」的自动生产者已实现——
+`app/decision/producer.py`（0cdf8d3）接入盘后管道（`daily_pipeline` Step 2.9，
+软失败不阻断）与 `POST /api/decision/produce` 手动触发；路径 = 结算到期卡 →
+跑策略取 picks（复用 `StrategyEngine.run` 唯一执行入口）→ `auto_pwin` 反推 →
+门禁 → 封卡。默认关（`decision_auto` 偏好，须显式开启）：自动给不会真实执行
+的策略发卡会污染校准，发卡对象必须显式选择。
 `p_win` 的自动来源已实现（`app/decision/pwin.py`，账本自举），但**它只在 `median`
 口径下成立**——见第 9 节。`abs` 口径下这条路在数学上走不通，不是工程量问题。
 
@@ -94,8 +99,10 @@
 1. ~~**p_win 的真实来源**~~ → 已实现 `pwin.py`（账本自举 + 样本外重放），
    但**必须先读第 9 节**：`abs` 口径下这条路结构性地走不通。
    样本外重放的可见性口径已于 **9.8** 修正（原来偷看了未结算的样本）。
-2. **策略 → 卡的生产者**：`POST /api/decision/cards` 已支持 `auto_pwin=true`，
-   下一步是把「当日跑策略」这一步接上（`strategy.run` → picks → 建卡）。
+2. ~~**策略 → 卡的生产者**~~ → 已实现 `app/decision/producer.py`（0cdf8d3）：
+   盘后管道 Step 2.9 + `POST /api/decision/produce` 手动触发；门禁 STOP 只跳过
+   不越权（定时任务无 `allow_stop` 特权），无证据不编 p_win（`skipped_no_evidence`）。
+   默认关，须显式开启 `decision_auto` 偏好。
 3. **组合层**：把 `sizing.py` 的 E[log] 仓位接到 `paper` 的下单金额上，但必须先有
    `n ≥ 8` 且 `significant=true` 的校准证据。
 
