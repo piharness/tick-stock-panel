@@ -36,7 +36,17 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 REGISTRY = REPO / "docs" / "number-provenance.json"
 ARTIFACTS = (REPO / "data" / ".scratch" / "pwin_variance.json",
-             REPO / "data" / ".scratch" / "hac_size.json")
+             REPO / "data" / ".scratch" / "hac_size.json",
+             #: 13r：产品决策真正在引用的四个产物。只放两个旧产物时，
+             #: `test_evidence_artifacts_are_shippable` 全绿，而宽面前沿、
+             #: 流动性身份、宇宙缺口、生存偏差四份证据在克隆上根本不存在。
+             REPO / "data" / ".scratch" / "decile_net.json",
+             REPO / "data" / ".scratch" / "width_frontier.json",
+             REPO / "data" / ".scratch" / "liquidity_identity.json",
+             REPO / "data" / ".scratch" / "universe_gap.json",
+             #: 逐只缺口的明细表：JSON 给汇总，CSV 给「313 行可以一行行看」。
+             REPO / "data" / ".scratch" / "universe_gap.csv",
+             REPO / "data" / ".scratch" / "survivorship_bound.json")
 
 
 def _load_checker():

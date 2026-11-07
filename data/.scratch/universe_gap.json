@@ -1,0 +1,72 @@
+{
+ "universe": {
+  "instruments": 5890,
+  "dump_10y": 5577,
+  "missing": 313,
+  "extra_in_dump": 0,
+  "weight_of_gap": 0.05314
+ },
+ "breakdown": {
+  "delisted": 155,
+  "other": 58,
+  "s_star_st": 4,
+  "st": 24,
+  "star_st": 72
+ },
+ "breakdown_st_total": 100,
+ "crosscheck_previous_claim": {
+  "claimed": {
+   "delisted": 155,
+   "star_st": 72,
+   "st": 24,
+   "other": 62
+  },
+  "recomputed": {
+   "delisted": 155,
+   "star_st": 72,
+   "s_star_st": 4,
+   "st": 24,
+   "other": 58
+  },
+  "note": "总数 313 对；分类错位：前一轮把 4 只 S*ST 记进了「合并/其他」，故 *ST 少 4（72→76）、其他多 4（62→58）。"
+ },
+ "local_coverage": {
+  "kline_daily_367d_hit": 1,
+  "kline_enriched_hit": 1,
+  "fuyao_10d_hit": 0,
+  "no_local_copy": 312,
+  "kline_daily_universe": 5581
+ },
+ "bias_bound": {
+  "assumption": "缺口组全部缺席，且按 instrument 数量等权并入池均值",
+  "weight": 0.05314,
+  "required_gap_to_break_even_bp": 105.4,
+  "ladder": [
+   {
+    "assumed_gap_bp": -50.0,
+    "bias_on_long_only_bp": 2.66,
+    "best_cell_net_bp": -2.94
+   },
+   {
+    "assumed_gap_bp": -100.0,
+    "bias_on_long_only_bp": 5.31,
+    "best_cell_net_bp": -0.29
+   },
+   {
+    "assumed_gap_bp": -105.4,
+    "bias_on_long_only_bp": 5.6,
+    "best_cell_net_bp": 0.0
+   },
+   {
+    "assumed_gap_bp": -200.0,
+    "bias_on_long_only_bp": 10.63,
+    "best_cell_net_bp": 5.03
+   },
+   {
+    "assumed_gap_bp": -400.0,
+    "bias_on_long_only_bp": 21.26,
+    "best_cell_net_bp": 15.66
+   }
+  ]
+ }
+}

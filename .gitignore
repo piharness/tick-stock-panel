@@ -52,6 +52,16 @@ data/**
 data/.scratch/*
 !data/.scratch/pwin_variance.json
 !data/.scratch/hac_size.json
+#: 2026-11-08（13r）：同一课第三次。宽面前沿 / 流动性身份 / 宇宙缺口 / 生存偏差
+#: 四个产物支撑着产品决策，被 `data/.scratch/*` 一起挡在版本控制外——克隆仓库的人
+#: 拿得到引用它们的脚注，拿不到数。清单同时钉在
+#: `backend/tests/test_decision_number_provenance.py::ARTIFACTS`。
+!data/.scratch/decile_net.json
+!data/.scratch/width_frontier.json
+!data/.scratch/liquidity_identity.json
+!data/.scratch/universe_gap.json
+!data/.scratch/universe_gap.csv
+!data/.scratch/survivorship_bound.json
 # data/ 下所有内容(含 ext_data 概念/行业)均不入库:
 #   - 用户运行时数据 (K线/财务/自选/回测等) 本就不该进 git
 #   - 概念/行业改为「首次启动自动从远程接口拉取」(见 app/services/ext_presets.py)
