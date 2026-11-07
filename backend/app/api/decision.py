@@ -100,9 +100,12 @@ def _card_summary(card: dict[str, Any]) -> dict[str, Any]:
 def overview(request: Request, as_of: str | None = Query(default=None)) -> dict[str, Any]:
     data_dir = _data_dir(request)
     gate = gates_mod.evaluate(data_dir, as_of=as_of)
-    cards = ledger.load_cards(data_dir)
+    try:
+        cards = ledger.load_cards(data_dir)
+        pending = settle_mod.outstanding(data_dir)
+    except ledger.LedgerCorruptError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     rows = ledger.load_settlements(data_dir)
-    pending = settle_mod.outstanding(data_dir)
     return {
         "as_of": gate.as_of,
         "gates": gate.to_dict(),
@@ -119,7 +122,10 @@ def overview(request: Request, as_of: str | None = Query(default=None)) -> dict[
 
 @router.get("/cards")
 def list_cards(request: Request, limit: int = Query(default=50, ge=1, le=500)) -> dict[str, Any]:
-    cards = ledger.load_cards(_data_dir(request))
+    try:
+        cards = ledger.load_cards(_data_dir(request))
+    except ledger.LedgerCorruptError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"total": len(cards), "cards": [_card_summary(c) for c in cards[-limit:][::-1]]}
 
 
@@ -310,7 +316,11 @@ def create_card(req: CardModel, request: Request) -> dict[str, Any]:
 
 @router.post("/settle")
 def run_settle(request: Request, as_of: str | None = Query(default=None)) -> dict[str, Any]:
-    return settle_mod.settle(_data_dir(request), as_of=as_of)
+    try:
+        return settle_mod.settle(_data_dir(request), as_of=as_of)
+    except ledger.LedgerCorruptError as exc:
+        # 残缺账本拒绝结算（fail-closed）；修复或移除损坏文件后重试。
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/score")
@@ -320,9 +330,15 @@ def get_score(request: Request, strategy_id: str | None = Query(default=None),
     data_dir = _data_dir(request)
     rows = ledger.load_settlements(data_dir)
     try:
+        pending = settle_mod.outstanding(data_dir)
+    except ledger.LedgerCorruptError as exc:
+        # 不能落进下面的 except ValueError：损坏账本是要用户修文件的状态冲突（409），
+        # 不是参数错误（400）。
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    try:
         result: dict[str, Any] = {
             "score": settle_mod.score(rows, strategy_id=strategy_id,
-                                      pending=settle_mod.outstanding(data_dir),
+                                      pending=pending,
                                       basis=basis)
         }
     except ValueError as exc:

@@ -499,3 +499,71 @@ def test_prior_counts_forward_returns(tmp_path: Path):
     assert out["p0"] == 0.0          # 平盘：没有任何标的上涨
     assert out["n_dates"] == 3
     assert days  # 保持 fixture 被使用
+
+
+# ---------------------------------------------------------------------------
+# K3 损坏卡 fail-closed（load_cards 不静默跳过，2026-11-07）
+# ---------------------------------------------------------------------------
+
+
+def _corrupt_card_file(tmp_path: Path, name: str = "dc-2099-01-01-ffffffff.json",
+                       content: str = "{not json") -> Path:
+    path = ledger.cards_dir(tmp_path) / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def test_load_cards_raises_on_corrupt_card(tmp_path: Path):
+    """损坏 JSON 直接抛错并列出文件名。
+
+    缺陷形态（K3 缺口）：旧实现 `except: continue` 静默跳过损坏卡，
+    K3 门和结算统计把残缺账本当成完整账本继续用。
+    """
+    days = _days(5)
+    ledger.save_card(tmp_path, ledger.build_card(
+        as_of=days[0].isoformat(), picks=_picks(), horizon_sessions=5))
+    _corrupt_card_file(tmp_path)
+    with pytest.raises(ledger.LedgerCorruptError) as ei:
+        ledger.load_cards(tmp_path)
+    assert "dc-2099-01-01-ffffffff.json" in str(ei.value)
+
+
+def test_load_cards_raises_on_foreign_kind(tmp_path: Path):
+    """cards 目录里 kind 非决策卡的 dc-*.json 同样 fail-closed。
+
+    cards 目录只有 save_card 一个写入方，出现非决策卡就是损坏或污染。
+    """
+    _corrupt_card_file(tmp_path, content=json.dumps({"kind": "SOMETHING-ELSE"}))
+    with pytest.raises(ledger.LedgerCorruptError):
+        ledger.load_cards(tmp_path)
+
+
+def test_load_cards_empty_when_dir_missing(tmp_path: Path):
+    """目录不存在仍是空账本，不是损坏。"""
+    assert ledger.load_cards(tmp_path) == []
+
+
+def test_settle_refuses_on_corrupt_ledger(tmp_path: Path):
+    """结算入口同样 fail-closed：残缺账本上不产生任何结算行。"""
+    days = _days(5)
+    ledger.save_card(tmp_path, ledger.build_card(
+        as_of=days[0].isoformat(), picks=_picks(), horizon_sessions=5))
+    _corrupt_card_file(tmp_path)
+    with pytest.raises(ledger.LedgerCorruptError):
+        settle.settle(tmp_path)
+    assert ledger.load_settlements(tmp_path) == []
+
+
+def test_k3_gate_triggers_on_corrupt_card(tmp_path: Path):
+    """K3 门把损坏转成 TRIGGERED（阻断放行），而不是崩溃或视作空账本。
+
+    门自己必须保持可用：evaluate 整体崩溃会让其余三条门也一起失效。
+    """
+    days = _days(5)
+    ledger.save_card(tmp_path, ledger.build_card(
+        as_of=days[0].isoformat(), picks=_picks(), horizon_sessions=5))
+    _corrupt_card_file(tmp_path)
+    check = gates.check_k3_record(tmp_path, days[0].isoformat())
+    assert check.status == gates.TRIGGERED
+    assert "dc-2099-01-01-ffffffff.json" in check.detail

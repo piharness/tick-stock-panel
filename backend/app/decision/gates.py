@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from app.decision import bars
-from app.decision.ledger import load_cards, verify_card
+from app.decision.ledger import LedgerCorruptError, load_cards, verify_card
 from app.strategy import paper
 
 PASS = "PASS"
@@ -257,7 +257,13 @@ def check_k2_assumption(data_dir: Path, as_of: str, *, account_id: str = "defaul
 
 def check_k3_record(data_dir: Path, as_of: str) -> Check:
     rule = "决策卡字段完整且哈希自洽"
-    cards = load_cards(Path(data_dir))
+    try:
+        cards = load_cards(Path(data_dir))
+    except LedgerCorruptError as exc:
+        # 损坏卡是「记录不完整」的极端形态：门必须转 TRIGGERED 阻断放行，
+        # 而不是让门自己崩溃（否则 evaluate 整体失效）或静默视作空账本放行。
+        return Check("K3_NO_RECORD", rule, TRIGGERED,
+                     f"账本文件损坏（fail-closed）：{exc}", {"cards": None})
     if not cards:
         return Check("K3_NO_RECORD", rule, PASS,
                      "账本为空：尚未声称任何决策，不构成记录缺失。", {"cards": 0})

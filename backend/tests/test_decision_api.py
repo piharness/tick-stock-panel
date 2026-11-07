@@ -402,3 +402,30 @@ def test_pwin_endpoint_empty_is_insufficient(client: TestClient):
 
 def test_score_basis_rejects_unknown(client: TestClient):
     assert client.get("/api/decision/score?basis=nope").status_code == 400
+
+
+def test_corrupt_card_maps_to_409_on_ledger_endpoints(client: TestClient, tmp_path: Path):
+    """损坏卡 fail-closed（K3 缺口修复）：账本端点返回 409 + 文件名明细。
+
+    旧行为是静默跳过损坏卡——overview 少计卡数、settle 在残缺账本上继续
+    产生结算行。修复后损坏是显式状态冲突（409），修复文件后重试即可。
+    """
+    days = _seed(tmp_path)
+    from app.decision import ledger
+
+    ledger.save_card(tmp_path, ledger.build_card(
+        as_of=days[0].isoformat(),
+        picks=[{"symbol": SYM, "limit_price": 100.0, "p_win": 0.6}],
+        horizon_sessions=5))
+    corrupt = tmp_path / "user_data" / "decision" / "cards" / "dc-2099-01-01-ffffffff.json"
+    corrupt.parent.mkdir(parents=True, exist_ok=True)
+    corrupt.write_text("{not json", encoding="utf-8")
+
+    for url in ("/api/decision/overview", "/api/decision/cards",
+                "/api/decision/score", "/api/decision/settle"):
+        r = client.get(url) if url.startswith(("/api/decision/overview",
+                                               "/api/decision/cards",
+                                               "/api/decision/score")) \
+            else client.post(url)
+        assert r.status_code == 409, f"{url} 应 409，实际 {r.status_code}"
+        assert "dc-2099-01-01-ffffffff.json" in r.json()["detail"], url

@@ -36,6 +36,16 @@ MAX_PICKS = 100
 REQUIRED_PICK_FIELDS = ("symbol", "limit_price", "p_win")
 
 
+class LedgerCorruptError(ValueError):
+    """账本文件损坏（fail-closed）。
+
+    残缺账本不得当作完整账本继续使用：K3 门靠 load_cards 检测坏记录，
+    结算统计靠它保证样本完整——静默跳过损坏卡等于把这两个环节一起弄瞎
+    （K3 缺口，2026-11-07 修复）。修复方式由调用方决定：K3 门转 TRIGGERED
+    阻断放行；API 层把错误映射为 409 并给出损坏文件清单。
+    """
+
+
 def root(data_dir: Path) -> Path:
     return Path(data_dir) / "user_data" / "decision"
 
@@ -229,19 +239,33 @@ def get_card(data_dir: Path, card_id: str) -> dict[str, Any] | None:
 
 
 def load_cards(data_dir: Path) -> list[dict[str, Any]]:
-    """全部决策卡，按 as_of 升序（同一天按 created_at）。"""
+    """全部决策卡，按 as_of 升序（同一天按 created_at）。
+
+    损坏文件（JSON 解析失败 / 非对象 / kind 非决策卡）直接抛
+    `LedgerCorruptError` 并列出全部问题文件——fail-closed，不静默跳过。
+    cards 目录只有 `save_card` 一个写入方，`dc-*.json` 里出现非决策卡
+    就是损坏或外部污染，不存在合法的跳过理由。
+    """
     directory = cards_dir(data_dir)
     if not directory.is_dir():
         return []
     out: list[dict[str, Any]] = []
+    bad: list[str] = []
     for path in sorted(directory.glob("dc-*.json")):
         try:
             card = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            bad.append(f"{path.name}: {type(exc).__name__}")
             continue
-        if card.get("kind") != CARD_KIND:
+        if not isinstance(card, dict) or card.get("kind") != CARD_KIND:
+            bad.append(f"{path.name}: kind 非决策卡")
             continue
         out.append(card)
+    if bad:
+        raise LedgerCorruptError(
+            f"决策卡账本有 {len(bad)} 个损坏文件，拒绝在残缺账本上继续"
+            f"（fail-closed）：{'; '.join(bad)}"
+        )
     out.sort(key=lambda c: (str(c.get("as_of")), str(c.get("created_at"))))
     return out
 
