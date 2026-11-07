@@ -123,6 +123,12 @@ SEALED = (
     #: 13t：它只 import 这一层。`load_panel()` 换口径，所有注入数一起换，
     #: 而产物哈希不变——那是比改产物更安静的漂移。
     ROOT / "scripts" / "probe_decile_net.py",
+    #: 13v：sign/abs 撤回的两处产地。它们原本是 `data/.scratch/diag_*.py`，
+    #: docstring 写着「不写任何产物」——于是整套撤回只活在两份被 `data/.scratch/*`
+    #: 挡住的日志里，克隆仓库的人拿得到引用、拿不到数（13r 原样重现）。
+    #: 产地与产物**同一次**进封签：只冻一半的门是开着的，13t 已经证过。
+    ROOT / "scripts" / "probe_sign_vs_abs.py",
+    ROOT / "scripts" / "probe_abs_replicate.py",
     Path(__file__).resolve(),
     #: 13s：生存偏差的注入产物。**刻意不进 `ARTIFACTS`**——`ARTIFACTS` 的契约
     #: 是「扫逐日键，确认段决策日不许出现」，而这份 JSON 只有标量与汇总表，
@@ -133,6 +139,12 @@ SEALED = (
     #: 改产物 + 改注释，四道门可以一起绿而零证据。两个清单不许互相顶替，
     #: 与「分析窗 / 确认时钟」不能合成一个字段是同一条规矩。
     DATA / ".scratch" / "survivorship_bound.json",
+    #: 13v：撤回证据。**同样刻意不进 `ARTIFACTS`**——两份 JSON 只有标量与
+    #: 年度汇总，没有任何 `YYYY-MM-DD` 键，塞进日期扫描表只会多报两行「0 天」。
+    #: 它们的白名单由 `_shippable_paths()` 从这个清单自动收：再手写一份
+    #: 名字清单，就是「第四次」的入口。
+    DATA / ".scratch" / "sign_vs_abs.json",
+    DATA / ".scratch" / "abs_replicate.json",
 ) + ARTIFACTS
 
 

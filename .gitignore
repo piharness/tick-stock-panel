@@ -62,6 +62,11 @@ data/.scratch/*
 !data/.scratch/universe_gap.json
 !data/.scratch/universe_gap.csv
 !data/.scratch/survivorship_bound.json
+#: 2026-11-08（13v）：sign/abs 的撤回证据。两份 JSON 都没有逐日键，所以进封签、
+#: 不进日期扫描表；它们的白名单由 `_shippable_paths()` 从 `SEALED` 自动收，
+#: 不再手写第二份清单（手写清单是「第四次」的入口）。
+!data/.scratch/sign_vs_abs.json
+!data/.scratch/abs_replicate.json
 # data/ 下所有内容(含 ext_data 概念/行业)均不入库:
 #   - 用户运行时数据 (K线/财务/自选/回测等) 本就不该进 git
 #   - 概念/行业改为「首次启动自动从远程接口拉取」(见 app/services/ext_presets.py)

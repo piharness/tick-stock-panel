@@ -92,7 +92,9 @@ def test_neutral_cache_is_audited_and_sealed() -> None:
     判定入口 `probe_confirm.py` 并进 SEALED，代码文件 7→8、合计 14。
     13s（§12.15）加生存偏差产物，8/15；13t（§12.16）再把它的生成器
     `probe_survivorship_bound.py` 与数据层 `probe_decile_net.py` 并进来，
-    代码文件 8→**10**、合计 **17**。
+    代码文件 8→**10**、合计 **17**；13v（§12.17）把 sign/abs 撤回的两个产地
+    `probe_sign_vs_abs.py` / `probe_abs_replicate.py` 并进来，代码文件 10→**12**、
+    合计 **21**（`ARTIFACTS` 仍是 6 份逐日缓存，两份新 JSON 没有逐日键）。
 
     数字**故意**写死：清单每变一次都要显式改这里，才不会「顺手补一个」
     把封签射程悄悄扩大或缩小。
@@ -100,7 +102,7 @@ def test_neutral_cache_is_audited_and_sealed() -> None:
     assert gate.NEUTRAL_CACHE in gate.ARTIFACTS
     assert gate.NEUTRAL_CACHE in gate.SEALED
     assert len(gate.ARTIFACTS) == 6
-    assert len([p for p in gate.SEALED if str(p).endswith(".py")]) == 10
+    assert len([p for p in gate.SEALED if str(p).endswith(".py")]) == 12
 
 
 def test_series_reproduces_the_mean_cache(ser) -> None:

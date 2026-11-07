@@ -229,3 +229,45 @@ def test_forced_arm_records_its_actual_layer_rate():
         assert "synth_in_layer" in r, "protocol 引用了不存在的字段"
         assert 0.85 <= r["synth_in_layer"] <= 1.0, (
             f"K={r['k']} 入层率 {r['synth_in_layer']}：forced 已不近似强制")
+
+
+def test_abs_width_rule_fails_the_cross_layer_and_pre2024_gate():
+    """`abs` 不可采纳——由 CI 守，不由记忆守。
+
+    判据（预注册 §12.17 第一条）：一个宽度规则算「可采纳」，当且仅当**存在同一个
+    N**，使它在两个流动性层同时满足
+      (a) 全样本 |t| ≥ 2；
+      (b) 2017–2023 子样本 |t| ≥ 2。
+    两个层、两个区间，缺一个都不行：
+
+      * 只看成交额层 ⇒ `abs/500` 的全样本 |t| 过线，而同一规则在换手率层不过线；
+      * 只看全样本 ⇒ 均值集中在 2024 起，2017–2023 是另一回事。
+
+    这两条检验此前**一条都没做**，于是「abs 有机制」被写进了报告，而 `t=3.07`
+    其实是命中一个「只在成交额层、且主要在 2024 之后」的格子。把判据写成断言
+    而不是散文，是因为散文里的判据会在下一次争论里被重新解释一遍。
+
+    断言的方向是「撤回成立」：哪天它红了，说明证据反过来了，账本必须重写。
+    """
+    d = _load("abs_replicate.json")
+    n_layers = len(d["layers"])
+    assert n_layers >= 2, "只有一个流动性层 ⇒ 跨层检验无从谈起"
+
+    worst: dict[str, dict[str, float]] = {}
+    for key, layer in d["layers"].items():
+        assert layer["cells"], key
+        for name, c in layer["cells"].items():
+            if not name.startswith("abs/"):
+                continue
+            worst.setdefault(name, {})[key] = min(abs(c["t"]), abs(c["pre2024"]["t"]))
+    assert worst, "产物里一格 abs 都没有 ⇒ 这条钉子没在看东西"
+
+    for name, per_layer in worst.items():
+        assert len(per_layer) == n_layers, (
+            f"{name} 只出现在 {sorted(per_layer)} 层——同一个 N 必须在每一层都有读数")
+
+    best_n, best = max(((n, min(v.values())) for n, v in worst.items()),
+                       key=lambda kv: kv[1])
+    assert best < 2.0, (
+        f"{best_n} 在「两层 × 两段」上的较差 |t| 已到 {best:.2f} ≥ 2："
+        "「abs 不构成机制」这条撤回失效，账本 §9.43 与预注册 §12.17 必须重写")

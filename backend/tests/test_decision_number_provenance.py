@@ -517,14 +517,43 @@ def test_missing_artifact_blocks_the_gate(tmp_path):
     assert CHECKER.main(["--root", str(tmp_path), "--allow-skip"]) == 0
 
 
+def _sealed_scratch_artifacts() -> tuple[Path, ...]:
+    """封签里 `data/.scratch/` 下的文件——那就是证据层。
+
+    不能写成「`SEALED` 里 `data/` 下的文件」：`decision_gate.SEALED` 末尾
+    拼着 `+ ARTIFACTS`，而那 6 份是 `data/.probe_*.json` **运行时缓存**。
+    它们被封是为了防换字节，本来就不该入库。所以按目录分，不按「在不在
+    `SEALED` 里」分。
+    """
+    spec = importlib.util.spec_from_file_location(
+        "decision_gate_for_ship", REPO / "scripts" / "decision_gate.py")
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    scratch = REPO / "data" / ".scratch"
+    return tuple(p for p in mod.SEALED if p.parent == scratch)
+
+
+def _shippable_paths() -> tuple[Path, ...]:
+    """要能克隆的产物 = 手写登记的 `ARTIFACTS` ∪ 封签里 `data/.scratch/` 下的全部。
+
+    只遍历前者时，一份「进 `SEALED`、不进 `ARTIFACTS`」的产物（没有逐日键，
+    因而不能进日期扫描表）就没有任何测试守它的白名单——`survivorship_bound.json`
+    就这样靠一份手写白名单悬了一轮。这份清单**从封签派生**，于是「加了封签
+    却忘了放行」会在 pytest 里红，而不是等下一次克隆才发现。
+    """
+    sealed = _sealed_scratch_artifacts()
+    return tuple(ARTIFACTS) + tuple(p for p in sealed if p not in ARTIFACTS)
+
+
 def test_evidence_artifacts_are_shippable():
-    """两个证据产物必须不被 `.gitignore` 挡住——它们是锚定层唯一真在核对的东西。
+    """证据产物必须不被 `.gitignore` 挡住——它们是锚定层唯一真在核对的东西。
 
     `data/**` 曾把它们一起挡在版本控制外：克隆后 36 项核对全 SKIP，判定仍 ✓。
     """
     if not (REPO / ".git").exists():
         pytest.skip("没有 git 仓库，无从判断是否可入库")
-    for p in ARTIFACTS:
+    for p in _shippable_paths():
         rel = p.relative_to(REPO).as_posix()
         proc = subprocess.run(["git", "check-ignore", "-q", rel], cwd=REPO)
         assert proc.returncode == 1, f"{rel} 仍被 .gitignore 忽略，克隆拿不到"

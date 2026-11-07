@@ -71,8 +71,11 @@
     "data/.probe_per_day_exc.json": "962c639f05038e6103cf58aef31af451e3a3b851164a8f28fdde3e058cdedb4c",
     "data/.probe_per_day_exc_mcap.json": "e05b6b4d68f9df69b3e1cb976138c53b8fe804fc4a13ed26bb592511efea38a0",
     "data/.probe_per_day_exc_mean.json": "c373d507374405fa6f07b4149ecc84e35e603f82f0d86efc2c237aa40730a78e",
+    "data/.scratch/abs_replicate.json": "40c329155a0c50b06fd950d328bfc05d7ab15ba2ddacf4d26c304925d553ae5e",
+    "data/.scratch/sign_vs_abs.json": "aed265ef682ffa83ee94dba2373eea425d8be301baa09652f81315f97dcfd89b",
     "data/.scratch/survivorship_bound.json": "b6f76cdac5af19719ac8abe3f58f57674c01cfb2287a48e83c2ffdba8201b238",
-    "scripts/decision_gate.py": "7a0c922f3e194042d9fc2b9eaaebd405d1e4de553c2c2be36d3cc9ccd0f7f255",
+    "scripts/decision_gate.py": "0852f3b3bbae228d89b26f98e958b0faa8f608d4fbb82a11b37f6fefc6240c4c",
+    "scripts/probe_abs_replicate.py": "4b691ca4e314e6545c6f46c0ebf4a7c6dbf7fa1f79cc4c921987264ffa901a10",
     "scripts/probe_basis_calibration.py": "1ba7a74053c6ff72d3787e083b683cf458f94be1f3fc641ce7084ec009a038a5",
     "scripts/probe_cohort_check.py": "1360204c67aa2bd2760e49c72b1b70c5008351a2fc2c5918bd56570823f10afb",
     "scripts/probe_confirm.py": "8ee1aa89e59a0712caae62cd66dd26373a46cd68b494cb96b47bbf920eeaa898",
@@ -80,11 +83,12 @@
     "scripts/probe_net_diff.py": "5f052fa0f9bbf8bcb4f7bb5a4b23c38c16e5d0313d5468050241fb5a30dbc566",
     "scripts/probe_neutral.py": "6d82a3d26b520931512c7eccafbefbb53da161c2229953862247a03d7c01d401",
     "scripts/probe_paired_diff.py": "eb32456097c4fd989215b4b1a5a817eade32804c8a94a2de29329d682f966c78",
+    "scripts/probe_sign_vs_abs.py": "0c7f0a2b5e0a620cf185114ad9b9f4892d671546d30487825fb12a11094a2980",
     "scripts/probe_survivorship_bound.py": "86e710617d7948d5d09b9e77669faa90470fe426d73a180884b49da31de07587",
     "scripts/probe_window.py": "fa3387842708ccc0939b2843993762fcd0216db8dd58654f1b4a22bc29246cb2"
   },
   "prereg_version": "v13c",
-  "seal_sha256": "581cbc0fb061e1af376fb565ef305262e430c865a82efb58c137b2fa2b0274fa",
+  "seal_sha256": "242e683a2dbe0a179d84ab59d1f2d8ea84b8bde99556d40526de641986b8d2d7",
   "seal_version": 1,
-  "signed_at": "2026-11-08T01:24:09+08:00"
+  "signed_at": "2026-11-08T02:10:05+08:00"
 }
