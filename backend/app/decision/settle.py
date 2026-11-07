@@ -563,18 +563,20 @@ def _daily_clustered_lcb(settled: list[dict[str, Any]], outcomes: list[int],
     return lcb, (lcb / brier_const if brier_const > 0 else None), n_eff, lag, reliable
 
 
-def _source_breakdown(settled: list[dict[str, Any]],
-                      basis: str) -> dict[str, dict[str, Any]]:
-    """按 p_win 的出处分组计分。
+def _breakdown(settled: list[dict[str, Any]], basis: str, column: str,
+               *, missing: str = "unknown") -> dict[str, dict[str, Any]]:
+    """按 `column` 分组计分。
 
-    一个总分如果混合了「账本自举」「先验 0.5」「人手填 0.9」，它答不出
-    「我的校准到底行不行」——因为分不清是哪个预测器在得分。旧记录没有出处
-    字段，统一归入 `unknown`，不假装知道。
+    两个维度问的是同一句话的两半：`p_win_source` 答「谁在预测」，`price_basis`
+    答「在什么价格口径上被评判」。任一维度混合，总分就答不出自己真正想问的
+    那句话——前者分不清是哪个预测器在得分，后者分不清有几分样本没算分红。
+
+    `missing` 是给旧记录用的：那一列还不存在时不假装知道。
     """
     field = "outcome_med" if basis == BASIS_MEDIAN else "outcome"
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in settled:
-        groups.setdefault(str(row.get("p_win_source") or "unknown"), []).append(row)
+        groups.setdefault(str(row.get(column) or missing), []).append(row)
     out: dict[str, dict[str, Any]] = {}
     for name, rows in sorted(groups.items()):
         ys = [int(r[field]) for r in rows]
@@ -635,7 +637,9 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
         "n_eff": None, "hac_lag": None, "n_eff_reliable": False,
         "logloss": None, "ret_median": None, "excess_mean": None, "excess_lcb": None,
         "verdict": "INSUFFICIENT", "reason": f"已结算样本 0 < {MIN_N}",
-        "by_source": {},
+        # 键集必须与下面的非空分支一致：一条空账本也要能安全地读同一批字段。
+        "excess_se_hac": None, "excess_lcb_hac": None,
+        "by_source": {}, "by_price_basis": {}, "n_non_event": 0,
     }
     if not settled:
         return empty
@@ -748,7 +752,14 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
         "excess_lcb_hac": None if exc_hac is None else round(exc_hac[2], 6),
         "verdict": verdict,
         "reason": reason,
-        "by_source": _source_breakdown(settled, basis),
+        "by_source": _breakdown(settled, basis, "p_win_source"),
+        #: 收益口径分组。`ADJUSTED` / `RAW` 是事件表缺位时的降级：前者仍走派生
+        #: 列（可能陈旧），后者连复权都没有。总分按全部样本算——那是策略实际
+        #: 交出来的成绩；要看「口径纯净的那部分成绩」，读这一组里的 `skill`。
+        "by_price_basis": _breakdown(settled, basis, "price_basis"),
+        #: 非 `EVENT` 口径的行数。0 = 这份分数只由算了分红的收益组成。
+        #: 它不是另一个分数，是「总分里掺了几条」这一个数。
+        "n_non_event": sum(1 for r in settled if r.get("price_basis") != "EVENT"),
     }
 
 
