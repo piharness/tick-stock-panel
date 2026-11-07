@@ -46,18 +46,18 @@
     "confirm_days_required": 250,
     "confirm_start": "2026-10-09",
     "confirmation_clock": {
-      "decision_days_computable": 0,
-      "first": null,
-      "last": null,
-      "remaining": 250,
+      "decision_days_computable": 1,
+      "first": "2026-10-09",
+      "last": "2026-10-09",
+      "remaining": 249,
       "required": 250
     },
     "exploration_end": "2026-10-08",
     "prereg_version": "v13c",
     "price_sessions": {
       "first": "2025-05-07",
-      "last": "2026-11-05",
-      "n": 366
+      "last": "2026-11-06",
+      "n": 367
     },
     "violations": []
   },
@@ -71,17 +71,20 @@
     "data/.probe_per_day_exc.json": "962c639f05038e6103cf58aef31af451e3a3b851164a8f28fdde3e058cdedb4c",
     "data/.probe_per_day_exc_mcap.json": "e05b6b4d68f9df69b3e1cb976138c53b8fe804fc4a13ed26bb592511efea38a0",
     "data/.probe_per_day_exc_mean.json": "c373d507374405fa6f07b4149ecc84e35e603f82f0d86efc2c237aa40730a78e",
-    "scripts/decision_gate.py": "660b4fe51cf7399c8252c261e937f7f9983dc083e60442e50f39d250af6e54a4",
+    "data/.scratch/survivorship_bound.json": "b6f76cdac5af19719ac8abe3f58f57674c01cfb2287a48e83c2ffdba8201b238",
+    "scripts/decision_gate.py": "7a0c922f3e194042d9fc2b9eaaebd405d1e4de553c2c2be36d3cc9ccd0f7f255",
     "scripts/probe_basis_calibration.py": "1ba7a74053c6ff72d3787e083b683cf458f94be1f3fc641ce7084ec009a038a5",
     "scripts/probe_cohort_check.py": "1360204c67aa2bd2760e49c72b1b70c5008351a2fc2c5918bd56570823f10afb",
     "scripts/probe_confirm.py": "8ee1aa89e59a0712caae62cd66dd26373a46cd68b494cb96b47bbf920eeaa898",
+    "scripts/probe_decile_net.py": "0e510057530cb22eaf824556f2bc7ea652176ab348a81c4e22bc50cc3e99ec22",
     "scripts/probe_net_diff.py": "5f052fa0f9bbf8bcb4f7bb5a4b23c38c16e5d0313d5468050241fb5a30dbc566",
     "scripts/probe_neutral.py": "6d82a3d26b520931512c7eccafbefbb53da161c2229953862247a03d7c01d401",
     "scripts/probe_paired_diff.py": "eb32456097c4fd989215b4b1a5a817eade32804c8a94a2de29329d682f966c78",
+    "scripts/probe_survivorship_bound.py": "86e710617d7948d5d09b9e77669faa90470fe426d73a180884b49da31de07587",
     "scripts/probe_window.py": "fa3387842708ccc0939b2843993762fcd0216db8dd58654f1b4a22bc29246cb2"
   },
   "prereg_version": "v13c",
-  "seal_sha256": "9f07b926be053a381046c1f91718ba2b56d5efd774ebd9d92a534eb49ee63b77",
+  "seal_sha256": "581cbc0fb061e1af376fb565ef305262e430c865a82efb58c137b2fa2b0274fa",
   "seal_version": 1,
-  "signed_at": "2026-11-06T13:15:32+08:00"
+  "signed_at": "2026-11-08T01:24:09+08:00"
 }

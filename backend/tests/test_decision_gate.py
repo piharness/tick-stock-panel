@@ -188,23 +188,32 @@ def test_written_seal_verifies(tmp_path: Path) -> None:
 
 
 def test_seal_is_closed_over_loaded_scripts() -> None:
-    """封签必须对 `_load()` 闭合。
+    """封签必须对**内部依赖**闭合，两条通路都算：`_load()` 与 `import probe_*`。
 
     `probe_net_diff.py` 的配对 p 值与 se_HAC 来自 `probe_paired_diff.py`。
     只哈希调用方，等于把「配对表显著」这个论据的产地留在门外——改一行
     `p_two_sided` 就能换掉整张表，而 `verify-seal` 不会响。
+
+    同一条病还有第二条通路：`import probe_decile_net as P`。13s 把生存偏差的
+    **产物**封了，生成器却留在门外，于是「改探针、产物不动」四道门可以一起绿。
+    只查 `_load()` 的旧版看不见这种写法——正则覆盖谁，就等于豁免谁。
     """
     import re
-    pat = re.compile(r'_load\(\s*"[^"]+",\s*"(scripts/[^"]+\.py)"')
+    load_pat = re.compile(r'_load\(\s*"[^"]+",\s*"(scripts/[^"]+\.py)"')
+    imp_pat = re.compile(r"^\s*(?:import|from)\s+(probe_\w+)", re.M)
     sealed_rel = {str(p.relative_to(REPO)).replace("\\", "/")
                   for p in gate.SEALED if str(p).endswith(".py")}
     missing = set()
     for rel in sealed_rel:
         text = (REPO / rel).read_text(encoding="utf-8")
-        for target in pat.findall(text):
+        for target in load_pat.findall(text):
             if target not in sealed_rel:
                 missing.add(f"{rel} → {target}")
-    assert not missing, "被冻结脚本导入了未冻结的脚本：" + "；".join(sorted(missing))
+        for mod in imp_pat.findall(text):
+            target = f"scripts/{mod}.py"
+            if target not in sealed_rel:
+                missing.add(f"{rel} → {target}（import）")
+    assert not missing, "被冻结脚本依赖了未冻结的脚本：" + "；".join(sorted(missing))
 
 
 def test_resigning_keeps_the_previous_hash(tmp_path: Path, monkeypatch) -> None:

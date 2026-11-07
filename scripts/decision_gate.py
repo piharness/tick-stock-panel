@@ -117,7 +117,22 @@ SEALED = (
     #: 的前置检查 e 靠封签自保——入口自己不进封签，「verify-seal ✓」就
     #: 钉不住任何东西。
     ROOT / "scripts" / "probe_confirm.py",
+    #: 13t：13s 把**产物**封了，却把**生成器**留在门外——改探针、产物不动，
+    #: 四道门可以一起绿。只冻字节不冻代码，等于只锁账本不锁记账的手。
+    ROOT / "scripts" / "probe_survivorship_bound.py",
+    #: 13t：它只 import 这一层。`load_panel()` 换口径，所有注入数一起换，
+    #: 而产物哈希不变——那是比改产物更安静的漂移。
+    ROOT / "scripts" / "probe_decile_net.py",
     Path(__file__).resolve(),
+    #: 13s：生存偏差的注入产物。**刻意不进 `ARTIFACTS`**——`ARTIFACTS` 的契约
+    #: 是「扫逐日键，确认段决策日不许出现」，而这份 JSON 只有标量与汇总表，
+    #: 没有任何 `YYYY-MM-DD` 键，加进去 `audit` 只会多报一行 0 天。
+    #:
+    #: 它要的是**封签**，因为两个清单回答两个问题：`audit` 问「有没有偷算确认段」，
+    #: `SEALED` 问「这些字节有没有被换掉」。用前者顶替后者，结果是实测过的：
+    #: 改产物 + 改注释，四道门可以一起绿而零证据。两个清单不许互相顶替，
+    #: 与「分析窗 / 确认时钟」不能合成一个字段是同一条规矩。
+    DATA / ".scratch" / "survivorship_bound.json",
 ) + ARTIFACTS
 
 

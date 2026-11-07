@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -20,6 +21,23 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 SCRATCH = REPO / "data" / ".scratch"
+
+
+def _gate():
+    """闸门模块：只看 `SEALED` / `ARTIFACTS` 两个清单，不执行任何检查。"""
+    spec = importlib.util.spec_from_file_location(
+        "decision_gate", REPO / "scripts" / "decision_gate.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _probe():
+    spec = importlib.util.spec_from_file_location(
+        "probe_survivorship_bound", REPO / "scripts" / "probe_survivorship_bound.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _load(name: str) -> dict:
@@ -118,3 +136,96 @@ def test_survivorship_census_is_recorded():
     assert d["baseline_bp"] > 0
     assert d["injection"], "注入结果不能是空的"
     assert d["mechanism_ladder"], "机制梯不能是空的"
+
+
+def test_survivorship_artifact_is_sealed_but_not_date_scanned():
+    """产物进封签、**不进**日期扫描表——两个清单服务两个问题，不许互相顶替。
+
+    不给它封签的后果是实测过的：改产物 + 改注释，`audit` / `verify-seal` /
+    溯源三道门可以一起绿，而证据已经换了人。反过来把它塞进 `ARTIFACTS` 也错：
+    这份 JSON 没有逐日键，`audit` 只会多报一行「0 天」，把「清单已闭合」
+    变成一句看着像检查、其实什么都没扫的话。
+    """
+    gate = _gate()
+    art = REPO / "data" / ".scratch" / "survivorship_bound.json"
+    assert art in gate.SEALED, "产物不在封签里，改它不会触发漂移"
+    assert art not in gate.ARTIFACTS, "无逐日键的产物不该进日期扫描表"
+
+
+def test_survivorship_draw_is_deterministic():
+    """同一个种子必须抽到同一批标的，**且不依赖字典顺序**。
+
+    旧版直接把 `df["thscode"].unique().to_numpy()` 喂给 `rng.choice`。polars 的
+    `unique()` 每次调用顺序都不同（`maintain_order` 默认 False），于是 `SEED`
+    只钉住了随机数序列、没钉住「从谁里面抽」：同一进程里两次同种子运行，同一格
+    的重复均值可以差到与该格自身散布同量级。产物里那个 `seed` 字段因此是装饰品
+    ——它声明的是确定性，而实际发生的是重新抽签。具体量级记在账本 §9.43 五，
+    不进这里：散文里的数没有出处，只会变成下一份报告里的第二个 `−60bp`。
+    """
+    probe = _probe()
+    import numpy as np
+    import polars as pl
+
+    names = ("c", "a", "b", "d", "e", "f")
+    idx = {s: pl.DataFrame({"date": range(200)}) for s in names}
+    first = probe.draw(idx, 3, np.random.default_rng(0))
+    # 换一个插入顺序：排序之后，抽到的必须一模一样
+    shuffled = {s: idx[s] for s in reversed(names)}
+    second = probe.draw(shuffled, 3, np.random.default_rng(0))
+    assert first == second, "抽签依赖字典顺序 ⇒ 种子钉不住标的"
+    assert len(first) == 3
+
+
+def test_truncate_only_arm_is_a_paired_control():
+    """`crash=0` 必须能把「削平」单独拆出来，否则它不配当稀释读数。
+
+    探针的 docstring 曾承诺一个 `truncate_only` 档，代码里却没有：`clip=False`
+    分支零调用点，于是 `crash=0` 一直是「截断 + 削平」的混合物，而账本拿它当
+    稀释代表。这条钉住三件事：这一档真的落在产物里、与 `crash=0` 档**配对**
+    （同一批标的 ⇒ 在场率逐位相同）、只截断不削平者的损失更小。
+    """
+    d = _load("survivorship_bound.json")
+    tr = d.get("truncate_only")
+    assert tr, "缺 truncate_only 档 ⇒ crash=0 又变成「含削平」的代名词"
+    ref = {(r["mode"], r["k"], r["crash"]): r for r in d["injection"]}
+    for r in tr:
+        k = r["k"]
+        base = ref[("forced", k, 0.0)]
+        assert r["clip"] is False
+        assert r["reps"] == base["reps"], "两档必须同一批 rep，否则差里混着抽样噪声"
+        assert r["presence_med"] == pytest.approx(
+            d["presence_med"][str(k)], abs=1e-9), "在场率必须相同才叫配对"
+        assert r["delta_bp_mean"] > base["delta_bp_mean"], "不削平应比削平损失更小"
+
+
+def test_closed_form_keeps_three_distinct_anchors():
+    """三个锚是三个对象，不许互相顶替。
+
+    `identity_bp` 假设层线性长到 N+K 且原成员全留；实现是分位截断（`_layer_flag`），
+    注入后层的增量只有 K 的两成，原层却要被挤出相当于 K 的八成，所以它系统性
+    偏负，只能当一阶参照。
+    真正可独立复算的是 `displacement_identity_bp`（解析式），它必须与「全在场重算」
+    的模拟值贴得很近——否则说明解析式的层定义又和实现分家了。
+    """
+    d = _load("survivorship_bound.json")
+    for c in d["closed_form"]:
+        k, sim = c["k"], c["all_present_pool_mean_bp"]
+        ana, one = c["displacement_identity_bp"], c["identity_bp"]
+        assert abs(ana - sim) < 2.0, (
+            f"K={k} 解析锚 {ana:.2f} 与全在场重算 {sim:.2f} 差得太多，层定义分家了")
+        assert one < sim - 4.0, f"K={k} 一阶参照没有偏负，公式或数据被换过"
+
+
+def test_forced_arm_records_its_actual_layer_rate():
+    """`forced` 是「近似强制」，真实入层率必须进产物——否则「上界」无从复核。
+
+    `protocol.forced` 曾指向 `injection[].synth_in_layer`，而那一列并不存在；
+    一个自称上界的臂，读者连它有几成真的进了层都查不到。
+    """
+    d = _load("survivorship_bound.json")
+    rows = [r for r in d["injection"] if r["mode"] == "forced"]
+    assert rows, "forced 臂不能是空的"
+    for r in rows:
+        assert "synth_in_layer" in r, "protocol 引用了不存在的字段"
+        assert 0.85 <= r["synth_in_layer"] <= 1.0, (
+            f"K={r['k']} 入层率 {r['synth_in_layer']}：forced 已不近似强制")

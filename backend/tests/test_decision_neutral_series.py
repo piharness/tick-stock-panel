@@ -90,11 +90,17 @@ def test_neutral_cache_is_audited_and_sealed() -> None:
     而 `verify-seal` 也不覆盖它。清单要对**写盘**闭合，所以 v12 是 12、
     v13a 把 `probe_cs_ic.py` 的缓存补进来后是 13；v13c（§12.12）把确认段
     判定入口 `probe_confirm.py` 并进 SEALED，代码文件 7→8、合计 14。
+    13s（§12.15）加生存偏差产物，8/15；13t（§12.16）再把它的生成器
+    `probe_survivorship_bound.py` 与数据层 `probe_decile_net.py` 并进来，
+    代码文件 8→**10**、合计 **17**。
+
+    数字**故意**写死：清单每变一次都要显式改这里，才不会「顺手补一个」
+    把封签射程悄悄扩大或缩小。
     """
     assert gate.NEUTRAL_CACHE in gate.ARTIFACTS
     assert gate.NEUTRAL_CACHE in gate.SEALED
     assert len(gate.ARTIFACTS) == 6
-    assert len([p for p in gate.SEALED if str(p).endswith(".py")]) == 8
+    assert len([p for p in gate.SEALED if str(p).endswith(".py")]) == 10
 
 
 def test_series_reproduces_the_mean_cache(ser) -> None:
