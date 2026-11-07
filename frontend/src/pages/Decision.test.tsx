@@ -7,7 +7,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { api, type DecisionOverview } from '@/lib/api'
+import { api, type DecisionAutoConfig, type DecisionOverview, type Preferences } from '@/lib/api'
+import { toast } from '@/components/Toast'
 import { Decision } from './Decision'
 
 vi.mock('@/components/Toast', () => ({ toast: vi.fn() }))
@@ -40,10 +41,21 @@ let host: HTMLDivElement
 let root: Root
 let client: QueryClient
 
+const autoConfig: DecisionAutoConfig = {
+  enabled: true, strategy_id: 'trend_breakout', top_n: 20, horizon: 20,
+  basis: 'median', account_id: 'default', allow_prior: false,
+}
+
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.spyOn(api, 'decisionOverview').mockResolvedValue(overview)
   vi.spyOn(api, 'decisionScore').mockResolvedValue({ score: overview.score })
+  // 自动发卡卡片的依赖：不 mock 会在 jsdom 里发真请求
+  vi.spyOn(api, 'preferences').mockResolvedValue({ decision_auto: autoConfig } as unknown as Preferences)
+  vi.spyOn(api, 'strategyList').mockResolvedValue(
+    { strategies: [{ id: 'trend_breakout', name: '趋势突破' }] } as unknown as Awaited<ReturnType<typeof api.strategyList>>)
+  vi.spyOn(api, 'updateDecisionAutoConfig').mockResolvedValue(autoConfig)
+  vi.spyOn(api, 'decisionProduce').mockResolvedValue({ status: 'created', card_id: 'card_test' })
   host = document.createElement('div')
   document.body.appendChild(host)
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -157,4 +169,32 @@ it('median 口径：不可判定打问号，不能借 ✓ 冒充结论', async (
   const text = host.textContent ?? ''
   expect(text).toContain('33.0% ?')
   expect(text).not.toContain('✓')
+})
+
+it('自动发卡开关：显示绑定策略，点击即 PUT enabled（部分更新）', async () => {
+  await render()
+  const box = host.querySelector('input[type="checkbox"]') as HTMLInputElement
+  expect(box).not.toBeNull()
+  expect(box.checked).toBe(true)                       // mock 配置 enabled=true
+  expect(host.textContent).toContain('绑定策略')
+  expect(host.textContent).toContain('趋势突破')          // 策略下拉有可选项
+  await act(async () => { box.click() })               // 取消勾选 → PUT enabled=false
+  for (let i = 0; i < 3; i++) {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  }
+  expect(api.updateDecisionAutoConfig).toHaveBeenCalledWith({ enabled: false })
+})
+
+it('立即生产：调 produce 端点，created 时提示卡号且算成功', async () => {
+  await render()
+  const btn = [...host.querySelectorAll('button')]
+    .find(b => b.textContent?.includes('立即生产'))
+  expect(btn).not.toBeUndefined()
+  await act(async () => { btn!.click() })
+  for (let i = 0; i < 3; i++) {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  }
+  expect(api.decisionProduce).toHaveBeenCalled()
+  expect(toast).toHaveBeenCalledWith(expect.stringContaining('已发卡'), 'success')
+  expect(toast).toHaveBeenCalledWith(expect.stringContaining('card_test'), 'success')
 })

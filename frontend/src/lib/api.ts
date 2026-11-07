@@ -2408,6 +2408,8 @@ export interface Preferences {
   pipeline_pull_etf: boolean
   pipeline_pull_index: boolean
   pipeline_regime_enabled: boolean
+  /** 自动发卡配置（决策账本盘后管道） */
+  decision_auto?: DecisionAutoConfig
   regime_batch_days: number
   regime_warmup_days: number
   pipeline_index_symbols: string
@@ -2761,6 +2763,28 @@ export type DecisionCardSummary = {
   sealed_sha256: string | null
 }
 
+/** 自动发卡配置（`decision_auto_*` 偏好，`GET /api/settings/preferences` 的 `decision_auto` 字段） */
+export type DecisionAutoConfig = {
+  enabled: boolean
+  strategy_id: string
+  top_n: number
+  horizon: number
+  basis: 'abs' | 'median'
+  account_id: string
+  allow_prior: boolean
+}
+
+/** `POST /api/decision/produce` 的返回。`status != 'created'` 时看 `reason`。 */
+export type DecisionProduceSummary = {
+  status: 'created' | 'skipped_gate' | 'skipped_no_picks' | 'skipped_no_evidence'
+    | 'exists' | 'disabled' | 'no_strategy' | 'no_engine' | 'scan_failed'
+  reason?: string
+  card_id?: string
+  gates?: DecisionGates
+  settle?: { cards: number; written: number; pending: number }
+  strategy_id?: string
+}
+
 export type DecisionScore = {
   basis?: 'abs' | 'median'
   n: number
@@ -2859,6 +2883,18 @@ export const api = {
     request<{ score: DecisionScore; prior?: DecisionPrior }>(
       `/api/decision/score?include_prior=${includePrior ? 'true' : 'false'}`,
     ),
+  /** 手动触发一次「结算 + 自动发卡」，与盘后管道同一入口（配置来自 decision_auto 偏好） */
+  decisionProduce: (asOf?: string) =>
+    request<DecisionProduceSummary>(
+      `/api/decision/produce${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`,
+      { method: 'POST' },
+    ),
+  /** 部分更新自动发卡配置，返回更新后的完整配置 */
+  updateDecisionAutoConfig: (req: Partial<DecisionAutoConfig>) =>
+    request<DecisionAutoConfig>('/api/settings/preferences/decision-auto-config', {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
 
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
 

@@ -10,20 +10,23 @@
  * 不展示"看起来不错"的数字。
  */
 import { useCallback, useMemo } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   RefreshCw, Loader2, ShieldCheck, ShieldAlert, ShieldQuestion,
-  ScrollText, Target, ArrowRight,
+  ScrollText, Target, ArrowRight, Bot,
 } from 'lucide-react'
 import {
   api,
+  type DecisionAutoConfig,
   type DecisionCheck,
   type DecisionCheckStatus,
   type DecisionGateDecision,
   type DecisionOverview,
+  type DecisionProduceSummary,
   type DecisionScore,
 } from '@/lib/api'
 import { toast } from '@/components/Toast'
+import { QK } from '@/lib/queryKeys'
 import { cn } from '@/lib/cn'
 
 const GATE_META: Record<DecisionGateDecision, { label: string; hint: string; tone: string }> = {
@@ -59,6 +62,19 @@ const VERDICT_LABEL: Record<string, string> = {
   INSUFFICIENT: '样本不足',
   BEATS_CONSTANT: '跑赢常数基线',
   NO_INFORMATION: '无信息增量',
+}
+
+/** produce 结果的人话。门禁 STOP / 无证据都是诚实路径，不是错误。 */
+const PRODUCE_STATUS_LABEL: Record<DecisionProduceSummary['status'], string> = {
+  created: '已发卡',
+  exists: '当日已有卡（幂等）',
+  skipped_gate: '门禁 STOP，跳过（定时路径不越权）',
+  skipped_no_picks: '策略当日无 picks，未发卡',
+  skipped_no_evidence: '无 p_win 证据（冷启动），未发卡',
+  disabled: '自动发卡未开启',
+  no_strategy: '未绑定策略：只结算，不发卡',
+  no_engine: '策略引擎未初始化，未发卡',
+  scan_failed: '策略扫描失败',
 }
 
 function pct(v: number | null | undefined, digits = 2): string {
@@ -119,6 +135,49 @@ export function Decision() {
   const data: DecisionOverview | undefined = overview.data
   const gate = data?.gates
   const meta = gate ? GATE_META[gate.decision] : null
+
+  // 自动发卡配置 + 可选策略。配置在偏好里，单独 PUT 部分更新。
+  const autoCfg = useQuery({
+    queryKey: QK.preferences,
+    queryFn: () => api.preferences(),
+    refetchOnWindowFocus: false,
+    select: (p): DecisionAutoConfig | undefined => p.decision_auto,
+  })
+  const strategies = useQuery({
+    queryKey: ['decision', 'auto-strategies'],
+    queryFn: () => api.strategyList('stock', '1d'),
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
+  })
+
+  const saveAuto = useMutation({
+    mutationFn: (patch: Partial<DecisionAutoConfig>) => api.updateDecisionAutoConfig(patch),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: QK.preferences }) },
+    onError: e => toast(e instanceof Error ? e.message : '保存自动发卡配置失败'),
+  })
+
+  const produceNow = useCallback(async () => {
+    try {
+      const r = await api.decisionProduce()
+      const label = PRODUCE_STATUS_LABEL[r.status] ?? r.status
+      const detail = r.card_id ? `：${r.card_id}` : r.reason ? `：${r.reason}` : ''
+      // 只有「真的发了卡」算 success；跳过/未开启走默认（醒目样式），
+      // 它们是要用户注意的诚实路径，不是静默成功。
+      toast(`${label}${detail}`, r.status === 'created' || r.status === 'exists' ? 'success' : 'error')
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['decision', 'overview'] }),
+        qc.invalidateQueries({ queryKey: ['decision', 'score'] }),
+      ])
+    } catch (e) {
+      toast(e instanceof Error ? e.message : '生产失败')
+    }
+  }, [qc])
+
+  const cfg = autoCfg.data
+  const strategyOpts = useMemo(
+    () => (strategies.data?.strategies ?? []).map(st => ({ id: st.id, name: st.name })),
+    [strategies.data],
+  )
 
   const settleNow = useCallback(async () => {
     try {
@@ -373,6 +432,60 @@ export function Decision() {
           </div>
         </aside>
       </div>
+
+      {/* 自动发卡 —— 盘后管道的「策略 → 卡」阶段。开关在这里显式选择：
+          自动给不会真实执行的策略发卡会污染校准，所以默认关。 */}
+      <section className="mt-3 rounded-card border border-border bg-surface p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Bot className="h-3.5 w-3.5 text-accent" />
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={cfg?.enabled ?? false}
+              disabled={autoCfg.isLoading || saveAuto.isPending}
+              onChange={e => saveAuto.mutate({ enabled: e.target.checked })}
+              className="h-3.5 w-3.5 accent-accent cursor-pointer"
+            />
+            <span className="text-xs font-medium text-foreground">自动发卡（盘后管道）</span>
+          </label>
+          <span className="text-[10px] text-muted">
+            每个交易日收盘后自动：结算到期卡 → 跑策略取 Top-N → 反推 p_win → 门禁 → 封卡
+          </span>
+          <button
+            onClick={() => { void produceNow() }}
+            disabled={autoCfg.isLoading}
+            className="ml-auto flex items-center gap-1 rounded-btn border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary transition-colors hover:bg-elevated hover:text-foreground"
+          >
+            <Target className="h-3.5 w-3.5" /> 立即生产
+          </button>
+        </div>
+
+        {cfg?.enabled && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border/60 pt-2 text-[11px]">
+            <label className="flex items-center gap-1.5">
+              <span className="text-muted">绑定策略</span>
+              <select
+                value={cfg.strategy_id}
+                disabled={saveAuto.isPending}
+                onChange={e => saveAuto.mutate({ strategy_id: e.target.value })}
+                className="rounded-btn border border-border bg-surface px-1.5 py-1 text-[11px] text-foreground"
+              >
+                <option value="">— 未选择（只结算不发卡）—</option>
+                {strategyOpts.map(o => (
+                  <option key={o.id} value={o.id}>{o.name || o.id}</option>
+                ))}
+              </select>
+            </label>
+            <span className="text-muted">
+              Top <code className="font-mono text-secondary">{cfg.top_n}</code>
+              {' · '}持有 <code className="font-mono text-secondary">{cfg.horizon}</code> 个交易日
+              {' · '}p_win 口径 <code className="font-mono text-secondary">{cfg.basis}</code>
+              {cfg.allow_prior && <span className="ml-1 text-warning">冷启动允许先验</span>}
+            </span>
+            {strategies.isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted" />}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
