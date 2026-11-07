@@ -273,7 +273,9 @@ export function Decision() {
               ['Brier', num(s?.brier)],
               ['常数基线 Brier', num(s?.brier_const)],
               ['收益中位', pct(s?.ret_median)],
-              ['超额 LCB(90%)', pct(s?.excess_lcb)],
+              // 超额下界走日聚 + HAC（与 skill_lcb 同口径）。`excess_lcb` 是逐 pick 的
+              // iid 版本，同日相关与 20 日重叠都没计，只在旧数据没有新字段时兜底。
+              ['超额 LCB(90%, HAC)', pct(s?.excess_lcb_hac ?? s?.excess_lcb)],
               ['未成交 / 未到期', `${s?.not_filled ?? 0} / ${s?.pending ?? 0}`],
             ] as Array<[string, string, string?]>).map(([k, v, hint]) => (
               <div key={k} className="flex items-center justify-between gap-2">

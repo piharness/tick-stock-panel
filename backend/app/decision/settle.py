@@ -376,10 +376,12 @@ def outstanding(data_dir: Path) -> int:
 #: 带宽恒等于 `lag+1 = H` 的 Bartlett 核，对重叠 H 日收益这种等权 MA(H−1)
 #: 结构（`γ_k = γ_0·(H−k)/H`）的概率极限是
 #:
-#:     LRV_hat → (2/3 + 1/H)·LRV
+#:     LRV_hat → (2/3 + 1/(3H²))·LRV = 267/400·LRV = 0.6675·LRV    (H = 20)
 #:
-#: 也就是 `se` 恒为真值的 `sqrt(2/3) ≈ 0.817` 倍。H0 下 `lcb > 0` 的概率
-#: 因此是 8.5–12%，不是 5%；`n_eff = n·(se_iid/se)²` 被同一份偏差放大 1.5 倍。
+#: 也就是 `se` 恒为真值的 `sqrt(267/400) ≈ 0.817` 倍（`sqrt(2/3) = 0.8165` 只是
+#: H→∞ 的连续极限，差在第四位小数）。H0 下 `lcb > 0` 的概率因此是 12.2%（n=250）、
+#: 10.1%（n=600）、8.6%（n=1000），不是 5%——n 越小越重，而面板的 n≈326 就落在
+#: 更重的那一端；`n_eff = n·(se_iid/se)²` 被同一份偏差放大 1.5 倍。
 #: 这个偏差来自「带宽固定成模型记忆长度」——Wilson 区间那一类错误，加样本
 #: 不会好转。实测见 `scripts/probe_hac_size.py`。
 KERNEL_TRUNCATED = "truncated"
@@ -393,8 +395,9 @@ def hac_lcb(values: list[float], lag: int = 0, *,
 
     `lag` 必须覆盖序列的自相关长度。持有 `H` 个交易日的卡，相邻决策日的
     收益重叠 `H-1` 天，逐日改善量因此是 MA(H-1) 过程：按 iid 算标准误会把
-    区间收窄约 2.5–3.2 倍（实测 321 天 / 20 日持有期，见
-    `scripts/probe_pwin_variance.py`）。`lag=0` 退化为 iid。
+    区间收窄 2.3–3.4 倍（323 个可评估日 / 20 日持有期上的两条重叠序列：
+    verdict 2.57–2.71、增量改善 2.29–3.38；落盘
+    `data/.scratch/pwin_variance.json`）。`lag=0` 退化为 iid。
 
     默认核是截断（矩形）核：`LRV = γ_0 + 2Σ_{k=1..lag} γ̂_k`，`γ̂_k` 的分母
     取 `n-k`。它在 MA(lag) 下无偏——这正是 `lag` 的来历（`lag` 不是「随便
@@ -478,6 +481,25 @@ def _overlap_lag(rows: list[dict[str, Any]]) -> int:
     """
     hs = [int(r.get("horizon_sessions") or 0) for r in rows]
     return max(0, max(hs) - 1) if hs else 0
+
+
+def _daily_means(settled: list[dict[str, Any]], field: str) -> list[float]:
+    """把逐 pick 的读数聚成**等权日序列**，按日期升序（HAC 对顺序敏感）。
+
+    与 `_daily_clustered_lcb` 同一个约定：一天算一个观测。同一张卡的 k 个 pick
+    共享同一天的行情，把它们当 k 个独立样本会把标准误低估 √k 倍。
+
+    缺 `field` 的行跳过；缺 `as_of` 的行与 `_daily_clustered_lcb` 一样归入同一个
+    `None` 组，两个下界因此看到同一批决策日。日期升序是这里**显式**做的：
+    `_daily_clustered_lcb` 依赖 `settled` 的插入顺序，本函数不依赖调用方。
+    """
+    by_day: dict[str, list[float]] = {}
+    for row in settled:
+        v = row.get(field)
+        if v is None:
+            continue
+        by_day.setdefault(str(row.get("as_of")), []).append(float(v))
+    return [sum(v) / len(v) for _, v in sorted(by_day.items())]
 
 
 def _daily_clustered_lcb(settled: list[dict[str, Any]], outcomes: list[int],
@@ -634,6 +656,16 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
         rets[len(rets) // 2 - 1] + rets[len(rets) // 2]) / 2
     excess_field = "excess_med" if basis == BASIS_MEDIAN else "excess"
     excess = [float(r[excess_field]) for r in settled if r.get(excess_field) is not None]
+    # 逐 pick 的 `_lcb` 是 iid 下界：同一张卡的 k 个 pick 共享当天行情，相邻决策日
+    # 的 H 日收益又重叠 H−1 天，两层相关都没进方差。`hac_lcb` 的文档实测这个方向
+    # 会窄 2.3–3.4 倍，而**同一个函数**里的 `skill_lcb` 已经走日聚 + HAC——
+    # `excess_lcb` 单独走 iid 是口径不一致，不是保守选择。
+    #
+    # 这里不改 `excess_lcb` 的语义（它不驱动任何判定，只在前端显示），而是并列
+    # 给一个同口径的读数。中心是「等权日均值」，每卡 pick 数相同时与 `excess_mean`
+    # 逐位相同；不同时两者都是 μ 的无偏估计，差别只是加权。
+    exc_daily = _daily_means(settled, excess_field)
+    exc_hac = hac_lcb(exc_daily, _overlap_lag(settled)) if len(exc_daily) >= 2 else None
 
     baseline = "随机 0.5" if basis == BASIS_MEDIAN else "展开 climatology"
     if n < MIN_N:
@@ -683,7 +715,12 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
         "logloss": round(logloss, 4),
         "ret_median": round(median, 4),
         "excess_mean": round(sum(excess) / len(excess), 4) if excess else None,
+        # 旧字段：逐 pick iid 下界，**不得用于推断**（同日相关 + 持有期重叠未计）。
+        # 保留是因为前端与历史导出在读它；新读数见下面两个字段。
         "excess_lcb": (round(_lcb(excess), 4) if excess and _lcb(excess) is not None else None),
+        # 与 `skill_lcb` 同口径：日聚 + Newey-West（lag = 最长持有期 − 1）。
+        "excess_se_hac": None if exc_hac is None else round(exc_hac[1], 6),
+        "excess_lcb_hac": None if exc_hac is None else round(exc_hac[2], 6),
         "verdict": verdict,
         "reason": reason,
         "by_source": _source_breakdown(settled, basis),

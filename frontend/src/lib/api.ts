@@ -2798,7 +2798,12 @@ export type DecisionScore = {
   logloss: number | null
   ret_median: number | null
   excess_mean: number | null
+  /** 逐 pick 的 iid 下界。同日相关与持有期重叠都没计，只作历史字段保留，勿用于推断。 */
   excess_lcb: number | null
+  /** 日聚 + Newey-West 的 HAC 标准误（lag = 最长持有期 − 1）。 */
+  excess_se_hac?: number | null
+  /** 与 `skill_lcb` 同口径的单侧 90% 下界——超额读数请看这个。 */
+  excess_lcb_hac?: number | null
   verdict: 'INSUFFICIENT' | 'BEATS_CONSTANT' | 'NO_INFORMATION'
   reason: string
   /** 按 p_win 出处分组：ledger（账本自举）/ prior（冷启动常数）/ unknown（人手填或旧记录）。
