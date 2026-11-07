@@ -20,8 +20,21 @@
    （`%`/`bp`/`倍`/`×`）、以及整数区间（`44–49`、`28–62`——`n_eff` 恰好是这类）。
    单独的整数不进来：`250` 天、`20` 日、`90%` 置信度是定义，不是量出来的东西。
 
-粒度选行不选段落，是因为段落里一个错字就会让整段「变了」，而错字不该逼人
-重新核数；反过来，行文本就是身份，改数必然换身份，**改字不换身份**。
+## 身份 = 读数向量，不是整行文本（13j 改正）
+
+§9.39 初版把整行归一化文本当身份，正文却写着「错字不换身份」——**那是假的**：
+`sha(_norm(text))` 里包含所有字，加一个「了」就换了身份，于是错字和改数都红，
+检查退化成「任何编辑都要重核」，正好是它想避免的摩擦。
+
+13j 改成：身份 = 该行**读数向量**的哈希（`0.42 倍` 这种 token 的有序序列）。
+于是
+
+- 错字、补标点、改措辞 ⇒ 向量不变 ⇒ **不红**（只进 `PROSE_DRIFT` 提示）；
+- 改任何一个数 ⇒ 向量变 ⇒ `STALE`/`STALE_ENTRY` + `UNREGISTERED` 并排。
+
+**代价要写清楚**：把「偏窄 7/8」改成「偏宽 7/8」这种**只改字、不改数**的语义
+翻转，硬检查不会红——它只会在 `PROSE_DRIFT` 里列出来。这一层是留给人和评审的，
+不是留给脚本的（§9.40 会写）。
 
 ## 两条检查（都不跑数据）
 
@@ -29,7 +42,7 @@ R1 · 覆盖。每个断言行必须二选一：
 
 - **已锚定**：在 `docs/number-provenance.json` 的 `entries` 里，带产物路径与
   逐项 `claimed` 值；
-- **已封存**：在 `frozen` 名单里（存整行归一化文本）。
+- **已封存**：在 `frozen` 名单里（存整行文本，身份由文本现算）。
 
 都没有 ⇒ `UNREGISTERED`（新写的读数没出处）。改了数 ⇒ 旧行进 `STALE`、新行
 进 `UNREGISTERED`，两条并排就是一份 diff。**「改数」和「新增数」是同一个
@@ -40,10 +53,23 @@ R2 · 锚定完整性。每个 `entries` 必须（a）该行仍在文件里（�
 （c）产物存在时逐项与产物比对（`VALUE_MISMATCH` 带偏离量），（d）产物欠缺时
 记 `SKIP`，不假装通过。
 
+## 同指纹必须记账
+
+身份只由读数决定，于是「同一文件里两行写着同一组数」会撞键（本仓库实测 6 组，
+例如 `pwin.py` 两行都只含 `3 倍`）。撞键不能互相顶替：登记几条就得出现几次。
+少一次 ⇒ `STALE`/`STALE_ENTRY`；多一次 ⇒ `UNREGISTERED`。否则删掉其中一行会
+静默通过。
+
+撞键也可能是**真的两句话说了同一组数**（`probe_pwin_variance.py` 的模块
+docstring 与 `_hac_stats` 都写「7 条偏窄 0.7–17.5%、1 条偏宽 10.1%」），一句
+锚定、一句封存是合法的：**计数按指纹合并**，不做「二选一」。核锚定项时按文本
+相似度挑回它自己那一行，避免拿隔壁那行过审。
+
 ## 它不是万能的
 
 - **抓不到「语义混用」**：把增量序列的 `28–62` 贴到 verdict 上，数值仍在容差
   内就不会红。这一层只能靠产物分块（`summary` / `verdict_rows`）。
+- **抓不到只改字的语义翻转**：见上。`PROSE_DRIFT` 只提示，不判定。
 - **抓不到没写「实测」的段落**：库常数、闭式推导（`267/400`、`2/3`）不在射程
   内。那类要靠符号测试，不是文本检查。
 - **封存名单是债**：82 处历史读数今天仍然没有产物（见登记表 `frozen`），封存只保证它们**不能再
@@ -60,16 +86,22 @@ R2 · 锚定完整性。每个 `entries` 必须（a）该行仍在文件里（�
     python scripts/check_number_provenance.py --rebaseline  # 重封存（打印增删）
 
 退出码非零 ⇔ 有 `UNREGISTERED` / `STALE` / `STALE_ENTRY` / `VALUE_MISMATCH`
-/ `REGISTRY_DRIFT`。`SKIP` 不算失败（产物不在时 CI 仍要能跑）。
+/ `REGISTRY_DRIFT`。`SKIP` 与 `PROSE_DRIFT` 不算失败（前者是产物不在，后者是
+数没变）。
+
+`root` 与 `globs` 都可注入（`Config`），测试用临时仓库验证「它会不会红」，
+见 `backend/tests/test_decision_number_provenance.py`。
 """
 from __future__ import annotations
 
 import argparse
 import ast
+import difflib
 import hashlib
 import json
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -95,10 +127,24 @@ SCOPE_GLOBS = (
     "backend/tests/test_decision_*.py",
 )
 
+_FAILURES = ("UNREGISTERED", "STALE", "STALE_ENTRY", "VALUE_MISMATCH", "REGISTRY_DRIFT")
+
+
+@dataclass(frozen=True)
+class Config:
+    """扫描口径。默认值就是本仓库的口径；测试用临时仓库时换 `globs`。
+
+    读数词法与结构性百分数**不**做成旋钮：它们是规则本身，改规则应该改代码
+    并重新封存，而不是在测试里调参。
+    """
+
+    globs: tuple[str, ...] = SCOPE_GLOBS
+    claim_keywords: tuple[str, ...] = CLAIM_KEYWORDS
+
 
 @dataclass
 class Line:
-    """一条断言行。**归一化文本就是身份**——改数必换身份，错字不换。"""
+    """一条断言行。**读数向量就是身份**——改数必换身份，错字不换。"""
 
     file: str
     text: str
@@ -106,8 +152,12 @@ class Line:
     lineno: int
 
     @property
+    def vector(self) -> tuple[str, ...]:
+        return tuple(canonical_readings(self.text))
+
+    @property
     def key(self) -> str:
-        return _sha(self.text)
+        return fingerprint(self.text)
 
     def as_dict(self) -> dict:
         return {"file": self.file, "text": self.text, "where": self.where}
@@ -139,8 +189,18 @@ def readings(text: str) -> list[str]:
     return out
 
 
-def _sha(text: str) -> str:
-    return hashlib.sha256(_norm(text).encode("utf-8")).hexdigest()[:16]
+#: 排版差异不是读数差异：`3 倍` 与 `3倍`、`44–49` 与 `44-49` 必须是同一身份。
+_DASHES = str.maketrans({"−": "-", "–": "-", "—": "-"})
+
+
+def canonical_readings(text: str) -> list[str]:
+    """抹掉与含义无关的排版差异，只留下 token 序列。"""
+    return [re.sub(r"\s+", "", tok).translate(_DASHES) for tok in readings(text)]
+
+
+def fingerprint(text: str) -> str:
+    """身份 = 读数向量的哈希。**不含任何措辞**，所以错字不换身份。"""
+    return hashlib.sha256("|".join(canonical_readings(text)).encode("utf-8")).hexdigest()[:16]
 
 
 def _blocks(path: Path) -> list[tuple[str, int, list[tuple[int, str]]]]:
@@ -187,15 +247,15 @@ def _blocks(path: Path) -> list[tuple[str, int, list[tuple[int, str]]]]:
     return blocks
 
 
-def scan(root: Path) -> list[Line]:
+def scan(root: Path, cfg: Config = Config()) -> list[Line]:
     """全部断言行。空行与纯文字行不进来。"""
     out: list[Line] = []
-    for pat in SCOPE_GLOBS:
+    for pat in cfg.globs:
         for path in sorted(root.glob(pat)):
             rel = path.relative_to(root).as_posix()
             for name, _start, lines in _blocks(path):
                 body = "\n".join(t for _, t in lines)
-                if not (any(k in body for k in CLAIM_KEYWORDS)
+                if not (any(k in body for k in cfg.claim_keywords)
                         and any(readings(t) for _, t in lines)):
                     continue          # 设计说明段落，不是读数
                 for lineno, text in lines:
@@ -287,15 +347,19 @@ class Report:
     frozen: int
     failures: list[dict] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)
+    notes: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return not self.failures
 
+    def kinds(self) -> set[str]:
+        return {f["kind"] for f in self.failures}
+
     def as_dict(self) -> dict:
         return {"claims": self.claims, "anchored": self.anchored,
                 "frozen": self.frozen, "failures": self.failures,
-                "skipped": self.skipped, "ok": self.ok}
+                "skipped": self.skipped, "notes": self.notes, "ok": self.ok}
 
 
 def load_registry(path: Path) -> dict:
@@ -312,71 +376,141 @@ def _claimed_in_text(text: str, claimed: float) -> bool:
     return any(f in text for f in forms)
 
 
-def check(root: Path, registry: dict) -> Report:
-    lines = scan(root)
-    by_key = {(ln.file, ln.key): ln for ln in lines}
+def _group(items: list[dict]) -> dict[tuple[str, str], list[dict]]:
+    """按（文件, 读数指纹）归组。同指纹多行 ⇒ 同一组，条数就是要记账的次数。"""
+    out: dict[tuple[str, str], list[dict]] = {}
+    for it in items:
+        out.setdefault((it["file"], fingerprint(it["text"])), []).append(it)
+    return out
+
+
+def check(root: Path, registry: dict, cfg: Config = Config()) -> Report:
+    lines = scan(root, cfg)
+    by_key: dict[tuple[str, str], list[Line]] = {}
+    for ln in lines:
+        by_key.setdefault((ln.file, ln.key), []).append(ln)
+    repo = Counter({k: len(v) for k, v in by_key.items()})
+
+    entries = _group(registry.get("entries", []))
+    frozen = _group(registry.get("frozen", []))
     rep = Report(len(lines), 0, 0)
 
-    entries = {(e["file"], _sha(e["text"])): e for e in registry.get("entries", [])}
-    frozen = {(f["file"], _sha(f["text"])): f for f in registry.get("frozen", [])}
+    registered = Counter()
+    for key, group in list(entries.items()) + list(frozen.items()):
+        registered[key] += len(group)
 
-    for key, entry in entries.items():
-        ln = by_key.get(key)
-        if ln is None:
+    for key, n_reg in registered.items():
+        n_repo = repo.get(key, 0)
+        n_entry = len(entries.get(key, []))
+        n_frozen = n_reg - n_entry
+        matched = min(n_reg, n_repo)
+        rep.anchored += min(n_entry, matched)   # 行少了时锚定优先占额度
+        rep.frozen += matched - min(n_entry, matched)
+
+        if n_repo < n_reg:
+            group = entries.get(key) or frozen.get(key) or []
             rep.failures.append({
-                "kind": "STALE_ENTRY", "file": key[0], "text": entry["text"],
-                "detail": "这一行已不存在——数被改过、或该行被删（registry 要跟着改）"})
-            continue
-        rep.anchored += 1
-        for c in entry.get("checks", []):
-            claimed = float(c["claimed"])
-            if not _claimed_in_text(ln.text, claimed):
-                rep.failures.append({
-                    "kind": "REGISTRY_DRIFT", "file": key[0], "text": ln.text,
-                    "detail": f"registry 写 {c['claimed']}，该行找不到这个写法"})
-            art = entry.get("artifact")
-            if not art:
-                rep.failures.append({"kind": "REGISTRY_DRIFT", "file": key[0],
-                                     "text": ln.text, "detail": "entry 缺 artifact"})
-                continue
-            apath = root / art
-            if not apath.exists():
-                rep.skipped.append({"file": key[0], "text": ln.text,
-                                    "artifact": art, "path": c["path"]})
-                continue
-            try:
-                got = reduce_leaves(resolve(
-                    json.loads(apath.read_text(encoding="utf-8")), c["path"]),
-                    c.get("agg"))
-            except (PathError, json.JSONDecodeError) as exc:
-                rep.failures.append({
-                    "kind": "VALUE_MISMATCH", "file": key[0], "text": ln.text,
-                    "detail": f"{art}#{c['path']}: {exc}"})
-                continue
-            tol = float(c.get("tol", 0.005))
-            if abs(got - claimed) > tol + 1e-12:
-                rep.failures.append({
-                    "kind": "VALUE_MISMATCH", "file": key[0], "text": ln.text,
-                    "detail": (f"{art}#{c['path']} = {got:.6g}，docstring 写 "
-                               f"{c['claimed']}，差 {abs(got - claimed):.6g} > {tol}")})
+                "kind": "STALE_ENTRY" if n_entry else "STALE",
+                "file": key[0], "text": group[0]["text"] if group else "",
+                "detail": (f"登记 {n_reg} 条（锚定 {n_entry} / 封存 {n_frozen}），"
+                           f"源码只剩 {n_repo} 条——数被改过，或该行被删")})
 
-    for key, f in frozen.items():
-        if key not in by_key:
+        got = by_key.get(key, [])
+        if not got:
+            continue
+        for entry in entries.get(key, []):
+            text = _match_text(entry["text"], got)
+            rep.failures.extend(_check_entry(root, key[0], text, entry, rep))
+
+    for key, n in repo.items():
+        extra = n - registered.get(key, 0)
+        if extra <= 0:
+            continue
+        for ln in by_key[key][registered.get(key, 0):]:
             rep.failures.append({
-                "kind": "STALE", "file": key[0], "text": f["text"],
-                "detail": "封存的这行读数的文字变了或行没了——改数必须重新核"})
-            continue
-        rep.frozen += 1
+                "kind": "UNREGISTERED", "file": ln.file, "text": ln.text,
+                "where": f"{ln.where}:{ln.lineno}",
+                "detail": "读数没有出处，也没进封存名单"})
 
-    for ln in lines:
-        key = (ln.file, ln.key)
-        if key in entries or key in frozen:
-            continue
-        rep.failures.append({
-            "kind": "UNREGISTERED", "file": ln.file, "text": ln.text,
-            "where": f"{ln.where}:{ln.lineno}",
-            "detail": "读数没有出处，也没进封存名单"})
+    rep.notes.extend(_prose_drift(by_key, entries, frozen))
     return rep
+
+
+def _match_text(entry_text: str, got: list[Line]) -> str:
+    """同指纹可能覆盖多行，核数要挑回**它自己那一行**。
+
+    先找完全相同的文本，再退到最相似的一行。不挑的话，锚定条目可能拿隔壁
+    那行（读数相同、写法不同）去过审。
+    """
+    want = _norm(entry_text)
+    for ln in got:
+        if ln.text == want:
+            return ln.text
+    return max(got, key=lambda ln: difflib.SequenceMatcher(None, want, ln.text).ratio()).text
+
+
+def _check_entry(root: Path, file: str, text: str, entry: dict, rep: Report) -> list[dict]:
+    out: list[dict] = []
+    for c in entry.get("checks", []):
+        claimed = float(c["claimed"])
+        if not _claimed_in_text(text, claimed):
+            out.append({"kind": "REGISTRY_DRIFT", "file": file, "text": text,
+                        "detail": f"registry 写 {c['claimed']}，该行找不到这个写法"})
+        art = entry.get("artifact")
+        if not art:
+            out.append({"kind": "REGISTRY_DRIFT", "file": file, "text": text,
+                        "detail": "entry 缺 artifact"})
+            continue
+        apath = root / art
+        if not apath.exists():
+            rep.skipped.append({"file": file, "text": text,
+                                "artifact": art, "path": c["path"]})
+            continue
+        try:
+            got = reduce_leaves(resolve(
+                json.loads(apath.read_text(encoding="utf-8")), c["path"]),
+                c.get("agg"))
+        except (PathError, json.JSONDecodeError) as exc:
+            out.append({"kind": "VALUE_MISMATCH", "file": file, "text": text,
+                        "detail": f"{art}#{c['path']}: {exc}"})
+            continue
+        tol = float(c.get("tol", 0.005))
+        if abs(got - claimed) > tol + 1e-12:
+            out.append({
+                "kind": "VALUE_MISMATCH", "file": file, "text": text,
+                "detail": (f"{art}#{c['path']} = {got:.6g}，docstring 写 "
+                           f"{c['claimed']}，差 {abs(got - claimed):.6g} > {tol}")})
+    return out
+
+
+def _prose_drift(by_key: dict[tuple[str, str], list[Line]],
+                 entries: dict, frozen: dict) -> list[dict]:
+    """数没变、字变了。**只提示，不判定**——这是身份只看读数付的代价。
+
+    「偏窄 7/8」改成「偏宽 7/8」不该静默：它在这里出现，评审才看得见。
+    """
+    notes: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for source, groups in (("entries", entries), ("frozen", frozen)):
+        for key, group in groups.items():
+            got = by_key.get(key, [])
+            if not got:
+                continue
+            actual = [ln.text for ln in got]
+            for item in group:
+                old = _norm(item["text"])
+                if old in actual or (key, old) in seen:
+                    continue
+                seen.add((key, old))
+                ratio = max(difflib.SequenceMatcher(None, old, a).ratio()
+                            for a in actual)
+                notes.append({
+                    "kind": "PROSE_DRIFT", "source": source, "file": key[0],
+                    "text": item["text"], "similarity": round(ratio, 3),
+                    "detail": ("数没变、字变了（相似度 "
+                               f"{ratio:.2f}）——封存项用 --rebaseline 同步，"
+                               "锚定项请手工同步 entries 的 text")})
+    return notes
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -408,7 +542,8 @@ def main(argv: list[str] | None = None) -> int:
         args.json_out.write_text(json.dumps(rep.as_dict(), ensure_ascii=False,
                                             indent=1), encoding="utf-8")
     print(f"断言行 {rep.claims}：已锚定 {rep.anchored}，已封存 {rep.frozen}，"
-          f"失败 {len(rep.failures)}，跳过 {len(rep.skipped)}")
+          f"失败 {len(rep.failures)}，跳过 {len(rep.skipped)}，"
+          f"文字漂移 {len(rep.notes)}")
     shown = rep.failures if args.show == 0 else rep.failures[:args.show]
     for f in shown:
         where = f"  [{f['where']}]" if f.get("where") else ""
@@ -418,6 +553,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  … 还有 {len(rep.failures) - len(shown)} 条，用 --show 0 看全")
     for s in rep.skipped:
         print(f"  · SKIP 产物不在：{s['artifact']}（{s['file']}）")
+    for n in rep.notes:
+        print(f"  · 文字漂移 {n['file']}（{n['source']}，相似度 {n['similarity']}）"
+              f"\n      {n['text'][:100]}")
     print("判定：" + ("✓ 每个读数都有出处或已封存" if rep.ok else "✗ 有没出处的读数"))
     return 0 if rep.ok else 1
 
@@ -425,18 +563,19 @@ def main(argv: list[str] | None = None) -> int:
 def _rebaseline(root: Path, reg_path: Path, registry: dict) -> int:
     """重写封存名单。**只封存没有产物可指的断言行**；已锚定的不动。"""
     lines = scan(root)
-    entries = {(e["file"], _sha(e["text"])) for e in registry.get("entries", [])}
-    old = {(f["file"], _sha(f["text"])): f for f in registry.get("frozen", [])}
+    quota = Counter((e["file"], fingerprint(e["text"])) for e in registry.get("entries", []))
+    old = {(f["file"], fingerprint(f["text"])): f for f in registry.get("frozen", [])}
     frozen, added, changed = [], [], []
     for ln in lines:
         key = (ln.file, ln.key)
-        if key in entries:
+        if quota.get(key, 0) > 0:     # 同指纹的独立行也要留：只抵扣锚定占用的次数
+            quota[key] -= 1
             continue
         if key not in old:
             added.append(f"{ln.file}: {ln.text[:70]}")
         frozen.append({"file": ln.file, "text": ln.text,
                        "where": ln.where, "sha": ln.key})
-    new_keys = {(f["file"], _sha(f["text"])) for f in frozen}
+    new_keys = {(f["file"], f["sha"]) for f in frozen}
     for key, f in old.items():
         if key not in new_keys:
             changed.append(f"{f['file']}: {f['text'][:70]}")
@@ -455,8 +594,9 @@ def _rebaseline(root: Path, reg_path: Path, registry: dict) -> int:
 
 _REGISTRY_DOC = (
     "断言行的出处登记。entries = 能 index 到落盘产物的读数（每次运行重算比对）；"
-    "frozen = 目前没有产物的历史读数（只保证文本不再变）。"
-    "由 scripts/check_number_provenance.py 读取，见 docs/decision-ledger.md §9.39。"
+    "frozen = 目前没有产物的历史读数（只保证读数不再变，措辞可变）。"
+    "`sha` 是**读数向量**的指纹，不是整行文本的哈希：改数换身份，错字不换。"
+    "由 scripts/check_number_provenance.py 读取，见 docs/decision-ledger.md §9.39/§9.40。"
 )
 
 
