@@ -42,9 +42,13 @@
 
 本脚本原先自带一份 `_hac_lcb`：Bartlett 权重、`γ_k` 分母取 `n`、floor 取
 `max(lr, 1e-18)`。而生产 `settle.hac_lcb` 的默认核是**截断**（矩形）核、
-分母取 `n-k`、floor 取 `max(lr, γ0)`。同一 `lag` 下三条差异同向叠加，本地
-口径的 `se` 更小，于是「按 iid 算会窄多少倍」这个读数系统性偏小——而它被
-`pwin.py` / `settle.py` 三处 docstring 引用成实测值。
+分母取 `n-k`、floor 取 `max(lr, γ0)`。前两条让旧实现偏窄，第三条在这批序列
+上不绑定（`LRV/γ0 = 5.22–11.43`，绑定当且仅当 = 1），所以**不能推出「旧实现
+恒偏窄」**：实测 8 条序列里 7 条偏窄（0.7–17.5%）、1 条反而偏宽 10.1%——
+`γ_20 < 0` 时截断核给末阶全权重，会把 LRV 压下去。方向不是定理。
+
+旧实现无论偏窄还是偏宽，都不是生产口径：这个脚本报的「按 iid 算会窄多少倍」
+因此与 `pwin.py` / `settle.py` 引用的实测值不同源。
 
 现在 `_hac_stats` **直接调用 `settle.hac_lcb`**，本地不再有第二份估计量；
 旧核只作为诊断列（`*_bartlett`）保留，用来复算改口径之前的读数。
@@ -152,15 +156,50 @@ def _hac_stats(xs: list[float], lag: int,
     """`(单侧下界, se/se_iid)` —— **委托生产 `settle.hac_lcb`**，不再本地实现。
 
     这里的第二份实现存在过一个版本：Bartlett 权重、`γ_k` 分母 `n`、
-    floor `max(lr, 1e-18)`。它算出的 `se` 比生产小 20–25%，于是本脚本报的
-    「iid 会窄多少倍」偏小，而那个数被五处 docstring 当实测值引用。
-    `kernel` 只为把旧核当诊断列复算，默认走生产的截断核。
+    floor `max(lr, 1e-18)`。它算出的 `se` 与生产不同（不是「更小」——见
+    `_legacy_se` 的实测：8 条序列上 7 条偏窄 0.7–17.5%、1 条反而偏宽 10.1%），
+    于是本脚本报的「iid 会窄多少倍」与生产口径对不上，而那个数被五处
+    docstring 当实测值引用。`kernel` 只为把旧核当诊断列复算，默认走生产截断核。
     """
     est = settle.hac_lcb(xs, lag, kernel=kernel)
     if est is None:
         return float("nan"), float("nan")
     _, se, lcb, se_iid = est
     return lcb, (se / se_iid if se_iid > 0 else float("nan"))
+
+
+def _legacy_se(xs: list[float], lag: int) -> float:
+    """**化石**：13h 删掉的那份本地 HAC 的 `se`，只为量化「差多少」而保留。
+
+    逐字复刻旧实现：Bartlett 权重 `1−k/(lag+1)`、`γ_k` 分母 `n`、
+    floor `max(lr, 1e-18)`。它不再参与任何读数，只喂 `*_se_gap_legacy_pct`
+    诊断列——所以它不能算「第二份估计量」，但也别再拿它算下界。
+
+    存在的理由是一条纪律：**「小 20–25%」这个说法本身也没有出处**。第一版把它
+    写成「三条差异同向叠加」，实测下来 8 条序列里 7 条同向、1 条反向
+    （`resid median/60`：`γ_20<0` 时截断核给末阶全权重，反而更窄）。
+    方向不是定理，这一条得用数说话。
+    """
+    n = len(xs)
+    m = _mean(xs)
+    g0 = sum((x - m) ** 2 for x in xs) / n
+    lr = g0
+    for k in range(1, min(lag, n - 1) + 1):
+        w = 1.0 - k / (lag + 1.0)
+        gk = sum((xs[i] - m) * (xs[i + k] - m) for i in range(n - k)) / n
+        lr += 2.0 * w * gk
+    return math.sqrt(max(lr, 1e-18) / n)
+
+
+def _prod_se(xs: list[float], lag: int) -> float:
+    est = settle.hac_lcb(xs, lag)
+    return float("nan") if est is None else est[1]
+
+
+def _legacy_gap_pct(xs: list[float], lag: int) -> float:
+    """生产比旧实现宽多少（%）。正 = 旧实现偏窄，负 = 旧实现反而偏宽。"""
+    old, new = _legacy_se(xs, lag), _prod_se(xs, lag)
+    return (new / old - 1.0) * 100.0 if old > 0 else float("nan")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -232,6 +271,10 @@ def main(argv: list[str] | None = None) -> int:
                 "resid_t": t,
                 "resid_se_infl": resid_infl,
                 "resid_se_infl_bartlett": resid_infl_bar,
+                # 旧本地实现 vs 生产：正 = 旧实现偏窄（「按 iid 算窄多少倍」被低估），
+                # 负 = 旧实现反而偏宽。方向不保证，所以要逐条落盘。
+                "d_se_gap_legacy_pct": _legacy_gap_pct(d, HORIZON - 1),
+                "resid_se_gap_legacy_pct": _legacy_gap_pct(resid, HORIZON - 1),
             })
 
     print("===== 与 walk_forward 的实测改善对照（应逐位一致）=====")
@@ -258,6 +301,8 @@ def main(argv: list[str] | None = None) -> int:
     infls = [r["d_se_infl"] for r in dump]
     neffs = [r["d_neff"] for r in dump if r["d_neff"] is not None]
     bars_ = [r["d_se_infl_bartlett"] for r in dump]
+    gaps = ([r["d_se_gap_legacy_pct"] for r in dump]
+            + [r["resid_se_gap_legacy_pct"] for r in dump])
     summary = {
         "days": sorted({r["days"] for r in dump}),
         "se_infl_min": round(min(infls), 3),
@@ -270,6 +315,17 @@ def main(argv: list[str] | None = None) -> int:
         "verdict_se_infl_max": round(max(r["se_infl"] for r in verdict_rows), 3),
         "verdict_neff_min": min(r["n_eff"] for r in verdict_rows),
         "verdict_neff_max": max(r["n_eff"] for r in verdict_rows),
+        #: 旧本地实现（13h 已删）与生产的 se 差：正 = 旧实现偏窄。
+        #: 逐条落盘是为了让「同向叠加」这种断言能当场被证伪——它就有 1 条反向。
+        "legacy_gap_min": round(min(gaps), 1),
+        "legacy_gap_max": round(max(gaps), 1),
+        "legacy_gap_narrower": sum(1 for g in gaps if g > 0),
+        "legacy_gap_wider": sum(1 for g in gaps if g < 0),
+        #: docstring 里那两个区间分别抄这两对：偏窄侧只统计正的那 7 条，
+        #: 否则「0.7–17.5%」会被一条反向序列的下界顶成「−10.1–17.5%」。
+        "legacy_narrow_min": round(min([g for g in gaps if g > 0], default=0.0), 1),
+        "legacy_narrow_max": round(max([g for g in gaps if g > 0], default=0.0), 1),
+        "legacy_wider_abs": round(abs(min(gaps)) if any(g < 0 for g in gaps) else 0.0, 1),
     }
     print(f"\n口径：生产核 = {settle.KERNEL_TRUNCATED}")
     print(f"  增量序列 d：iid 收窄 ×{summary['se_infl_min']}–{summary['se_infl_max']}，"
@@ -279,6 +335,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  verdict 序列：iid 收窄 ×{summary['verdict_se_infl_min']}–"
           f"{summary['verdict_se_infl_max']}，"
           f"n_eff = {summary['verdict_neff_min']}–{summary['verdict_neff_max']}")
+    print(f"  旧本地实现 vs 生产：{summary['legacy_gap_narrower']}/8 条偏窄，"
+          f"{summary['legacy_gap_wider']}/8 条反而偏宽"
+          f"（生产 − 旧 = {summary['legacy_gap_min']}%…{summary['legacy_gap_max']}%）")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(
         {"horizon": HORIZON, "z90": Z90, "windows": list(WINDOWS),

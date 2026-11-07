@@ -143,8 +143,10 @@ def test_probe_delegates_hac_to_production():
     """探针的 HAC 必须**就是**生产的那一个（13h：它曾经是 Bartlett）。
 
     守的是「第二份实现会漂移」：本探针自带过一份 Bartlett 估计量（`γ_k` 分母
-    `n`、floor `max(lr, 1e-18)`），`se` 比生产小 20–25%，而它算出的「按 iid
-    算会窄多少倍」被 `pwin.py` / `settle.py` 三处 docstring 引用成实测值。
+    `n`、floor `max(lr, 1e-18)`），`se` 与生产不同源——实测 8 条序列里 7 条偏窄
+    0.7–17.5%、1 条反而偏宽 10.1%（`γ_20<0` 时截断核压低 LRV），所以连「偏窄」
+    都不是恒成立的；而它算出的「按 iid 算会窄多少倍」被 `pwin.py` / `settle.py`
+    三处 docstring 引用成实测值。
     逐位相等而不是 `isclose`：两边调的是同一个函数，任何偏差都是又分叉了。
     """
     probe = _load_probe("probe_pwin_variance", "scripts/probe_pwin_variance.py")
