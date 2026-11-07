@@ -663,6 +663,7 @@ def get_preferences() -> dict:
         "pipeline_pull_etf": preferences.get_pipeline_pull_etf(),
         "pipeline_pull_index": preferences.get_pipeline_pull_index(),
         "pipeline_regime_enabled": preferences.get_pipeline_regime_enabled(),
+        "decision_auto": preferences.get_decision_auto_config(),
         "regime_batch_days": preferences.get_regime_batch_days(),
         "regime_warmup_days": preferences.get_regime_warmup_days(),
         "pipeline_index_symbols": preferences.get_pipeline_index_symbols(),
@@ -1379,6 +1380,36 @@ def update_pipeline_regime_enabled(req: PipelineRegimeEnabledIn) -> dict:
     from app.services import preferences
     preferences.save({"pipeline_regime_enabled": bool(req.pipeline_regime_enabled)})
     return {"pipeline_regime_enabled": preferences.get_pipeline_regime_enabled()}
+
+
+class DecisionAutoConfigIn(BaseModel):
+    """决策账本自动发卡配置 (docs/decision-ledger.md §8)。
+
+    strategy_id 为空 = 只结算不发卡。allow_prior 仅在显式传 true 时生效
+    （冷启动声明用先验建卡，卡上记 source=prior）。
+    """
+
+    decision_auto_enabled: bool | None = None
+    decision_auto_strategy_id: str | None = None
+    decision_auto_top_n: int | None = None
+    decision_auto_horizon: int | None = None
+    decision_auto_basis: str | None = None
+    decision_auto_account_id: str | None = None
+    decision_auto_allow_prior: bool | None = None
+
+
+@router.put("/preferences/decision-auto-config")
+def update_decision_auto_config(req: DecisionAutoConfigIn) -> dict:
+    """更新决策自动发卡配置（部分更新：仅传入字段生效）。
+
+    basis 越界值在 getter 侧回退 median（不做静默迁移），这里只拦空串越权：
+    strategy_id 传空串 = 关闭发卡只结算，是合法输入。
+    """
+    from app.services import preferences
+    cfg = req.model_dump(exclude_none=True)
+    if cfg:
+        preferences.save(cfg)
+    return preferences.get_decision_auto_config()
 
 
 class RegimeBatchParamsIn(BaseModel):

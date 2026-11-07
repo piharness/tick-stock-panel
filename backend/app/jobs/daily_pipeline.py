@@ -797,6 +797,27 @@ def run_now(
         logger.warning("paper_settle failed (soft): %s", e)
         stage_errors.append(f"paper_settle: {e}")
 
+    # Step 2.9: 决策账本 — 结算到期卡 + 按配置自动发卡 (docs/decision-ledger.md §8)。
+    # 默认关闭 (decision_auto_enabled=False); 开启后这是「策略 → 卡」生产者,
+    # 让账本每天积累前向校准证据。软失败不阻断主管道; 残缺账本 (fail-closed)
+    # 会在这里上抛并计入 stage_errors, 与其他软失败同口径。
+    decision_summary: dict = {}
+    try:
+        emit("decision_ledger", 94, "决策账本结算/发卡…")
+        from app.decision.producer import run_decision_stage
+        app_state = _get_app_state()
+        decision_summary = run_decision_stage(
+            repo,
+            getattr(app_state, "strategy_engine", None) if app_state else None,
+            today=today,
+        )
+        if decision_summary.get("status") != "disabled":
+            emit("decision_ledger", 94, f"决策账本完成 ({decision_summary.get('status')})")
+            logger.info("decision_ledger: %s", decision_summary)
+    except Exception as e:
+        logger.warning("decision_ledger failed (soft): %s", e)
+        stage_errors.append(f"decision_ledger: {e}")
+
     # Step 3: 刷新视图
     emit("refresh_views", 95, "刷新 DuckDB 视图…")
     _refresh_views(repo)
@@ -818,6 +839,7 @@ def run_now(
         "regime_days": regime_days,
         "mainline_rows": mainline_rows,
         "paper_settle": paper_summary,
+        "decision_ledger": decision_summary,
         "lagging_symbols": len(lagging_symbols),
         "enriched_total_days": enriched_total_days,
         "integrity_repair_from": repair_start.isoformat() if repair_start else None,

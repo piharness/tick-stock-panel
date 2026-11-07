@@ -423,6 +423,41 @@ def get_pipeline_regime_enabled() -> bool:
     return load().get("pipeline_regime_enabled", False)
 
 
+# ===== 决策账本自动发卡 (盘后管道 decision 阶段, docs/decision-ledger.md §8) =====
+# 默认关闭: 自动发卡会为配置的策略每天积累前向校准证据, 但把一个用户
+# 不会真实执行的策略喂进账本会污染 p_win 与 Brier 校准——发卡对象必须
+# 是用户显式选择的策略, 这是"先让账本可信, 再谈自动化"(§7)的延续。
+
+_DECISION_BASIS_VALUES = ("abs", "median")
+
+
+def get_decision_auto_config() -> dict:
+    """决策自动发卡配置。详见 docs/decision-ledger.md §8「策略 → 卡的生产者」。"""
+    raw = load()
+    top_n = raw.get("decision_auto_top_n", 20)
+    horizon = raw.get("decision_auto_horizon", 20)
+    basis = str(raw.get("decision_auto_basis", "median") or "median").lower()
+    try:
+        top_n = max(1, min(100, int(top_n)))
+    except (TypeError, ValueError):
+        top_n = 20
+    try:
+        horizon = max(1, min(250, int(horizon)))
+    except (TypeError, ValueError):
+        horizon = 20
+    if basis not in _DECISION_BASIS_VALUES:
+        basis = "median"
+    return {
+        "enabled": bool(raw.get("decision_auto_enabled", False)),
+        "strategy_id": str(raw.get("decision_auto_strategy_id", "") or "").strip(),
+        "top_n": top_n,
+        "horizon": horizon,
+        "basis": basis,
+        "account_id": str(raw.get("decision_auto_account_id", "default") or "default"),
+        "allow_prior": bool(raw.get("decision_auto_allow_prior", False)),
+    }
+
+
 # regime 全量回填分批参数范围:
 # - batch_days: 每批目标交易日数。越小内存越省、批次越多越慢; ma20 需 20 交易日,
 #   故下限 25(留 warmup 余量), 上限 500(约 2 年)。

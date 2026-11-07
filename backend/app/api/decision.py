@@ -22,9 +22,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from app.decision import bars
+from app.decision import bars, pwin as pwin_mod
 from app.decision import gates as gates_mod
-from app.decision import ledger, pwin as pwin_mod, settle as settle_mod
+from app.decision import ledger, producer as producer_mod, settle as settle_mod
 
 router = APIRouter(prefix="/api/decision", tags=["decision"])
 
@@ -139,124 +139,43 @@ def get_card(card_id: str, request: Request) -> dict[str, Any]:
 
 
 def _exit_visible(row: dict[str, Any], as_of: str) -> bool:
-    """结算记录在 `as_of` 决策时点是否可见：出场日**严格早于**建卡日。
+    """可见性口径已下沉到域层（`producer.exit_visible`，§9.8）。
 
-    口径来自 `docs/decision-ledger.md` §9.8（`exit.date < D`，当天出场仍不算
-    可见）。缺 `exit.date` ⇒ 无法证明"当时已知" ⇒ 不可见：fail-closed，与账本
-    「读不到即 UNKNOWN」同一哲学。日期均为 ISO 串，字典序即时间序。
+    这里保留薄委托，向后兼容既有引用；新增调用方一律直接用域函数。
     """
-    exit_date = (row.get("exit") or {}).get("date")
-    return exit_date is not None and str(exit_date) < as_of
+    return producer_mod.exit_visible(row, as_of)
 
 
 def _resolve_picks(req: CardModel, data_dir: Path, *, allow_prior: bool,
                    as_of: str) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """把 picks 的 p_win 补齐，返回 (picks, p_win 出处)。
 
-    `auto_pwin=False` 时每个 pick 必须自带 p_win；缺失就是 400，不猜。
-    `auto_pwin=True` 时用账本历史反推；没有证据且 `allow_prior=False` 则 409。
-
-    `as_of` 是**建卡日**（调用方已解析缺省值）。反推只允许看见出场日早于它的
-    结算：`load_settlements` 会把账本里全部记录一起返回，补登历史卡时不过滤
-    就是把未来函数写进 p_win（2026-11-06 独立评审 P1；回归测试见
-    `test_auto_pwin_backfill_ignores_settlements_after_as_of`）。
+    口径全部住在域层（`producer.resolve_picks_with_pwin`）：可见性、收缩、
+    出处登记与 API/盘后生产者共用一份实现，不再平行维护。HTTP 层只负责
+    把两类域异常映射成 400（pick 非法）/ 409（没有证据，fail-closed）。
     """
     raw = [p.model_dump() for p in req.picks]
-    missing = [p["symbol"] for p in raw if p.get("p_win") is None]
-    if not req.auto_pwin:
-        if missing:
-            raise HTTPException(
-                status_code=400,
-                detail={"message": "以下 pick 缺少 p_win：" + ", ".join(missing),
-                        "hint": "传 auto_pwin=true 由账本历史反推，或显式填 p_win。"})
-        return raw, None
-    if not missing:
-        # 全部自带 p_win：auto_pwin 没有可补的。旧实现照样写一块
-        # `source=ledger` 的出处，等于把人工填的数字记成账本算的——出处
-        # 一旦会撒谎，`by_source` 的分组就失去意义。
-        return raw, None
-
-    rows = ledger.load_settlements(data_dir)
-    rows = [r for r in rows if _exit_visible(r, as_of)]
     try:
-        est = pwin_mod.suggest(
-            rows,
+        return producer_mod.resolve_picks_with_pwin(
+            data_dir, raw,
+            auto_pwin=req.auto_pwin,
             strategy_id=req.strategy_id,
             horizon=req.horizon_sessions,
             basis=req.pwin_basis,
-            # 交易日历：`n_eff` 的上限分母要按交易日算。发卡稀疏时
-            # 决策日与交易日不是同一个单位（`docs/decision-ledger.md` §9.24）。
-            sessions=bars.sessions(data_dir),
             allow_prior=allow_prior,
+            as_of=as_of,
         )
-    except ValueError as exc:
+    except producer_mod.PickValidationError as exc:
+        raise HTTPException(status_code=400,
+                            detail={"message": str(exc),
+                                    "hint": "传 auto_pwin=true 由账本历史反推，或显式填 p_win。"}) from exc
+    except producer_mod.NoEvidenceError as exc:
         raise HTTPException(status_code=409, detail={
             "message": str(exc),
             "hint": ("这是失败关闭：账本里没有证据支撑一个 p_win。"
                      "先补登历史卡并结算，或传 allow_prior=true "
                      "显式用先验常数建卡（卡上记 source=prior）。"),
         }) from exc
-
-    p = float(est["p_win"])
-    for item in raw:
-        if item.get("p_win") is None:
-            item["p_win"] = p
-    source = {
-        "source": est["source"],
-        "basis": est["basis"],
-        "n": est["n"],
-        "hits": est["hits"],
-        "days": est["days"],
-        "window": est["window"],
-        "kappa": est["kappa"],
-        # 这个 p_win 里先验占多大比重。两个分母：观测数（n）与等效独立样本数
-        # （n_eff）。真实账本 386 条 / n_eff=1 时是 4.9% 对 95.2%——`source`
-        # 只说是「账本算的」，这两个数才说「账本占多少」。只做标签，不做 gate。
-        "prior_weight": est.get("prior_weight"),
-        "prior_weight_effective": est.get("prior_weight_effective"),
-        # 哪些 pick 的 p_win 是这次补出来的。人工填的那些不在里面。
-        "filled": sorted(missing),
-        "reliable": est["reliable"],
-        "verdict": est["verdict"],
-        # 三态结论：PASS / FAIL / UNKNOWN。`reliable` 只回答「lcb 符号」，
-        # 这个字段还回答「这个 lcb 有没有分母」。进卡后随哈希封存，
-        # 事后无法把「测不了」改写成「没通过」。
-        "significance": est.get("significance"),
-        "oos_skill": est.get("oos_skill"),
-        "oos_days": est.get("oos_days"),
-        # 可评估日 ≠ 独立样本：持有期让相邻决策日的结果重叠，n_eff 才是分母。
-        "n_eff": est.get("n_eff"),
-        # False ⇒ n_eff 是构造值（不重叠窗口数），不是 NW 估计值。
-        "n_eff_reliable": est.get("n_eff_reliable"),
-        # 增量检验那条序列的 n_eff。与上面的 n_eff 不是同一个数（残差不同），
-        # 所以分开存，不共用一个键。
-        "n_eff_incremental": est.get("n_eff_incremental"),
-        "hac_lag": est.get("hac_lag"),
-        # 增量序列的滞后阶数。**与 `hac_lag` 相等**（都是 horizon-1）：`window`
-        # 造的是估计量共用样本，它不进 `d_i` 的自协方差（§9.20）。字段仍然
-        # 单独存，是因为 §9.18 曾让它取 window-1 并把功效打没——留一个位置，
-        # 下次改错时在卡上看得见。
-        "hac_lag_incremental": est.get("hac_lag_incremental"),
-        # 第二个检验：p 相对「同样诚实的历史常数」有没有增量信息。
-        # 与 verdict 并列返回，不替代它——两者回答的是不同问题。
-        "verdict_incremental": est.get("verdict_incremental"),
-        # 第二个检验的可辨识性三态（PASS / FAIL / UNKNOWN）。`verdict_incremental`
-        # 读符号与量级，这个字段读「那个下界有没有分母」——`INCREMENTAL` 配
-        # `UNKNOWN` 是「改善过门槛，但有效样本不足 30」，不是「有增量」。
-        # 封存进卡，是因为它编码了当时的 `MIN_NEFF` 判据：事后改门槛，
-        # 旧卡上的结论会跟着变，而卡的意义正是「当时的判断不可改」。
-        "significance_incremental": est.get("significance_incremental"),
-        # 这个检验实际比了几天。`truncated_any` 故意不进卡（它能由
-        # window/days 推出，见 docs §9.16），但 `truncated_days` 推不出来：
-        # 它取决于每天的出场日，而 `oos_days` 只数被评估的日子。
-        # 不记这个数，事后只能看到「测过」，看不到它建立在几天上。
-        "truncated_days": est.get("truncated_days"),
-        "skill_vs_clim": est.get("skill_vs_clim"),
-        "skill_vs_clim_lcb": est.get("skill_vs_clim_lcb"),
-        "reason_incremental": est.get("reason_incremental"),
-        "reason": est["reason"],
-    }
-    return raw, source
 
 
 @router.post("/cards")
@@ -320,6 +239,32 @@ def run_settle(request: Request, as_of: str | None = Query(default=None)) -> dic
         return settle_mod.settle(_data_dir(request), as_of=as_of)
     except ledger.LedgerCorruptError as exc:
         # 残缺账本拒绝结算（fail-closed）；修复或移除损坏文件后重试。
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/produce")
+def produce(request: Request, as_of: str | None = Query(default=None)) -> dict[str, Any]:
+    """手动触发一次「结算 + 自动发卡」，与盘后管道 decision 阶段同一入口。
+
+    配置来自决策自动发卡偏好（`decision_auto_*`）；门禁 STOP 时只跳过，
+    永不 override。`as_of` 缺省时用偏好外的默认路径（数据最新交易日）。
+    """
+    from datetime import date as _date
+
+    from app.decision.producer import run_decision_stage
+
+    state = request.app.state
+    today = None
+    if as_of:
+        try:
+            today = _date.fromisoformat(as_of)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="as_of 需为 ISO 日期") from exc
+    try:
+        return run_decision_stage(state.repo,
+                                  getattr(state, "strategy_engine", None),
+                                  today=today)
+    except ledger.LedgerCorruptError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
