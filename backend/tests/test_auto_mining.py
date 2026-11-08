@@ -156,7 +156,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> Any:
     app.state.mining_manager = manager
 
     monkeypatch.setattr(mining_api, "require_mining_availability", lambda *a, **k: None)
-    monkeypatch.setattr(mining_api, "enriched_partition_dates", lambda *a, **k: ["2026-08-31"])
+    monkeypatch.setattr(mining_api, "enriched_partition_dates", lambda *a, **k: [date(2026, 8, 31)])
     monkeypatch.setattr(mining_api, "build_data_fingerprint", lambda *a, **k: {"fp": 1})
     return SimpleNamespace(client=TestClient(app), manager=manager, store=store)
 

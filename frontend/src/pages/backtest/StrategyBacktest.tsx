@@ -1555,8 +1555,9 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
       : ADVANCED_TABS,
     [compositeStrategy],
   )
-  // 叠加条件 (与策略设置同源): composite/分钟策略不支持; matrix 只支持数值字段
-  const overlaySupported = !!detail && !['composite', 'minute_filter'].includes(detail.execution_backend)
+  // 叠加条件 (与策略设置同源): 支持状态与约束原因统一读后端能力表
+  const overlayCapability = detail?.capabilities?.overlay
+  const overlaySupported = overlayCapability?.supported ?? false
   const overlayIsMatrix = detail?.execution_backend === 'matrix_native'
   const overlayOptions = useQuery({
     queryKey: QK.customSignalsOptions,
@@ -3126,7 +3127,7 @@ export function StrategyBacktest({ loadCandidate, onLoadConsumed }: {
                     </div>
                   ) : (
                     <div className="text-xs text-muted">
-                      当前策略类型不支持叠加条件（composite 请对子策略单独配置，分钟策略不支持）。
+                      {overlayCapability?.reason || '当前策略类型不支持叠加条件。'}
                     </div>
                   )}
                 </ConfigSection>

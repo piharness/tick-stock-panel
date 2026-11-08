@@ -7,7 +7,7 @@ import math
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Literal, Protocol
 
 import numpy as np
@@ -830,6 +830,111 @@ def generate_nested_folds(
         outer_index += 1
         outer_start += config.outer_step_bars
     return tuple(nested)
+
+
+def screen_plan(
+    trading_labels: Sequence[Any],
+    config: NestedValidationConfig,
+    *,
+    keep_last_folds: int = 3,
+    screen_window_days: int = 365,
+    label_horizon_bars: int = 1,
+) -> dict[str, Any]:
+    """给「L1 筛选 → 外层样本外判定」排一段互不相交的时间预算。
+
+    折布局恒从最老数据起滚动, 所以"保留最近 K 折"同时决定两个量: 样本外覆盖
+    多长、筛选窗能有多新。两者共用同一段历史, 此消彼长, 不是两个可以分别调的
+    旋钮 —— 想两头都要, 只能把筛选也搬进折内逐折重跑。
+
+    screen_end 退到最早保留折 test_start 之前 1 + label_horizon_bars 根:
+    筛选窗最后一根算出的 IC 所用的前瞻收益必须整根落在测试段之前 (默认 1 日
+    前瞻, 故退 2 根)。训练段与 purge 段可以进筛选窗 —— 它们不是测试数据,
+    不构成对测试段的泄漏, 真正不能碰的只有 test 段。
+
+    历史不足以生成 keep_last_folds 折时由 generate_nested_folds 抛 ValueError;
+    折数不足或筛选窗落空同样抛 ValueError, 由调用方决定如何降级。
+    """
+    if keep_last_folds <= 0:
+        raise ValueError("keep_last_folds must be positive")
+    if label_horizon_bars < 1:
+        raise ValueError("label_horizon_bars must be at least 1")
+    labels = tuple(dict.fromkeys(str(label)[:10] for label in trading_labels))
+    folds = generate_nested_folds(labels, config)
+    if len(folds) < keep_last_folds:
+        raise ValueError(
+            f"only {len(folds)} outer folds available, need {keep_last_folds}"
+        )
+    kept = folds[-keep_last_folds:]
+    first_test = str(kept[0].outer.test_start)[:10]
+    cut_index = labels.index(first_test) - 1 - label_horizon_bars
+    if cut_index < 0:
+        raise ValueError("history too short to place a screen window before the kept folds")
+    screen_end = labels[cut_index]
+    requested_start = date.fromisoformat(screen_end) - timedelta(days=screen_window_days)
+    window = [label for label in labels[: cut_index + 1] if label >= requested_start.isoformat()]
+    if not window:
+        raise ValueError("screen window is empty")
+    last_test = str(kept[-1].outer.test_end)[:10]
+    window_days = (date.fromisoformat(screen_end) - date.fromisoformat(window[0])).days
+    return {
+        "keep_last_folds": keep_last_folds,
+        "folds_available": len(folds),
+        "screen_start": window[0],
+        "screen_end": screen_end,
+        "screen_bars": len(window),
+        "screen_window_days": window_days,
+        "screen_window_days_requested": screen_window_days,
+        # 起点被历史左端截断: 筛选窗够不到请求的起点, 统计量的力度随之下降。
+        # 显式报出来, 不让"365 天筛选"在短历史上静默缩水。
+        "screen_truncated": date.fromisoformat(labels[0]) > requested_start,
+        "oos_first_test": first_test,
+        "oos_last_test": last_test,
+        "oos_span_days": (
+            date.fromisoformat(last_test) - date.fromisoformat(first_test)
+        ).days,
+        "staleness_days": (
+            date.fromisoformat(labels[-1]) - date.fromisoformat(screen_end)
+        ).days,
+        "label_horizon_bars": label_horizon_bars,
+    }
+
+
+def screen_validation_overlap(
+    trading_labels: Sequence[Any],
+    config: NestedValidationConfig,
+    *,
+    screen_start: Any,
+    screen_end: Any,
+) -> dict[str, Any]:
+    """量出每个外层测试段落在 L1 筛选窗口内的比例 (诊断, 不改变任何判定)。
+
+    返回 {"screen_window":…, "folds":[{"outer_index", "test_start", "test_end",
+    "test_bars", "inside_screen", "share"}], "max_share":…, "any_overlap":…}。
+    历史不足以生成折时抛 ValueError, 由调用方决定如何降级。
+    """
+    labels = tuple(dict.fromkeys(str(label) for label in trading_labels))
+    folds = generate_nested_folds(labels, config)
+    start_label = str(screen_start)[:10]
+    end_label = str(screen_end)[:10]
+    rows: list[dict[str, Any]] = []
+    for fold in folds:
+        test = [label for label in fold.outer.test_labels if start_label <= label <= end_label]
+        total = len(fold.outer.test_labels)
+        rows.append({
+            "outer_index": fold.outer.outer_index,
+            "test_start": fold.outer.test_start,
+            "test_end": fold.outer.test_end,
+            "test_bars": total,
+            "inside_screen": len(test),
+            "share": round(len(test) / total, 4) if total else 0.0,
+        })
+    shares = [row["share"] for row in rows]
+    return {
+        "screen_window": {"start": start_label, "end": end_label},
+        "folds": rows,
+        "max_share": max(shares) if shares else 0.0,
+        "any_overlap": any(share > 0.0 for share in shares),
+    }
 
 
 class MiningService:

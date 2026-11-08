@@ -18,6 +18,9 @@ from app.backtest.mining import (
     MAX_COMBINATION_SIZE,
     MAX_FINALISTS,
     evaluate_candidate_gate,
+    screen_plan,
+    screen_validation_overlap,
+    validation_config_for_profile,
 )
 from app.enriched_generation import EnrichedGenerationUnavailableError
 from app.factors.registry import factor_columns_view
@@ -368,6 +371,31 @@ def start_auto_run(payload: MiningAutoStartRequest, request: Request) -> dict[st
             end=screen_end,
             profile=payload.budget_profile,
         )
+        # 诊断: 量出外层测试段有多少落在筛选窗口内。折布局从最老数据起滚动, 筛选窗
+        # 取"近一年", 长历史上也只有最近 2 折会整段落进筛选窗 —— 短历史上是全部。
+        # 同时给出 screen_plan: 保留最近 K 折时筛选窗应止于哪一根, 使两者互不相交。
+        # 只报数, 不改变任何判定 (改 screen_end 会牵动筛选结果, 须单独决策)。
+        run_labels = [
+            label.isoformat()
+            for label in all_dates
+            if (payload.start is None or label >= payload.start) and label <= screen_end
+        ]
+        validation_config = validation_config_for_profile(payload.budget_profile)
+        try:
+            separation = screen_validation_overlap(
+                run_labels,
+                validation_config,
+                screen_start=screening["screen_window"]["start"],
+                screen_end=screening["screen_window"]["end"],
+            )
+        except ValueError:
+            separation = None
+        if separation is not None:
+            try:
+                separation["screen_plan"] = screen_plan(run_labels, validation_config)
+            except ValueError:
+                separation["screen_plan"] = None
+        screening["validation_separation"] = separation
     except (MiningRunValidationError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except EnrichedGenerationUnavailableError as exc:
