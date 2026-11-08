@@ -42,6 +42,7 @@ from app.price_limits import (
     polars_price_limit_pct,
 )
 from app.share_capital import apply_historical_float_shares, load_share_history
+from app.tickflow.partitions import list_partition_dates, partition_date_map
 
 logger = logging.getLogger(__name__)
 
@@ -1681,11 +1682,18 @@ def _run_pipeline_impl(data_dir: Path | None = None,
         if enriched_base.exists():
             enriched_dates = {p.stem.split("=")[1] for p in enriched_base.glob("date=*")}
 
-        # 读新增日期的 daily 数据 (所有标的)
-        new_date_dirs = sorted(
-            p for p in daily_dir.glob("date=*")
-            if p.stem.split("=")[1] not in enriched_dates
-        )
+        # kline_daily 为月分区布局时目录名只有月份, 真实日期集合必须读分区
+        # 数据的 date 列 (交易日 ≠ 月内自然日); 日分区目录名即日期, 双布局兼容。
+        new_date_dirs: list[Path] = []
+        new_date_set: set[str] = set()
+        for part_dir, part_days in partition_date_map(daily_dir).items():
+            part_new = {
+                d.isoformat() if hasattr(d, "isoformat") else str(d)
+                for d in part_days
+            } - enriched_dates
+            if part_new:
+                new_date_dirs.append(part_dir)
+                new_date_set |= part_new
         if not new_date_dirs and not symbols:
             logger.info("增量模式: 无新日期, 无需重算")
             return 0
@@ -1724,11 +1732,7 @@ def _run_pipeline_impl(data_dir: Path | None = None,
                 historical_shares=historical_shares,
             )
 
-            # 只保留新日期的行
-            new_date_set = set()
-            for nd in new_date_dirs:
-                ds = nd.stem.split("=")[1]
-                new_date_set.add(ds)
+            # 只保留新日期的行 (new_date_set 已在上方按分区真实日期算出)
             enriched_new = enriched_new.filter(
                 pl.col("date").map_elements(lambda x: x.isoformat(), return_dtype=pl.Utf8).is_in(list(new_date_set))
             )
@@ -1918,10 +1922,10 @@ def _run_pipeline_impl(data_dir: Path | None = None,
 
         # 全量模式: 日期覆盖校验 → 按日期分块流式合并 → 逐分区原子替换
         if not symbols and staging_files:
+            # 月分区目录名只承诺月份, 日K真实覆盖日期从数据 date 列读
             daily_dates = {
-                p.name.removeprefix("date=")
-                for p in daily_dir.glob("date=*")
-                if p.is_dir()
+                ds.isoformat() if hasattr(ds, "isoformat") else str(ds)
+                for ds in list_partition_dates(daily_dir)
             }
             existing_dates = {
                 p.name.removeprefix("date=")

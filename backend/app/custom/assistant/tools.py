@@ -1001,10 +1001,18 @@ def _add_to_watchlist(args: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
 # 全部后台执行、单飞去重, 工具立即返回, 进度用 get_sync_status 轮询。
 # ----------------------------------------------------------------
 def _partition_dates(data_dir: Path, subdir: str) -> list[str]:
-    """date=YYYY-MM-DD 分区目录扫描 — 与 /api/data/status 同款轻量口径, 不读 parquet。"""
+    """date= 分区日期扫描 — 与 /api/data/status 同款轻量口径。
+
+    月分区表 (kline_daily) 目录名只有月份, 真实日期读分区数据 date 列;
+    其余表目录名即日期, 仍然零 parquet 扫描。
+    """
     root = data_dir / subdir
     if not root.exists():
         return []
+    from app.tickflow.partitions import is_monthly_daily_table, list_partition_dates
+
+    if is_monthly_daily_table(subdir):
+        return sorted(d.isoformat() for d in list_partition_dates(root))
     dates = [d.name[5:] for d in root.iterdir() if d.is_dir() and d.name.startswith("date=")]
     return sorted(dates)
 

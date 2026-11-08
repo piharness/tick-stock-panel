@@ -11,6 +11,7 @@ from pathlib import Path
 from app.market_time import cn_now, cn_today
 from app.services import daily_health, data_integrity
 from app.services.fs_utils import atomic_write_text
+from app.tickflow.partitions import parse_partition_range
 
 logger = logging.getLogger(__name__)
 ASSET_TABLES = {family: table for table, family in data_integrity.TABLE_FAMILY.items()}
@@ -100,7 +101,7 @@ def _make_report(root: Path, lookback_days: int, assets: list[str], end: date, i
     seen = {(i.table, i.day) for i in issues}
     issues = [*issues, *(i for i in _known_issues(root, assets, end) if (i.table, i.day) not in seen)]
     no_data = [a for a in assets if not any(
-        p.is_dir() and p.name[5:] <= end.isoformat()
+        (rng := parse_partition_range(p.name)) is not None and rng[0] <= end
         for p in (root / ASSET_TABLES[a]).glob("date=*")
     )]
     rows = [{
@@ -144,7 +145,13 @@ def run_repair(repo, capset, report_id: str, on_progress: Callable | None = None
         found = [current] if current else []
         daily_health.record_scan(root, found, assets=[data_integrity.TABLE_FAMILY[known.table]],
                                 start=known.day, end=known.day)
-    issues = [i for i in _known_issues(root, assets, end) if _repairable(i)]
+    known = _known_issues(root, assets, end)
+    blocked = [i for i in known if not _repairable(i) and "目录以外" in i.reason]
+    if blocked:
+        # 链接指向数据目录以外时不能在原文件上修补。静默跳过会让调用方以为
+        # 修补已完成，因此在此 fail-closed；异常已在上面的重读中登记。
+        raise ValueError(blocked[0].reason)
+    issues = [i for i in known if _repairable(i)]
     if not issues:
         return run_check(root, lookback_days=days, asset_types=assets, end_date=end)
     backup_id = uuid.uuid4().hex

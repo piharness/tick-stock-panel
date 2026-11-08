@@ -32,6 +32,14 @@ from pathlib import Path
 import polars as pl
 
 from app.market_time import CN_TZ, cn_today
+from app.tickflow.partitions import (
+    is_monthly_daily_table,
+    list_partition_dates,
+    locate_partition_dir,
+    parse_partition_range,
+    partition_dates,
+    partition_dates_or_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +149,12 @@ def _invalid_daily_reason(frame: pl.DataFrame, day: date) -> str:
 
 
 def inspect_invalid_history(root: Path, table: str, files: list[Path], invalid: pl.DataFrame) -> list[IntegrityIssue]:
-    """只在重算发现坏行后定位源分区; 行内日期损坏时仍按真实分区修补。"""
+    """只在重算发现坏行后定位源分区; 行内日期损坏时仍按真实分区修补。
+
+    日期一律从源文件的 date 列读 (月分区目录名只有月份, 不能当日期);
+    坏行日期可解析时取交集缩小范围, 全部损坏时退回整个文件的日期集合
+    (多出的干净日期由 inspect_daily_partition 复检后自然排除)。
+    """
     from app.parquet import scan_daily_parquet
 
     paths = (
@@ -150,18 +163,51 @@ def inspect_invalid_history(root: Path, table: str, files: list[Path], invalid: 
               on=["symbol", "date"], how="semi", nulls_equal=True)
         .select("__integrity_file").unique().collect(engine="streaming")["__integrity_file"]
     )
-    days = sorted({date.fromisoformat(Path(path).parent.name.removeprefix("date=")) for path in paths})
+    row_days: set[date] = set()
+    for value in invalid["date"].to_list():
+        if isinstance(value, datetime):
+            row_days.add(value.date())
+        elif isinstance(value, date):
+            row_days.add(value)
+        else:
+            with contextlib.suppress(ValueError):
+                row_days.add(date.fromisoformat(str(value)[:10]))
+    days: set[date] = set()
+    for raw_path in paths:
+        parent = Path(raw_path).parent
+        rng = parse_partition_range(parent.name)
+        if rng is None:
+            continue
+        if rng[0] == rng[1]:
+            days.add(rng[0])
+            continue
+        try:
+            file_days = {
+                d for d in (
+                    v.date() if isinstance(v, datetime) else v if isinstance(v, date) else None
+                    for v in pl.scan_parquet(raw_path).select("date").unique().collect()["date"].to_list()
+                ) if d is not None
+            }
+        except Exception:  # noqa: BLE001
+            continue
+        days |= (file_days & row_days) if row_days else file_days
     # 与显式自检一致: 当天仍在更新, 不能登记成尚无法修补的历史问题。
     today = cn_today()
-    return [issue for day in days if day < today and (issue := inspect_daily_partition(root, table, day)) is not None]
+    return [issue for day in sorted(days) if day < today and (issue := inspect_daily_partition(root, table, day)) is not None]
 
 
 def _partition_problem(
     root: Path, part: Path, day: date, *, deep: bool,
 ) -> tuple[str, str, tuple[str, ...], tuple[str, ...]] | None:
-    """有界逐文件检查, 读取错误不能与「权威历史没有 quote_ts」混为一谈。"""
+    """有界逐文件检查, 读取错误不能与「权威历史没有 quote_ts」混为一谈。
+
+    月分区: 校验范围限定到目标日 (batch 按 date 过滤); rows 计数来自
+    分区元数据 (整月), 只用于「分区完全为空」判定, 不影响单日校验。
+    """
     import pyarrow.parquet as pq
 
+    rng = parse_partition_range(part.name)
+    monthly = rng is not None and rng[0] != rng[1]
     paths = sorted(part.glob("*.parquet"))
     if not paths:
         return "corrupt", "日期目录内没有日K文件", (), ()
@@ -175,24 +221,33 @@ def _partition_problem(
         if not path.resolve().is_relative_to(root.resolve()):
             return "corrupt", "文件链接指向数据目录以外, 请手动检查目录", (), ()
         try:
-            parquet = pq.ParquetFile(path)
-            rows += parquet.metadata.num_rows
-            if not deep:
-                continue
-            if not set(DAILY_REQUIRED).issubset(parquet.schema.names):
-                bad.append(path.name)
-                reasons.append("日K字段不完整")
-                unknown_symbols = True
-                continue
-            columns = [*DAILY_REQUIRED, *(["amount"] if "amount" in parquet.schema.names else [])]
-            for batch in parquet.iter_batches(batch_size=65536, columns=columns):
-                invalid = invalid_daily_rows(pl.from_arrow(batch), day)
-                if not invalid.is_empty():
+            # 用自持的 OSFile 包住 parquet 读取: 损坏文件在 ParquetFile 构造
+            # 阶段就会抛错, 若交给 pyarrow 按路径打开, 失败的句柄可能直到 GC
+            # 才释放; Windows 上会阻塞后续 os.replace (WinError 5)。
+            import pyarrow as pa
+
+            with pa.OSFile(str(path), "rb") as source:
+                parquet = pq.ParquetFile(source)
+                rows += parquet.metadata.num_rows
+                if not deep:
+                    continue
+                if not set(DAILY_REQUIRED).issubset(parquet.schema.names):
                     bad.append(path.name)
-                    reasons.append(_invalid_daily_reason(invalid, day))
-                    values = invalid["symbol"].unique().to_list()
-                    unknown_symbols |= any(s is None or not s.strip() for s in values)
-                    symbols.update(s for s in values if s and s.strip())
+                    reasons.append("日K字段不完整")
+                    unknown_symbols = True
+                    continue
+                columns = [*DAILY_REQUIRED, *(["amount"] if "amount" in parquet.schema.names else [])]
+                for batch in parquet.iter_batches(batch_size=65536, columns=columns):
+                    frame = pl.from_arrow(batch)
+                    if monthly:
+                        frame = frame.filter(pl.col("date") == day)
+                    invalid = invalid_daily_rows(frame, day)
+                    if not invalid.is_empty():
+                        bad.append(path.name)
+                        reasons.append(_invalid_daily_reason(invalid, day))
+                        values = invalid["symbol"].unique().to_list()
+                        unknown_symbols |= any(s is None or not s.strip() for s in values)
+                        symbols.update(s for s in values if s and s.strip())
         except Exception as exc:  # noqa: BLE001 — 单文件失败记录为检查问题, 继续检查其他文件
             logger.warning("日K文件检查失败 %s: %s", path, exc)
             bad.append(path.name)
@@ -207,32 +262,51 @@ def _partition_problem(
     return None
 
 
-def _quote_ts_max_ms(part_dir: Path) -> int | None:
+def _quote_ts_max_ms(part_dir: Path, day: date | None = None) -> int | None:
     """读单个日期分区的 max(quote_ts); 列不存在/全 null/无统计 → None。
 
     优先走 parquet 元数据 row-group statistics (不解压数据页),
     statistics 缺失时回退 polars 列扫描。
+    月分区: 元数据统计覆盖整月, 快照判定需要「该日」的最大值,
+    必须带 day 走列扫描 (date 过滤 + quote_ts 聚合)。
     """
+    import pyarrow as pa
     import pyarrow.parquet as pq
 
+    rng = parse_partition_range(part_dir.name)
+    monthly = rng is not None and rng[0] != rng[1]
+    use_metadata = not (monthly and day is not None)
     candidates: list[int | None] = []
     files = sorted(part_dir.glob("*.parquet"))
     if not files:
         return None
     for path in files:
         try:
-            meta = pq.read_metadata(path)
-            names = [meta.schema.column(i).name for i in range(meta.num_columns)]
-            if "quote_ts" not in names:
+            if not use_metadata:
+                candidates.append(
+                    pl.scan_parquet(path)
+                    .filter(pl.col("date") == day)
+                    .select(pl.col("quote_ts").max())
+                    .collect()
+                    .item()
+                )
                 continue
-            idx = names.index("quote_ts")
-            file_max: int | None = None
-            for rg in range(meta.num_row_groups):
-                stats = meta.row_group(rg).column(idx).statistics
-                if stats is not None and stats.max is not None:
-                    value = stats.max
-                    file_max = int(value) if file_max is None else max(file_max, int(value))
-            if file_max is None and meta.num_rows > 0:
+            # 显式管理文件句柄: 损坏文件的 read_metadata 会抛错, 按路径打开
+            # 时失败的句柄可能滞留到 GC; Windows 上会阻塞后续原子替换。
+            with pa.OSFile(str(path), "rb") as source:
+                meta = pq.read_metadata(source)
+                names = [meta.schema.column(i).name for i in range(meta.num_columns)]
+                if "quote_ts" not in names:
+                    continue
+                idx = names.index("quote_ts")
+                file_max: int | None = None
+                for rg in range(meta.num_row_groups):
+                    stats = meta.row_group(rg).column(idx).statistics
+                    if stats is not None and stats.max is not None:
+                        value = stats.max
+                        file_max = int(value) if file_max is None else max(file_max, int(value))
+                rows = meta.num_rows
+            if file_max is None and rows > 0:
                 # statistics 未写入 → 回退列扫描
                 file_max = (
                     pl.scan_parquet(path)
@@ -278,6 +352,8 @@ def _partition_snapshot_defects(
 
     start_ms = int(datetime.combine(day, dt_time.min, tzinfo=CN_TZ).timestamp() * 1000)
     cutoff_ms = int(datetime.combine(day, CLOSE_CUTOFF, tzinfo=CN_TZ).timestamp() * 1000)
+    rng = parse_partition_range(part_dir.name)
+    monthly = rng is not None and rng[0] != rng[1]
     authoritative_rows = 0
     suspicious_rows = 0
     authoritative_symbols: set[str] = set()
@@ -290,12 +366,16 @@ def _partition_snapshot_defects(
             if "quote_ts" not in schema:
                 continue
             columns = [
-                name for name in ("symbol", "quote_ts", "volume", "amount")
+                name for name in ("symbol", "quote_ts", "volume", "amount", "date")
                 if name in schema
             ]
             frame = pl.read_parquet(path, columns=columns).with_columns(
                 pl.col("quote_ts").cast(pl.Int64, strict=False),
             )
+            if monthly:
+                # 月分区: 权威/可疑行计数与 symbol 集合都必须限定到目标日,
+                # 否则整月的权威行会把「该日缺权威行」的比例稀释掉。
+                frame = frame.filter(pl.col("date") == day)
             has_symbol = "symbol" in frame.columns
             authoritative = frame.filter(pl.col("quote_ts").is_null())
             authoritative_rows += authoritative.height
@@ -347,14 +427,14 @@ def _partition_is_snapshot(day: date, part_dir: Path, quote_ts_max_ms: int | Non
 def inspect_daily_partition(data_dir: Path, table: str, day: date, *, deep: bool = True) -> IntegrityIssue | None:
     if table not in TABLE_FAMILY:
         raise ValueError("不支持的日K资产类型")
-    part = Path(data_dir) / table / f"date={day}"
+    part = locate_partition_dir(Path(data_dir) / table, table, day)
     if not part.is_dir():
         return IntegrityIssue(day, table, "missing", reason="交易日日K缺失")
     problem = _partition_problem(Path(data_dir), part, day, deep=deep)
     if problem:
         kind, reason, files, symbols = problem
         return IntegrityIssue(day, table, kind, symbols=symbols, reason=reason, files=files)
-    defects = _partition_snapshot_defects(day, part, _quote_ts_max_ms(part))
+    defects = _partition_snapshot_defects(day, part, _quote_ts_max_ms(part, day))
     if defects is None or defects:
         return IntegrityIssue(day, table, "snapshot", symbols=tuple(sorted(defects)) if defects else ())
     return None
@@ -440,8 +520,29 @@ def scan_recent_integrity(
     if not set(selected).issubset(_DAILY_TABLES):
         raise ValueError("不支持的日K资产类型")
     partitions: dict[str, set[date]] = {}
+    # 月分区损坏后目录名读不出真实日期; 同资产的 enriched 仍是日分区,
+    # 可用来证明「这个月实际有哪些交易日」, 避免把月内数据开始前的日期
+    # 全部报成 corrupt 并触发无意义的整月回补。没有 enriched 证据时仍按
+    # 月份区间 fail-closed。
+    corroborating = list_partition_dates(data_dir / "kline_daily_enriched")
     for table in _DAILY_TABLES:
         base = data_dir / table
+        if is_monthly_daily_table(table):
+            # 月分区目录名只有月份; 缺失日检测要用真实覆盖日期 (读 date 列)。
+            # 损坏/空分区退回月份区间, 让候选日逐日实读并报 corrupt, 而不是
+            # 因日期集合为空把整张表跳过。
+            existing: set[date] = set()
+            if base.exists():
+                for part in base.glob("date=*"):
+                    if not part.is_dir():
+                        continue
+                    dates = partition_dates(part)
+                    if not dates:
+                        span = partition_dates_or_span(part)
+                        dates = (span & corroborating) or span
+                    existing |= dates
+            partitions[table] = existing
+            continue
         existing: set[date] = set()
         if base.exists():
             for part in base.glob("date=*"):

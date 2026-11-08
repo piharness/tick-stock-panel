@@ -37,21 +37,27 @@ def env(tmp_path, monkeypatch):
     def full_pipeline(*a, **kw):
         raise AssertionError("精准修补不应调用整条盘后管道")
     monkeypatch.setattr(daily_pipeline, "run_now", full_pipeline)
+    # instruments 先于视图注册落盘 (整日回补的标的清单兜底要用, 见 corrupt 用例)
+    instruments_dir = tmp_path / "instruments"
+    instruments_dir.mkdir(parents=True)
+    pl.DataFrame({"symbol": [A, B]}).write_parquet(instruments_dir / "all.parquet")
     repo = KlineRepository(DataStore(tmp_path))
     for n in range(4):
         day = BAD_DAY + timedelta(days=n)
         repo.append_daily(frame(day))
         repo.append_enriched(frame(day).with_columns(pl.col("close").alias("raw_close")))
-    bad = tmp_path / "kline_daily" / f"date={BAD_DAY}" / "part.parquet"
+    bad = tmp_path / "kline_daily" / f"date={BAD_DAY:%Y-%m}" / "part.parquet"
+    # 月分区里同股票多日共存: 只把 BAD_DAY 那一天的 A 改坏, 其余日期保持完好
     pl.read_parquet(bad).with_columns(
-        pl.when(pl.col("symbol") == A).then(pl.lit(999.0)).otherwise(pl.col("close")).alias("close"),
+        pl.when((pl.col("symbol") == A) & (pl.col("date") == BAD_DAY))
+        .then(pl.lit(999.0)).otherwise(pl.col("close")).alias("close"),
     ).write_parquet(bad)
     calls = []
 
     def fetch(symbols, capset, *, start_time, end_time, asset_type="stock", on_chunk_done=None):
         calls.append((list(symbols), start_time.date(), end_time.date(), asset_type))
         # 源即使多返回股票/日期, 也只能改请求范围里的异常记录。
-        yield pl.concat([frame(BAD_DAY), frame(BAD_DAY + timedelta(days=1), prices=(50.0, 60.0))])
+        yield pl.concat([frame(BAD_DAY + timedelta(days=n)) for n in range(4)])
 
     monkeypatch.setattr(kline_sync, "iter_daily_frames", fetch, raising=False)
     return SimpleNamespace(root=tmp_path, repo=repo, caps=SimpleNamespace(has=lambda _: True), calls=calls)
@@ -65,15 +71,17 @@ def test_self_check_identifies_only_the_bad_symbol(env):
 
 def test_repair_fetches_only_bad_symbol_and_day_and_preserves_other_rows(env):
     report = integrity_check.run_check(env.root, asset_types=["stock"])
-    next_day = env.root / "kline_daily" / f"date={BAD_DAY + timedelta(days=1)}" / "part.parquet"
-    next_before = next_day.read_bytes()
-    other_before = pl.read_parquet(env.root / f"kline_daily/date={BAD_DAY}/part.parquet").filter(pl.col("symbol") == B)
+    # 月分区布局: BAD_DAY 与次日同处一个分区文件, 「次日分区未被触碰」改为值级断言
+    part = env.root / "kline_daily" / f"date={BAD_DAY:%Y-%m}" / "part.parquet"
+    before = pl.read_parquet(part)
+    next_before = before.filter(pl.col("date") == BAD_DAY + timedelta(days=1))
+    other_before = before.filter(pl.col("symbol") == B)
     result = integrity_check.run_repair(env.repo, env.caps, report["id"])
     assert env.calls == [([A], BAD_DAY, BAD_DAY, "stock")]
-    assert next_day.read_bytes() == next_before
-    repaired = pl.read_parquet(env.root / f"kline_daily/date={BAD_DAY}/part.parquet")
-    assert repaired.filter(pl.col("symbol") == B).equals(other_before)
-    assert repaired.filter(pl.col("symbol") == A)["close"].item() == 10.0
+    after = pl.read_parquet(part)
+    assert after.filter(pl.col("date") == BAD_DAY + timedelta(days=1)).equals(next_before)
+    assert after.filter(pl.col("symbol") == B).equals(other_before)
+    assert after.filter((pl.col("symbol") == A) & (pl.col("date") == BAD_DAY))["close"].item() == 10.0
     assert result["status"] == "clean"
 
 
@@ -98,14 +106,15 @@ def test_failed_source_validation_never_changes_raw_or_enriched(env, monkeypatch
 
 
 def test_one_corrupt_file_falls_back_to_only_its_day(env):
-    path = env.root / f"kline_daily/date={BAD_DAY}/part.parquet"
-    path.write_bytes(b"unreadable whole day")
+    # 月分区布局: 一个损坏文件覆盖整月, 修补窗口相应扩展到月内坏日区间
+    path = env.root / f"kline_daily/date={BAD_DAY:%Y-%m}/part.parquet"
+    path.write_bytes(b"unreadable whole month")
     report = integrity_check.run_check(env.root, asset_types=["stock"])
     result = integrity_check.run_repair(env.repo, env.caps, report["id"])
-    assert env.calls == [([A, B], BAD_DAY, BAD_DAY, "stock")]
+    assert env.calls == [([A, B], BAD_DAY, BAD_DAY + timedelta(days=2), "stock")]
     assert result["status"] == "clean"
     backups = list((env.root / "integrity_backups").rglob("*.parquet"))
-    assert backups[0].read_bytes() == b"unreadable whole day"
+    assert backups[0].read_bytes() == b"unreadable whole month"
 
 
 @pytest.mark.parametrize("cancel", [False, True])
@@ -192,7 +201,9 @@ def test_repair_rejects_linked_history_and_preserves_outside_file(env, table):
     from app.services import daily_health
 
     linked_day = BAD_DAY + timedelta(days=1) if table == "kline_daily" else BAD_DAY
-    path = env.root / table / f"date={linked_day}/part.parquet"
+    # kline_daily 已月分区; enriched 仍按日分区
+    dir_name = f"date={linked_day:%Y-%m}" if table == "kline_daily" else f"date={linked_day}"
+    path = env.root / table / dir_name / "part.parquet"
     outside = env.root.parent / f"{env.root.name}-{table}-outside.parquet"
     original = path.read_bytes()
     outside.write_bytes(original)

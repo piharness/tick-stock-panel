@@ -42,6 +42,23 @@ def plan_daily_repair(issues) -> list[DailyRepairTarget]:
             for (asset, day), symbols in sorted(grouped.items())]
 
 
+def _fetch_groups(targets: list[DailyRepairTarget]) -> list[list[DailyRepairTarget]]:
+    """把相邻的整日回补合并成一次取数。
+
+    月分区的损坏文件覆盖整月；逐个交易日各拉一次会把同一个月重复请求 N 遍。
+    只合并 `symbols is None` 的连续 target（整日无标的清单），有明确标的的
+    定向修补仍保持一天一请求，避免把不同股票混进同一次校验。
+    """
+    groups: list[list[DailyRepairTarget]] = []
+    for target in targets:
+        if (target.symbols is None and groups and groups[-1][-1].symbols is None
+                and groups[-1][-1].asset_type == target.asset_type):
+            groups[-1].append(target)
+        else:
+            groups.append([target])
+    return groups
+
+
 def repair_integrity_issues(repo, capset, issues, *, backup_dir: Path, on_progress=None) -> dict:
     """精准修补编排: 所有源数据先暂存校验, 再写原始日K, 最后重算并发布依赖。
 
@@ -56,6 +73,7 @@ def repair_integrity_issues(repo, capset, issues, *, backup_dir: Path, on_progre
 
     root = Path(repo.store.data_dir)
     targets = plan_daily_repair(issues)
+    groups = _fetch_groups(targets)
     staging = root / ".daily_repair_staging" / backup_dir.name
 
     def emit(stage, pct, message, *, stage_pct=0):
@@ -64,47 +82,72 @@ def repair_integrity_issues(repo, capset, issues, *, backup_dir: Path, on_progre
 
     try:
         # 未完成全部取数和校验前, 正式日K/enriched 均保持原样。
-        for i, target in enumerate(targets):
-            label = daily_health.ASSET_LABELS[target.asset_type]
-            repo.validate_daily_repair_target(target.asset_type, target.day)
-            if target.symbols is None:
-                symbols, required = repo.daily_repair_universe(target.asset_type, target.day)
-            else:
-                symbols, required = list(target.symbols), set(target.symbols)
-            emit("sync_daily", int(45 * i / max(len(targets), 1)),
-                 f"获取 {target.day} {label}日K ({len(symbols)} 只)")
+        for i, group in enumerate(groups):
+            asset_type = group[0].asset_type
+            days = [target.day for target in group]
+            label = daily_health.ASSET_LABELS[asset_type]
+            required_by_day: dict[date, set[str]] = {}
+            requested: set[str] = set()
+            for target in group:
+                repo.validate_daily_repair_target(asset_type, target.day)
+                if target.symbols is None:
+                    symbols, required = repo.daily_repair_universe(asset_type, target.day)
+                else:
+                    symbols, required = list(target.symbols), set(target.symbols)
+                required_by_day[target.day] = set(required)
+                requested.update(symbols)
+            ordered = sorted(requested)
+            span = (str(days[0]) if len(days) == 1 else f"{days[0]}~{days[-1]}")
+            emit("sync_daily", int(45 * i / max(len(groups), 1)),
+                 f"获取 {span} {label}日K ({len(ordered)} 只)")
 
-            def progress(cur, total, *args, target_day=target.day, target_index=i):
-                emit("sync_daily", int(45 * target_index / max(len(targets), 1)),
-                     f"获取 {target_day} 日K批次 {cur}/{total}", stage_pct=int(100 * cur / total) if total else 0)
+            def progress(cur, total, *args, span=span, group_index=i):
+                emit("sync_daily", int(45 * group_index / max(len(groups), 1)),
+                     f"获取 {span} 日K批次 {cur}/{total}", stage_pct=int(100 * cur / total) if total else 0)
 
-            frames = []
+            frames_by_day: dict[date, list[pl.DataFrame]] = {day: [] for day in days}
             for incoming in kline_sync.iter_daily_frames(
-                symbols, capset, start_time=datetime.combine(target.day, datetime.min.time()),
-                end_time=datetime.combine(target.day, datetime.min.time()), asset_type=target.asset_type,
+                ordered, capset, start_time=datetime.combine(days[0], datetime.min.time()),
+                end_time=datetime.combine(days[-1], datetime.min.time()), asset_type=asset_type,
                 on_chunk_done=progress,
             ):
                 if incoming.is_empty():
                     continue
                 if not {"symbol", "date"}.issubset(incoming.columns):
                     raise ValueError("数据源返回的日K缺少股票或日期字段")
-                incoming = incoming.with_columns(pl.col("date").cast(pl.Date, strict=False), pl.col("symbol").cast(pl.String))
-                incoming = incoming.filter((pl.col("date") == target.day) & pl.col("symbol").is_in(symbols))
-                if not incoming.is_empty():
-                    if not data_integrity.invalid_daily_rows(incoming, target.day).is_empty():
-                        raise ValueError(f"数据源返回的 {target.day} 日K仍异常, 未写入正式数据")
-                    frames.append(incoming)
-            if not frames:
-                raise ValueError(f"数据源未返回 {target.day} 的修补日K, 原数据保持不变")
-            frame = pl.concat(frames, how="diagonal_relaxed").unique(subset=["symbol", "date"], keep="last")
-            missing = required - set(frame["symbol"].to_list())
-            if missing:
-                raise ValueError(f"{target.day} 缺少修补股票: {', '.join(sorted(missing)[:10])}")
-            part = staging / daily_dirname(target.asset_type) / f"date={target.day}"
-            part.mkdir(parents=True, exist_ok=True)
-            frame.write_parquet(part / "part.parquet")
-            if data_integrity.inspect_daily_partition(staging, daily_dirname(target.asset_type), target.day):
-                raise ValueError(f"数据源返回的 {target.day} 日K未通过复检, 未写入正式数据")
+                incoming = incoming.with_columns(
+                    pl.col("date").cast(pl.Date, strict=False),
+                    pl.col("symbol").cast(pl.String),
+                )
+                incoming = incoming.filter(
+                    pl.col("date").is_in(days) & pl.col("symbol").is_in(ordered)
+                )
+                if incoming.is_empty():
+                    continue
+                for day in days:
+                    day_frame = incoming.filter(pl.col("date") == day)
+                    if day_frame.is_empty():
+                        continue
+                    if not data_integrity.invalid_daily_rows(day_frame, day).is_empty():
+                        raise ValueError(f"数据源返回的 {day} 日K仍异常, 未写入正式数据")
+                    frames_by_day[day].append(day_frame)
+
+            for target in group:
+                frames = frames_by_day[target.day]
+                if not frames:
+                    raise ValueError(f"数据源未返回 {target.day} 的修补日K, 原数据保持不变")
+                frame = pl.concat(frames, how="diagonal_relaxed").unique(
+                    subset=["symbol", "date"], keep="last")
+                missing = required_by_day[target.day] - set(frame["symbol"].to_list())
+                if missing:
+                    raise ValueError(f"{target.day} 缺少修补股票: {', '.join(sorted(missing)[:10])}")
+                part = staging / daily_dirname(asset_type) / f"date={target.day}"
+                part.mkdir(parents=True, exist_ok=True)
+                frame.write_parquet(part / "part.parquet")
+                if data_integrity.inspect_daily_partition(
+                    staging, daily_dirname(asset_type), target.day
+                ):
+                    raise ValueError(f"数据源返回的 {target.day} 日K未通过复检, 未写入正式数据")
 
         for i, target in enumerate(targets):
             emit("sync_daily", 45 + int(10 * i / max(len(targets), 1)), f"写入已校验的 {target.day} 修补日K")

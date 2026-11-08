@@ -47,7 +47,7 @@ def test_concurrent_upserts_do_not_lose_rows(tmp_path: Path) -> None:
     assert not errors, errors
     assert all(not t.is_alive() for t in threads)
 
-    out = tmp_path / "kline_daily" / "date=2026-09-07" / "part.parquet"
+    out = tmp_path / "kline_daily" / "date=2026-09" / "part.parquet"
     final = pl.read_parquet(out)
     assert final["symbol"].n_unique() == sum(len(g) for g in groups)  # 无一丢失
     assert final["symbol"].to_list() == sorted(final["symbol"].to_list())
@@ -86,5 +86,5 @@ def test_heavy_merge_runs_outside_write_lock(tmp_path: Path, monkeypatch) -> Non
 
     assert done.wait(timeout=5)
     t.join(timeout=5)
-    out = tmp_path / "kline_daily" / "date=2026-09-07" / "part.parquet"
+    out = tmp_path / "kline_daily" / "date=2026-09" / "part.parquet"
     assert pl.read_parquet(out)["symbol"].to_list() == ["000001.SZ", "000002.SZ"]

@@ -20,7 +20,8 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
-from datetime import date
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 from pathlib import Path
 
 import duckdb
@@ -40,8 +41,21 @@ from app.market_time import cn_today
 from app.parquet import scan_enriched_parquet
 from app.polars_guard import guarded_collect
 from app.services.minute_adjust import apply_minute_adjustment, minute_basis_is_raw
+from app.tickflow.partitions import (
+    is_monthly_daily_table,
+    locate_partition_dir,
+    parse_partition_range,
+    partition_dirname,
+)
 
 logger = logging.getLogger(__name__)
+
+# 启动时并发挂载 parquet 视图的线程数。每条 CREATE VIEW 都要各自展开一次
+# `<dir>/**/*.parquet` glob (data/ 里 300+ 个分区文件), 这是纯 IO 等待而非计算,
+# 并发能把 21 条的墙钟时间从「条数 × 单条」压到「约等于最慢的一条」。
+# 下限 4: 低核机器上 IO 等待照样能叠; 上限 8: 再多只会争抢同一块磁盘/9p 通道
+# (本机实测 8 与 16 无差别)。
+_VIEW_REGISTRATION_WORKERS = min(8, max(4, os.cpu_count() or 4))
 
 # GH #480: 后台 warmup 因世代漂移被丢弃时的有界重建上限。compute 窗口长达
 # 数十秒, 启动期与 quote 实时刷新的 commit 撞车后若不重建, 历史缓存长期
@@ -188,6 +202,9 @@ class DataStore:
 
         # DuckDB 内存模式 — 不建 .db 文件(§7.1)
         self.db = duckdb.connect(database=":memory:")
+        # 根连接只作连接工厂: 跨线程共用一个 Connection 对象没有契约保证,
+        # 并发注册视图时各线程用 cursor (同一内存库实例的独立连接)。
+        self._cursor_lock = threading.Lock()
         self._register_views()
 
     def _migrate_legacy_data_dir(self) -> None:
@@ -262,8 +279,23 @@ class DataStore:
         except Exception as e:  # noqa: BLE001
             logger.warning("legacy data migration failed (startup continues): %s", e)
 
+    def _new_cursor(self):
+        """从根连接复制一个独立连接 (共享同一库实例, 创建开销极低)。"""
+        with self._cursor_lock:
+            return self.db.cursor()
+
     def _register_views(self) -> None:
-        """把 Parquet 目录挂载为 DuckDB 视图(§7.3)。"""
+        """把 Parquet 目录挂载为 DuckDB 视图(§7.3)。
+
+        并发下发而非逐条串行: 每条 ``CREATE VIEW`` 的 binder 都要把
+        ``<dir>/**/*.parquet`` 展开一遍 (DuckDB 在 CREATE 时就绑定, 不是懒绑定),
+        data/ 有 300+ 个分区目录时单条就要 2~3s。串行 21 条曾是容器启动的
+        主要阻塞 (2026-11-08: 25.6s/整个启动 32s, 占 84%)。视图之间互不引用,
+        DuckDB 只对同名 DDL 报 write-write conflict, 不同名可并行。
+
+        失败一律降级为 debug: 空数据目录(首次启动)/权限问题/空 glob 都会抛
+        IOException, 缺视图不影响启动 (后续同步写入数据由 refresh_view 补挂)。
+        """
         d = self.data_dir.as_posix()
         statements = [
             f"""CREATE OR REPLACE VIEW kline_daily AS
@@ -311,101 +343,30 @@ class DataStore:
             f"""CREATE OR REPLACE VIEW depth5 AS
                 SELECT * FROM read_parquet('{d}/depth5/**/*.parquet', union_by_name=true)""",
         ]
-        for sql in statements:
-            try:
-                self.db.execute(sql)
-            except Exception as e:  # noqa: BLE001
-                # 空数据目录(首次启动)或权限问题时 DuckDB 会抛 IOException;
-                # 跨版本/平台也可能抛 CatalogException 等。空目录缺视图不影响启动
-                # (后续同步写入数据后会重新刷新视图),这里一律降级为 debug 日志。
-                logger.debug("view registration skipped (no parquet yet): %s", sql[:60])
-        self._register_unified_views()
+        workers = max(1, min(len(statements), _VIEW_REGISTRATION_WORKERS))
+        started = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="duckdb-view") as pool:
+            # 单条失败已在 _create_view 内降级, map 只用于等待全部完成
+            list(pool.map(self._create_view, statements))
+        # 启动诊断的唯一入口: 视图挂载是启动链路里唯一与 data/ 体积成正比的
+        # 环节, 绑定挂载变慢 (9p/NFS/杀软扫描) 时这里会先变红。
+        logger.info(
+            "duckdb views registered: %d statements in %.2fs (workers=%d)",
+            len(statements), time.perf_counter() - started, workers,
+        )
 
-    def _has_parquet(self, subdir: str) -> bool:
-        return any((self.data_dir / subdir).rglob("*.parquet"))
-
-    def _register_unified_views(self, con=None) -> None:
-        """Register optional all-asset views when their backing parquet exists.
-
-        Physical storage remains split for performance and compatibility. These
-        views are convenience read models for new APIs/features. 运行期调用方
-        传独立 cursor (rebuild_views/refresh_index_views), 初始化走根连接。
-        """
-        db = con if con is not None else self.db
-        daily_parts: list[str] = []
-        enriched_parts: list[str] = []
-        minute_parts: list[str] = []
-        inst_parts: list[str] = []
-
-        if self._has_parquet("kline_daily"):
-            daily_parts.append("""
-                SELECT symbol, date, open, high, low, close, volume, amount,
-                       'stock' AS asset_type, 'tickflow' AS source
-                FROM kline_daily
-            """)
-        if self._has_parquet("kline_index_daily"):
-            daily_parts.append("""
-                SELECT symbol, date, open, high, low, close, volume, amount,
-                       'index' AS asset_type, 'tickflow' AS source
-                FROM kline_index_daily
-            """)
-        if self._has_parquet("kline_etf_daily"):
-            daily_parts.append("""
-                SELECT symbol, date, open, high, low, close, volume, amount,
-                       'etf' AS asset_type, 'tickflow' AS source
-                FROM kline_etf_daily
-            """)
-
-        if self._has_parquet("kline_daily_enriched"):
-            enriched_parts.append("SELECT *, 'stock' AS asset_type, 'tickflow' AS source FROM kline_enriched")
-        if self._has_parquet("kline_index_enriched"):
-            enriched_parts.append("SELECT *, 'index' AS asset_type, 'tickflow' AS source FROM kline_index_enriched")
-        if self._has_parquet("kline_etf_enriched"):
-            enriched_parts.append("SELECT *, 'etf' AS asset_type, 'tickflow' AS source FROM kline_etf_enriched")
-
-        if self._has_parquet("kline_minute"):
-            minute_parts.append("""
-                SELECT symbol, datetime, open, high, low, close, volume, amount,
-                       'stock' AS asset_type, 'tickflow' AS source
-                FROM kline_minute
-            """)
-        if self._has_parquet("kline_etf_minute"):
-            minute_parts.append("""
-                SELECT symbol, datetime, open, high, low, close, volume, amount,
-                       'etf' AS asset_type, 'tickflow' AS source
-                FROM kline_etf_minute
-            """)
-
-        if self._has_parquet("instruments"):
-            inst_parts.append("""
-                SELECT symbol, name, code, exchange, 'stock' AS asset_type, 'tickflow' AS source
-                FROM instruments
-            """)
-        if self._has_parquet("instruments_index"):
-            inst_parts.append("""
-                SELECT symbol, name, code, NULL AS exchange, 'index' AS asset_type, 'tickflow' AS source
-                FROM instruments_index
-                WHERE coalesce(asset_type, 'index') != 'etf'
-            """)
-        if self._has_parquet("instruments_etf"):
-            inst_parts.append("""
-                SELECT symbol, name, code, NULL AS exchange, 'etf' AS asset_type, 'tickflow' AS source
-                FROM instruments_etf
-            """)
-
-        unions = {
-            "kline_daily_all": daily_parts,
-            "kline_enriched_all": enriched_parts,
-            "kline_minute_all": minute_parts,
-            "instruments_all": inst_parts,
-        }
-        for name, parts in unions.items():
-            if not parts:
-                continue
-            try:
-                db.execute(f"CREATE OR REPLACE VIEW {name} AS " + " UNION ALL BY NAME ".join(parts))
-            except Exception as e:  # noqa: BLE001
-                logger.debug("unified view %s skipped: %s", name, e)
+    def _create_view(self, sql: str) -> None:
+        """挂载单张视图; 空目录等失败降级为 debug (视图缺省不影响启动)。"""
+        cursor = self._new_cursor()
+        try:
+            cursor.execute(sql)
+        except Exception:  # noqa: BLE001
+            # 空数据目录(首次启动)或权限问题时 DuckDB 会抛 IOException;
+            # 跨版本/平台也可能抛 CatalogException 等。空目录缺视图不影响启动
+            # (后续同步写入数据后会重新刷新视图),这里一律降级为 debug 日志。
+            logger.debug("view registration skipped (no parquet yet): %s", sql[:60])
+        finally:
+            cursor.close()
 
 
 def _read_concurrency_env() -> int:
@@ -2343,7 +2304,8 @@ class KlineRepository:
         """
         import shutil
 
-        part = self.store.data_dir / daily_dirname(asset_type) / f"date={day}"
+        table = daily_dirname(asset_type)
+        part = locate_partition_dir(self.store.data_dir / table, table, day)
         self._validate_repair_path(part)
         self._validate_repair_path(backup_dir)
         if incoming.is_empty() or incoming.filter(pl.col("date") != day).height:
@@ -2353,9 +2315,28 @@ class KlineRepository:
         paths = sorted(part.glob("*.parquet"))
         fingerprints = {p: self._partition_fingerprint(p) for p in paths}
         base = pl.DataFrame()
-        if symbols is not None and paths:
-            base = pl.concat([pl.read_parquet(p) for p in paths], how="diagonal_relaxed")
-            base = base.filter(~pl.col("symbol").is_in(symbols))
+        monthly = is_monthly_daily_table(table)
+        if paths and (symbols is not None or monthly):
+            frames: list[pl.DataFrame] = []
+            for path in paths:
+                try:
+                    frames.append(pl.read_parquet(path))
+                except (OSError, pl.exceptions.PolarsError):
+                    # 整日回补时损坏文件本来就要被替换; 定向修补仍必须能
+                    # 读到其余行, 否则无法保证未点名股票不被覆盖。
+                    if symbols is not None:
+                        raise
+            if frames:
+                base = pl.concat(frames, how="diagonal_relaxed")
+                if symbols is None:
+                    # 月分区整日覆写: 只丢弃目标日, 同月其他交易日原样保留。
+                    base = base.filter(pl.col("date") != day)
+                else:
+                    # 日分区里 date 恒等于 day, 此过滤等价于旧的按 symbol 剔除;
+                    # 月分区里必须同时限定日期, 否则会把同 symbol 其他交易日的行一起丢掉。
+                    base = base.filter(
+                        ~(pl.col("symbol").is_in(symbols) & (pl.col("date") == day))
+                    )
         merged = pl.concat([base, incoming], how="diagonal_relaxed").unique(
             subset=["symbol", "date"], keep="last",
         ).sort(["symbol", "date"])
@@ -2374,7 +2355,10 @@ class KlineRepository:
                     path.unlink()
 
     def validate_daily_repair_target(self, asset_type: str, day: date) -> None:
-        self._validate_repair_path(self.store.data_dir / daily_dirname(asset_type) / f"date={day}")
+        table = daily_dirname(asset_type)
+        self._validate_repair_path(
+            locate_partition_dir(self.store.data_dir / table, table, day)
+        )
 
     def daily_repair_files(self, asset_type: str) -> list[Path]:
         """重算原始历史前验证全部输入路径, 不沿目录或文件链接读取。"""
@@ -2392,29 +2376,40 @@ class KlineRepository:
         """
         base = self.store.data_dir / daily_dirname(asset_type)
 
-        def read_symbols(part: Path) -> tuple[set[str], bool]:
+        def read_symbols(part: Path, day_filter: date | None = None) -> tuple[set[str], bool]:
             paths = list(part.glob("*.parquet"))
             symbols: set[str] = set()
             complete = bool(paths)
             for path in paths:
                 self._validate_repair_path(path)
                 try:
-                    symbols.update(pl.read_parquet(path, columns=["symbol"])["symbol"].drop_nulls().to_list())
+                    if day_filter is None:
+                        symbols.update(pl.read_parquet(path, columns=["symbol"])["symbol"].drop_nulls().to_list())
+                    else:
+                        # 月分区: 只取目标日的 symbol (整月分区直读会把其他交易日的
+                        # 标的混进当日已知清单); 日分区 date 恒等于目标日, 等价。
+                        frame = pl.read_parquet(path, columns=["symbol", "date"])
+                        symbols.update(
+                            frame.filter(pl.col("date") == day_filter)["symbol"].drop_nulls().to_list()
+                        )
                 except (OSError, pl.exceptions.PolarsError):
                     complete = False
             return symbols, complete
 
-        known, complete = read_symbols(base / f"date={day}")
+        table = daily_dirname(asset_type)
+        known, complete = read_symbols(
+            locate_partition_dir(self.store.data_dir / table, table, day), day
+        )
         instruments = self.get_instruments_asset(asset_type)
         pool = set(instruments["symbol"].drop_nulls().to_list()) if not instruments.is_empty() and "symbol" in instruments.columns else set()
         parts = []
         for part in base.glob("date=*"):
-            try:
-                value = date.fromisoformat(part.name[5:])
-                if value != day:
-                    parts.append((value, part))
-            except ValueError:
+            rng = parse_partition_range(part.name)
+            if rng is None:
                 continue
+            if rng[0] <= day <= rng[1]:
+                continue  # 目标日所在分区已单独读过
+            parts.append((rng[0], part))
         for before in (True, False):
             ordered = sorted((p for p in parts if (p[0] < day) == before),
                              key=lambda item: abs((item[0] - day).days))
@@ -2533,15 +2528,9 @@ class KlineRepository:
             "instruments_etf": f"{d}/instruments_etf/**/*.parquet",
         }.items():
             self.refresh_view(name, path)
-        with self._ddl_lock:
-            cursor = self._new_cursor()
-            try:
-                self.store._register_unified_views(cursor)
-            finally:
-                cursor.close()
 
     def rebuild_views(self) -> None:
-        """重建全部 13 张 parquet 视图并重挂 unified 视图 —— 唯一权威实现。
+        """重建全部 13 张 parquet 视图 —— 唯一权威实现。
 
         原先 daily_pipeline._refresh_views(盘后管道) 与 /api/data/clear(清库) 各自
         内联了同一份视图重建 SQL, 清库那份还漏了几张视图导致漂移。此处收敛为单一入口:
@@ -2565,12 +2554,6 @@ class KlineRepository:
         }
         for name, path in views.items():
             self.refresh_view(name, path)
-        with self._ddl_lock:
-            cursor = self._new_cursor()
-            try:
-                self.store._register_unified_views(cursor)
-            finally:
-                cursor.close()
 
     @staticmethod
     def _atomic_write_parquet(df: pl.DataFrame, out: Path) -> None:
@@ -2586,7 +2569,7 @@ class KlineRepository:
         replace_with_retry(tmp, out)
 
     def _write_daily_partition(self, df: pl.DataFrame, table: str) -> None:
-        """按 date 分区写入 parquet，每个日期一个文件，支持 merge-upsert。"""
+        """按分区写入 parquet (kline_daily 按月、其余按日)，支持 merge-upsert。"""
         base = self.store.data_dir / table
         generation_asset = {
             "kline_daily_enriched": "stock",
@@ -2601,8 +2584,8 @@ class KlineRepository:
         )
         for date_df in df.partition_by("date"):
             dt = date_df["date"][0]
-            ds = dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
-            out = base / f"date={ds}" / "part.parquet"
+            dirname = partition_dirname(table, dt)
+            out = base / dirname / "part.parquet"
             out.parent.mkdir(parents=True, exist_ok=True)
             self._optimistic_upsert_partition(out, date_df, publication)
 
@@ -2691,8 +2674,7 @@ class KlineRepository:
             return
         base = self.store.data_dir / table
         dt = df["date"][0]
-        ds = dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
-        out = base / f"date={ds}" / "part.parquet"
+        out = base / partition_dirname(table, dt) / "part.parquet"
         out.parent.mkdir(parents=True, exist_ok=True)
         self._optimistic_upsert_partition(out, df, None)
 
@@ -2782,13 +2764,44 @@ class KlineRepository:
             return
         base = self.store.data_dir / table
         dt = df["date"][0]
-        ds = dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
-        out = base / f"date={ds}" / "part.parquet"
+        dirname = partition_dirname(table, dt)
+        out = base / dirname / "part.parquet"
         out.parent.mkdir(parents=True, exist_ok=True)
-        # 覆写语义: 排序在锁外, 锁内只做原子替换。
-        df_sorted = df.sort(["symbol", "date"])
+        if not is_monthly_daily_table(table):
+            # 日分区布局: 整分区覆写, 排序在锁外, 锁内只做原子替换。
+            df_sorted = df.sort(["symbol", "date"])
+            with self._write_lock:
+                self._atomic_write_parquet(df_sorted, out)
+            return
+        # 月分区布局: 覆写 = 替换该日全部行 (实时快照可能因停牌过滤少行,
+        # 该日旧行必须整体消失, merge-upsert 会把它们留下), 其他日期原样保留。
+        day = dt if isinstance(dt, date) and not isinstance(dt, datetime) else date.fromisoformat(str(dt))
+        self._replace_day_rows(out, df, day)
+
+    def _replace_day_rows(self, out: Path, incoming: pl.DataFrame, day: date) -> None:
+        """月分区内的单日覆写 (乐观指纹重试, 与 _optimistic_upsert_partition 同型)。
+
+        与 merge-upsert 的差别: 该日旧行整体丢弃、该日新行整体替换,
+        其他日期行原样保留。
+        """
+
+        def _merged(existing: pl.DataFrame) -> pl.DataFrame:
+            kept = existing.filter(pl.col("date") != day) if not existing.is_empty() else existing
+            return pl.concat([kept, incoming], how="diagonal_relaxed").sort(["symbol", "date"])
+
+        for _ in range(3):
+            existing = pl.read_parquet(out) if out.exists() else pl.DataFrame()
+            base_fp = self._partition_fingerprint(out)
+            merged = _merged(existing)
+            with self._write_lock:
+                if self._partition_fingerprint(out) != base_fp:
+                    continue  # 基底被并发写入者改过, 出锁重读重算
+                self._atomic_write_parquet(merged, out)
+            return
+        # 乐观重试耗尽 (罕见): 退回锁内直读直写保证正确性
         with self._write_lock:
-            self._atomic_write_parquet(df_sorted, out)
+            existing = pl.read_parquet(out) if out.exists() else pl.DataFrame()
+            self._atomic_write_parquet(_merged(existing), out)
 
     def flush_live_enriched(self, df: pl.DataFrame) -> None:
         """覆写当天 kline_daily_enriched 分区 (实时 enriched 落盘, 非merge)。
