@@ -49,10 +49,16 @@ def test_rows_without_the_column_are_unknown_not_event():
     rows = [
         _row("2026-01-05", outcome=1, ret=0.05, price_basis=None),
         _row("2026-01-06", outcome=0, ret=-0.02, price_basis="EVENT"),
+        # 第二行 EVENT 不是凑数：只有 1 行 EVENT 时 `!=` 与 `==` 都得 1，
+        # 变异体存活（构造恰好对称）。两行 EVENT 让两个算子分叉（1 vs 2）。
+        _row("2026-01-07", outcome=1, ret=0.01, price_basis="EVENT"),
     ]
     out = settle.score(rows, basis="abs")
     assert out["by_price_basis"]["unknown"]["n"] == 1
     assert out["n_non_event"] == 1
+    # 恒等式：这两个数走两条独立路径（逐行 `!=` 计数 vs 分组 `==` 计数）。
+    # 将来改分组逻辑（把 None 并进 EVENT、加白名单、改 missing 标签）会分叉。
+    assert out["n_non_event"] == out["n"] - out["by_price_basis"]["EVENT"]["n"]
 
 
 def test_empty_and_non_empty_scores_have_the_same_keys():
@@ -63,3 +69,7 @@ def test_empty_and_non_empty_scores_have_the_same_keys():
     assert set(empty) == set(one)
     assert empty["by_price_basis"] == {}
     assert empty["n_non_event"] == 0
+    # 单行 EVENT ⇒ 非 EVENT 必须是 0。上面那条用例里 3 行中 1 行非 EVENT，
+    # 把 `!=` 翻成 `==` 也只得 1；这一行让同一个变异在"全 EVENT"处现形。
+    assert one["n_non_event"] == 0
+    assert one["n_non_event"] == one["n"] - one["by_price_basis"]["EVENT"]["n"]

@@ -271,8 +271,10 @@ def _settle_one(tmp_path: Path, *, entry_open: float, entry_low: float,
     _write_index(tmp_path, [(d, 4000.0) for d in days])
     card = ledger.build_card(as_of=days[0].isoformat(), picks=_picks(limit=limit),
                              horizon_sessions=horizon)
-    return settle._settle_pick(tmp_path, card, card["picks"][0],
-                               [d.isoformat() for d in days])
+    reason, rec = settle._settle_pick(tmp_path, card, card["picks"][0],
+                                      [d.isoformat() for d in days])
+    assert reason is None
+    return rec
 
 
 def test_fill_at_open_when_open_below_limit(tmp_path: Path):
@@ -318,9 +320,11 @@ def test_excess_against_benchmark(tmp_path: Path):
     ])
     _write_index(tmp_path, [(d, 4000.0 if i <= 1 else 4200.0) for i, d in enumerate(days)])
     card = ledger.build_card(as_of=days[0].isoformat(), picks=_picks(), horizon_sessions=5)
-    rec = settle._settle_pick(tmp_path, card, card["picks"][0], [d.isoformat() for d in days])
+    reason, rec = settle._settle_pick(tmp_path, card, card["picks"][0],
+                                      [d.isoformat() for d in days])
     assert rec["benchmark_ret"] == pytest.approx(0.05, abs=1e-9)
     assert rec["excess"] == pytest.approx(0.10 - 0.05, abs=1e-9)
+    assert reason is None
 
 
 def test_pending_when_horizon_not_reached(tmp_path: Path):
@@ -330,8 +334,11 @@ def test_pending_when_horizon_not_reached(tmp_path: Path):
          "raw_close": 100.0, "raw_low": 100.0} for d in days
     ])
     card = ledger.build_card(as_of=days[0].isoformat(), picks=_picks(), horizon_sessions=5)
-    assert settle._settle_pick(tmp_path, card, card["picks"][0],
-                               [d.isoformat() for d in days]) is None
+    reason, rec = settle._settle_pick(tmp_path, card, card["picks"][0],
+                                      [d.isoformat() for d in days])
+    assert rec is None
+    # 挂起要带原因：`pending` 一个数字分不出「没到期」和「事件表没跟上」。
+    assert reason == settle.PENDING_NOT_DUE
 
 
 def test_settle_records_pwin_source(tmp_path: Path):

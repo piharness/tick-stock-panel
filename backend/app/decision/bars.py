@@ -1,4 +1,7 @@
-"""决策账本用到的行情读取 — 只读、按日分区、不引入第二套数据口径。
+"""决策账本用到的行情读取 — 只读、双分区布局、不引入第二套数据口径。
+
+`kline_daily` 自 2026-11 起按月分区；enriched/指数/分钟仍按日分区。本模块
+统一走 `app.tickflow.partitions` 的定位助手，调用方不需要知道底层目录名。
 
 口径约束（与 CONTRIBUTING §3.2 一致）：
 - 撮合与限价比较用**不复权 raw 价**（真实交易价格）；
@@ -13,8 +16,15 @@ from __future__ import annotations
 import threading
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import polars as pl
+
+from app.tickflow.partitions import (
+    is_monthly_daily_table,
+    list_partition_dates,
+    locate_partition_dir,
+)
 
 STOCK_ENRICHED = "kline_daily_enriched"
 INDEX_ENRICHED = "kline_index_enriched"
@@ -41,6 +51,10 @@ def sessions(data_dir: Path, table: str = "kline_daily") -> list[str]:
     base = Path(data_dir) / table
     if not base.is_dir():
         return []
+    if is_monthly_daily_table(table):
+        # 月分区目录名只有月份，真实交易日必须从数据的 date 列读；混存旧日分区
+        # 时助手会同时枚举两种布局。
+        return sorted(d.isoformat() for d in list_partition_dates(base))
     out: list[str] = []
     for child in base.iterdir():
         if not child.is_dir() or not child.name.startswith("date="):
@@ -60,7 +74,12 @@ def latest_session(data_dir: Path, table: str = "kline_daily") -> str | None:
 
 
 def _day_frame(data_dir: Path, table: str, day: str, symbols: list[str] | None) -> pl.DataFrame:
-    part = Path(data_dir) / table / f"date={day}"
+    try:
+        target = date.fromisoformat(day)
+    except ValueError:
+        return pl.DataFrame()
+    base = Path(data_dir) / table
+    part = locate_partition_dir(base, table, target)
     if not part.is_dir():
         return pl.DataFrame()
     files = sorted(part.glob("*.parquet"))
@@ -70,6 +89,9 @@ def _day_frame(data_dir: Path, table: str, day: str, symbols: list[str] | None) 
     have = set(lf.collect_schema().names())
     cols = [c for c in _BAR_COLS if c in have]
     lf = lf.select(cols)
+    # 月分区里同 symbol 的其他交易日也在这个目录；日分区过滤等价且更稳。
+    if "date" in have:
+        lf = lf.filter(pl.col("date") == target)
     if symbols is not None:
         lf = lf.filter(pl.col("symbol").is_in(symbols))
     return lf.collect()
@@ -154,6 +176,57 @@ def _ex_frame(data_dir: Path) -> pl.DataFrame | None:
     return df
 
 
+#: 窗口可判定性。四个取值的**后续动作不同**，所以不能共用一个 `None`：
+#:
+#: | 状态 | 含义 | 等下去会变吗 | 动作 |
+#: |---|---|---|---|
+#: | `ok` | 表的时间范围盖住窗口 | — | 用事件因子算 |
+#: | `absent` | 缺表 / 空表 | 不会（除非补数据） | 降级并标注 |
+#: | `before_start` | 窗口早于表首 | 不会：表不向后生长 | 降级并标注 |
+#: | `after_end` | 窗口晚于表末 | **会**：同步追上即自愈 | 挂起，不写盘 |
+#:
+#: 前两者与 `after_end` 的分界不是「严重程度」，是「等待是否会改变结论」。
+#: 把三者压成一个 `None`，调用方只能一律降级——`after_end` 的降级行会被
+#: `done` 键永久固化，而它本来只要再等一个交易日就是 `EVENT`。
+WINDOW_OK = "ok"
+WINDOW_ABSENT = "absent"
+WINDOW_BEFORE_START = "before_start"
+WINDOW_AFTER_END = "after_end"
+
+
+def _ex_range(df: pl.DataFrame) -> tuple[str, str] | None:
+    """事件表的时间范围。空表、日期列类型不对都返回 None，由调用方读作「不可判定」。"""
+    if df.is_empty():
+        return None
+    lo, hi = df["trade_date"].min(), df["trade_date"].max()
+    if not isinstance(lo, str) or not isinstance(hi, str):
+        return None
+    return str(lo), str(hi)
+
+
+def ex_range(data_dir: Path) -> tuple[str, str] | None:
+    """`(表首, 表末)`；缺表返回 None。表末是**已公告除权日**的最大值，不是覆盖终点。"""
+    df = _ex_frame(Path(data_dir))
+    return None if df is None else _ex_range(df)
+
+
+def ex_window_state(data_dir: Path, entry: str, exit_: str) -> str:
+    """`(entry, exit]` 这个窗口在事件表上属于四种状态中的哪一种。
+
+    这是「不可判定」的**唯一判据来源**——`ex_factor_product` 也走它，两处不各写
+    一遍，否则改了一处就分叉。
+    """
+    rng = ex_range(Path(data_dir))
+    if rng is None:
+        return WINDOW_ABSENT
+    lo, hi = rng
+    if str(entry) < lo:
+        return WINDOW_BEFORE_START
+    if str(exit_) > hi:
+        return WINDOW_AFTER_END
+    return WINDOW_OK
+
+
 def ex_factor_product(data_dir: Path, symbols: list[str],
                       entry: str, exit_: str) -> dict[str, float] | None:
     """`(entry, exit]` 上每个标的的事件因子连乘；**窗口不可判定时返回 None**。
@@ -165,15 +238,15 @@ def ex_factor_product(data_dir: Path, symbols: list[str],
 
     判据是**表的整体时间范围**而不是「有没有查到行」：查不到行既可能是这段
     时间真没有事件，也可能是这段还没同步进来，只有范围能区分。
+
+    具体是三种不可判定里的哪一种，读 `ex_window_state`——那决定调用方该降级
+    还是该挂起。
     """
+    if ex_window_state(Path(data_dir), entry, exit_) != WINDOW_OK:
+        return None
     df = _ex_frame(Path(data_dir))
-    if df is None or df.is_empty():
-        return None
-    lo, hi = df["trade_date"].min(), df["trade_date"].max()
-    if not isinstance(lo, str) or not isinstance(hi, str):
-        return None
-    if str(entry) < lo or str(exit_) > hi:
-        return None
+    if df is None:
+        return None                 # 与上面同一判据；缓存命中，不会第二次读盘
     sub = df.filter(
         pl.col("symbol").is_in(list(symbols))
         & (pl.col("trade_date") > str(entry))
@@ -183,3 +256,84 @@ def ex_factor_product(data_dir: Path, symbols: list[str],
         for sym, val in sub.group_by("symbol").agg(pl.col("ex_factor").product()).iter_rows():
             out[str(sym)] = float(val)
     return out
+
+
+def ex_window_readings(data_dir: Path, symbol: str,
+                       entry: str, exit_: str) -> dict[str, Any]:
+    """一条结算该随行保存的事件表读数：表端点 + 本窗口内该标的的事件行数。
+
+    这三个键的用途各不相同，缺一个都会让事后核对退化成猜：
+
+    - `ex_table_first` / `ex_table_last`：**当时的表长什么样**。它们替代不了
+      指针，但也不需要指针——记录的是一行结算读到的字节范围，不是「哪次跑的」。
+      回执会被清理，账本不会，所以账本不能指向回执。
+    - `window_ex_events`：这一行的因子由几行事件构成。`0` 与 `None` 必须分开：
+      `0` 是「窗口判得出、确实没有除权」，`None` 是「窗口判不出」（缺表 / 早于
+      表首）。把后者写成 `0`，就与「确实没有除权」无法区分了。
+
+    窗口不可判定时行数为 `None`，端点仍然照记——端点本身是可读的，只是不足以
+    判定窗口。
+    """
+    rng = ex_range(Path(data_dir))
+    first, last = (None, None) if rng is None else rng
+    n: int | None = None
+    if ex_window_state(Path(data_dir), entry, exit_) == WINDOW_OK:
+        df = _ex_frame(Path(data_dir))
+        if df is not None:
+            n = df.filter(
+                (pl.col("symbol") == str(symbol))
+                & (pl.col("trade_date") > str(entry))
+                & (pl.col("trade_date") <= str(exit_))).height
+    return {"ex_table_first": first, "ex_table_last": last, "window_ex_events": n}
+
+
+def ex_coverage(data_dir: Path, calendar: list[str]) -> dict[str, Any] | None:
+    """事件表对日历的覆盖读数。缺表、空表、空日历都返回 `None`（都是「判不了」）。
+
+    **空洞只在表的声明范围内数**：范围取 `[max(日历首, 表首), min(日历末, 表末)]`。
+    表外那一段由 `endpoints_span_calendar` 回答，两处不重叠——否则一张表首晚于
+    日历首的表，会把表首之前的日子全记成「空洞」，同一个事实被数两遍，而两边的
+    修法完全不同（补表 vs 补同步）。
+
+    `gap_runs` 存的是**段**，不是段的计数。同一份 21 个空档，「日历日相差 ≤3 天」
+    切成 9 段最长 6 天，「交易日相邻」切成 12 段最长 5 天——两种切法都合理，
+    所以只存数字的话，读的人连这个数字是怎么切出来的都无法还原。段一旦写进
+    只增不改的回执，少一维就永久缺一维；存在这里则可以随时重切。
+
+    `future_dated_rows` 是表里晚于日历末日的行数（已公告、还没走到的除权日）。
+    健康状态下它就大于 0，所以它只是读数不是告警——把它当健康判据会天天红。
+    """
+    if not calendar:
+        return None
+    df = _ex_frame(Path(data_dir))
+    if df is None or df.is_empty():
+        return None
+    rng = _ex_range(df)
+    if rng is None:
+        return None
+    first, last = rng
+    dated = set(df["trade_date"].unique().to_list())
+
+    lo, hi = max(calendar[0], first), min(calendar[-1], last)
+    span = [d for d in calendar if lo <= d <= hi]
+    runs: list[list[str]] = []
+    cur: list[str] = []
+    for day in span:
+        if day in dated:
+            if cur:
+                runs.append(cur)
+                cur = []
+        else:
+            cur.append(day)
+    if cur:
+        runs.append(cur)
+
+    return {
+        "ex_table_first": first,
+        "ex_table_last": last,
+        "ex_rows": df.height,
+        "future_dated_rows": df.filter(pl.col("trade_date") > calendar[-1]).height,
+        "gap_sessions": sum(len(r) for r in runs),
+        "gap_runs": [[r[0], r[-1]] for r in runs],
+        "gap_max_run": max((len(r) for r in runs), default=0),
+    }

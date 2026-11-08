@@ -157,9 +157,27 @@ def _median_ret(data_dir: Path, entry: str, exit_: str) -> float | None:
     return val
 
 
+#: 挂起的原因。`pending` 一个数字答不出「为什么还没结算」，而四种成因要触发的
+#: 动作相反：未到期什么都不用做；停牌等复牌；**窗口没被事件表覆盖则要去查同步**。
+#: 合成一个计数时，「今天结算了 0 条」与「今天该结算 20 条但一张表没跟上」
+#: 在日志里长得一样。
+PENDING_NOT_DUE = "not_due"
+PENDING_ENTRY_MISSING = "entry_missing"
+PENDING_EXIT_MISSING = "exit_missing"
+PENDING_WINDOW_UNCOVERED = "window_uncovered"
+PENDING_REASONS = (PENDING_NOT_DUE, PENDING_ENTRY_MISSING,
+                   PENDING_EXIT_MISSING, PENDING_WINDOW_UNCOVERED)
+
+
 def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
-                 calendar: list[str]) -> dict[str, Any] | None:
-    """返回结算记录；`None` 表示尚未到期（等下一个交易日，不算失败）。"""
+                 calendar: list[str]) -> tuple[str | None, dict[str, Any] | None]:
+    """返回 `(挂起原因, 结算记录)`；第二个为 `None` 表示这次还不写。
+
+    **不是所有「不写」都一样。** 未到期、停牌、缺行情是数据还没到，等就对了；
+    `window_uncovered` 是事件表还没追上窗口——它同样要靠等，所以不进账本；
+    而缺表、窗口早于表首这两种等多久都不会变（表不向后生长），仍然降级并标注，
+    见 `bars.ex_window_state`。这个分界是本函数唯一新增的判断。
+    """
     as_of = str(card["as_of"])
     symbol = str(pick["symbol"])
     horizon = int(card["horizon_sessions"])
@@ -167,13 +185,13 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
 
     future = [i for i, day in enumerate(calendar) if day > as_of]
     if not future:
-        return None
+        return PENDING_NOT_DUE, None
     entry_i = future[0]
     entry = calendar[entry_i]
 
     row = bars.bar_map(data_dir, entry, [symbol]).get(symbol)
     if row is None:
-        return None                      # 入场日无行情：停牌或数据未到，等
+        return PENDING_ENTRY_MISSING, None    # 入场日无行情：停牌或数据未到，等
     fill = _fill(row, limit)
     meta = (card.get("forecast") or {}).get("pwin")
     meta = meta if isinstance(meta, dict) else {}
@@ -198,20 +216,37 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
         #: 真正算出收益的分支再覆盖它。放在 `base` 里是为了让每一行的键集一致：
         #: 账本逐行追加，键集随分支漂移，读的人只能靠 `.get()` 猜。
         "window_ex_factor": None,
+        #: 与上一条同源的三个读数：当时的表端点 + 本窗口的事件行数。
+        #: 它们答的是「这一行读到了什么」，不是「哪一次同步写的」——后者要跨表
+        #: 查一个可能已被清理的回执，而账本活得比回执久。见 `bars.ex_window_readings`。
+        "ex_table_first": None,
+        "ex_table_last": None,
+        "window_ex_events": None,
     }
     if fill["status"] != "FILLED":
-        return {**base, "fill": {**fill, "date": entry}, "exit": None,
-                "outcome": None, "brier": None, "logloss": None,
-                "excess": None, "benchmark_ret": None,
-                "median_ret": None, "excess_med": None, "outcome_med": None}
+        return None, {**base, "fill": {**fill, "date": entry}, "exit": None,
+                      "outcome": None, "brier": None, "logloss": None,
+                      "excess": None, "benchmark_ret": None,
+                      "median_ret": None, "excess_med": None, "outcome_med": None}
 
     exit_i = entry_i + horizon
     if exit_i >= len(calendar):
-        return None
+        return PENDING_NOT_DUE, None
     exit_day = calendar[exit_i]
     exit_row = bars.bar_map(data_dir, exit_day, [symbol]).get(symbol)
     if exit_row is None:
-        return None                      # 到期日停牌：等它复牌，而不是拿旧价假装结算
+        return PENDING_EXIT_MISSING, None   # 到期日停牌：等它复牌，而不是拿旧价假装结算
+
+    # 窗口晚于事件表的表末 = 同步还没追上。这一行**不写盘**：写了就被 `done`
+    # 键固化，而它本来只要再等一个交易日就能用带分红的收益算出来（§9.48）。
+    # 判据与 `ex_factor_product` 同源，不在这里另写一遍。
+    if bars.ex_window_state(Path(data_dir), entry, exit_day) == bars.WINDOW_AFTER_END:
+        return PENDING_WINDOW_UNCOVERED, None
+
+    # 事件表读数随行落盘：端点答「当时的表长什么样」，窗口行数答「这一行的因子
+    # 由几行构成」。窗口不可判定时行数是 None 而不是 0——0 会被读成「确实没有
+    # 除权」，而这一支恰恰是「判不出」。
+    base.update(bars.ex_window_readings(Path(data_dir), symbol, entry, exit_day))
 
     f_entry = bars.adj_factor(row)
     fill_price = float(fill["price"])
@@ -231,6 +266,9 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
     # 滞后窗口里入场、出场两端被同一个陈旧因子除过，因子约掉，分红整段消失，
     # 而这一行写完就被 `done` 键固化。事件表是输入而非派生列，不受那段滞后影响，
     # 所以它能把因子重新带回算式里。
+    #
+    # 走到这里时窗口只可能是「可判定」「缺表」「早于表首」三种：晚于表末的已经
+    # 在上面挂起了。后两种等下去不会变，所以仍然降级并标注 `price_basis`。
     window_fac = bars.ex_factor_product(data_dir, [symbol], entry, exit_day)
     if window_fac is not None and exit_raw_f is not None:
         fac: float | None = window_fac.get(symbol, 1.0)
@@ -244,11 +282,11 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
     else:
         fac = None
         if exit_raw_f is None:
-            return {**base, "fill": {**fill, "date": entry}, "exit": None,
-                    "outcome": None, "brier": None, "logloss": None,
-                    "excess": None, "benchmark_ret": None,
-                    "median_ret": None, "excess_med": None, "outcome_med": None,
-                    "invalid": "到期日缺少可用价格"}
+            return None, {**base, "fill": {**fill, "date": entry}, "exit": None,
+                          "outcome": None, "brier": None, "logloss": None,
+                          "excess": None, "benchmark_ret": None,
+                          "median_ret": None, "excess_med": None, "outcome_med": None,
+                          "invalid": "到期日缺少可用价格"}
         ret = exit_raw_f / fill_price - 1.0
         price_basis = "RAW"
 
@@ -263,7 +301,7 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
     # `outcome_med` 是 median 口径的因变量：只问"跑赢当天全市场中位数没有"，
     # 不问"涨没涨"。两个口径同时落盘，事后可以并列比较，不需要重跑结算。
     outcome_med = None if median_ret is None else (1 if ret > median_ret else 0)
-    return {
+    return None, {
         **base,
         "fill": {**fill, "date": entry},
         "exit": {"date": exit_day, "close": round(exit_close_f if exit_close_f is not None
@@ -312,6 +350,7 @@ def _settle_locked(data_dir: Path, *, as_of: str | None = None) -> dict[str, Any
     done = {str(r.get("key")) for r in load_settlements(Path(data_dir))}
     appended: list[dict[str, Any]] = []
     pending = 0
+    reasons: dict[str, int] = {r: 0 for r in PENDING_REASONS}
     considered = 0
     for card in cards:
         if as_of is not None and str(card.get("as_of")) > str(as_of):
@@ -321,18 +360,25 @@ def _settle_locked(data_dir: Path, *, as_of: str | None = None) -> dict[str, Any
             if key in done:
                 continue
             considered += 1
-            record = _settle_pick(Path(data_dir), card, pick, calendar)
+            reason, record = _settle_pick(Path(data_dir), card, pick, calendar)
             if record is None:
                 pending += 1
+                # 原因不在枚举里也要计数：静默丢弃一个未知原因，等于下次
+                # 「pending 涨了 3 条但四个桶都是 0」时无处可查。
+                reasons[str(reason)] = reasons.get(str(reason), 0) + 1
                 continue
             appended.append(record)
             done.add(key)
     written = append_settlements(Path(data_dir), appended)
+    cov = bars.ex_coverage(Path(data_dir), calendar) or {}
     return {
         "cards": len(cards),
         "considered": considered,
         "written": written,
         "pending": pending,
+        #: 挂起按成因分开。`not_due` 是正常等待；`window_uncovered` 是同步落后
+        #: ——它不写盘正是为了等表追上来（§9.48）。两者都是「没写」，动作不同。
+        "pending_reasons": reasons,
         "not_filled": sum(1 for r in appended if r["fill"]["status"] == "NOT_FILLED"),
         # median 口径需要当天全市场分区；缺分区时 outcome_med 为 None，
         # 该样本在 median 计分里被排除。这里如实报告覆盖率，而不是让它静默缩水。
@@ -342,6 +388,36 @@ def _settle_locked(data_dir: Path, *, as_of: str | None = None) -> dict[str, Any
         #: 与「今天结算了 20 条不含分红的」在日志里长得一样。
         "return_basis": {b: sum(1 for r in appended if r.get("price_basis") == b)
                          for b in ("EVENT", "ADJUSTED", "RAW")},
+        #: 事件表对日历的覆盖读数。**它回答的是「降级还剩几个入口」**：
+        #: 窗口可判定的充分条件是表首 ≤ 日历首日且表末 ≥ 日历末日。两个条件
+        #: 有一个不成立，就有一整段窗口注定降级——那时该修同步，不是修结算。
+        #:
+        #: 表末来自**已公告的除权日**，不是覆盖终点：同步停摆后，表末要等
+        #: 已公告的那几天走完才会落到日历末日前，所以这一格是滞后指标。
+        #:
+        #: `gap_*` 三项数的是**表声明范围内**没有事件行的交易日。它是读数不是
+        #: 告警：A 股除权淡季（1–4 月）里成片的无事件日是正常形态，拿它报警
+        #: 会在每个淡季连响十几次。它的用途是区分「12 个短洞」与「一段长黑洞」
+        #: ——两者要采取的动作相反，而 `gap_sessions` 一个标量分不开。
+        "event_coverage": {
+            "ex_table_first": cov.get("ex_table_first"),
+            "ex_table_last": cov.get("ex_table_last"),
+            "ex_rows": cov.get("ex_rows"),
+            "future_dated_rows": cov.get("future_dated_rows"),
+            "gap_sessions": cov.get("gap_sessions"),
+            "gap_runs": cov.get("gap_runs"),
+            "gap_max_run": cov.get("gap_max_run"),
+            "calendar_first": calendar[0] if calendar else None,
+            "calendar_last": calendar[-1] if calendar else None,
+            #: 汇总格，不是判据。真判据是 `ex_window_state` 的逐窗口比较；
+            #: 这一格只给操作员一眼看出「表的端点是否盖住日历」，改它的名字
+            #: 或拆开都不影响结算。`covers_*` 这个名字误导过一轮：它读起来像
+            #: 「覆盖了」，实际只答端点。
+            "endpoints_span_calendar": bool(
+                cov and calendar
+                and cov["ex_table_first"] <= calendar[0]
+                and cov["ex_table_last"] >= calendar[-1]),
+        },
     }
 
 
