@@ -307,6 +307,42 @@ def test_max_hold_uses_trading_bars_not_calendar_days(env, monkeypatch):
     assert not [o for o in paper.load_orders(env.root) if o["side"] == "sell"]
 
 
+def test_unsupported_paper_backend_skips_entries_but_keeps_max_hold_exit(env, monkeypatch):
+    from app.custom.paper_execution import service as service_module
+
+    bind(env, overrides={"max_hold_days": 1})
+    env.service.tick(NOW)
+    fill_buys(env, monkeypatch, day=28)
+    monkeypatch.setattr(
+        env.service,
+        "_holding_days",
+        lambda positions, _day: {
+            symbol: 1 for symbol, position in positions.items() if position["qty"] > 0
+        },
+    )
+    set_bar(env, 28, exit=False)
+    monkeypatch.setattr(
+        service_module,
+        "strategy_capability",
+        lambda _backend, _feature: {"supported": False, "reason": "测试后端不支持模拟盘"},
+    )
+    monkeypatch.setattr(
+        env.engine, "run", lambda *_a, **_k: pytest.fail("unsupported backend evaluated")
+    )
+    existing_ids = {o["id"] for o in paper.load_orders(env.root)}
+    env.service.tick(NOW.replace(day=28))
+    state = env.service.get("default")
+    # 历史绑定保留启用, 只跳过新入场; 保护性退出仍须执行。
+    assert state["enabled"] is True, state["message"]
+    assert state["status"] == "running"
+    assert "已跳过新入场" in state["message"]
+    new_orders = [
+        o for o in paper.load_orders(env.root) if o["id"] not in existing_ids
+    ]
+    assert len(new_orders) == 6
+    assert all(o["side"] == "sell" and o["source"].endswith(":max_hold") for o in new_orders)
+
+
 def test_fee_drift_and_manual_orders_pause_only_managed_account(env):
     bind(env)
     paper.update_settings(env.root, "default", commission_pct=0.0009)

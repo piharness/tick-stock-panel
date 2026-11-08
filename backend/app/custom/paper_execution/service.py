@@ -13,6 +13,7 @@ from pathlib import Path
 from app.market_time import CN_TZ, cn_now, in_continuous_session
 from app.services.fs_utils import atomic_write_text
 from app.strategy import paper, paper_auto
+from app.strategy.capabilities import strategy_capability
 
 from .snapshot import DIFFERENCES, check_revision, digest, make_snapshot
 
@@ -258,53 +259,79 @@ class ExecutionService:
             ):
                 state.update(status="waiting", message="收盘快照尚未确认，请检查行情源与数据同步")
             else:
-                key = (state["revision"], day)
-                if key not in results:
-                    snapshot = state["snapshot"]
-                    context = self.screener.build_strategy_context(
-                        self.engine,
-                        day,
-                        [snapshot["strategy_id"]],
-                        timeframe="1d",
-                        params_map={snapshot["strategy_id"]: snapshot["params"]},
-                        overrides_map={snapshot["strategy_id"]: snapshot["overrides"]},
-                    )
-                    if context.current is None or context.current.is_empty():
-                        raise ValueError("当日日线数据为空")
-                    if "raw_close" not in context.current.columns:
-                        raise ValueError("缺少不复权价格，不能下单")
-                    if context.current["date"].min() != day or context.current["date"].max() != day:
-                        raise ValueError("策略输入日期不一致，已停止下单")
-                    if (
-                        self.engine.get(snapshot["strategy_id"]).execution_backend
-                        != "matrix_native"
-                    ):
-                        required = (
-                            snapshot["overrides"]["entry_signals"]
-                            + snapshot["overrides"]["exit_signals"]
-                        )
-                        missing = [
-                            s
-                            for s in required
-                            if (s if s.startswith(("signal_", "csg_")) else f"signal_{s}")
-                            not in context.current.columns
-                        ]
-                        if missing:
-                            raise ValueError("买卖信号依赖尚不可用: " + ", ".join(missing))
-                    result = self.engine.run(
-                        snapshot["strategy_id"],
-                        context,
-                        pool=snapshot["symbols"],
-                        params=snapshot["params"],
-                        overrides=snapshot["overrides"],
-                    )
-                    results[key] = (result, context.current)
-                result, frame = results[key]
-                check_revision(self.data_dir, self.engine, state["snapshot"])
-                self._daily_orders(state, result, frame, day.isoformat())
-                state.update(
-                    last_bar=day.isoformat(), status="running", message="当日逐股信号已处理"
+                snapshot = state["snapshot"]
+                strategy = self.engine.get(snapshot["strategy_id"])
+                paper_capability = strategy_capability(
+                    strategy.execution_backend, "paper"
                 )
+                if not paper_capability["supported"]:
+                    # 历史绑定可能指向升级前允许、当前不支持的后端。不自动停用
+                    # 绑定 (停用会同时停掉 _risk_tick): 只跳过新入场, 保留
+                    # 止损/止盈/移动止损与 max_hold 退出。
+                    key = (state["revision"], day, "exit_only")
+                    if key not in results:
+                        context = self.screener.build_strategy_context(
+                            self.engine, day, [], timeframe="1d"
+                        )
+                        if context.current is None or context.current.is_empty():
+                            raise ValueError("当日日线数据为空")
+                        if "raw_close" not in context.current.columns:
+                            raise ValueError("缺少不复权价格，不能下单")
+                        results[key] = context.current
+                    self._exit_orders(
+                        state, results[key], day.isoformat(), exits=set()
+                    )
+                    state.update(
+                        last_bar=day.isoformat(),
+                        status="running",
+                        message=(
+                            f"{paper_capability['reason']}；已跳过新入场，保留保护性风控"
+                        ),
+                    )
+                else:
+                    key = (state["revision"], day)
+                    if key not in results:
+                        context = self.screener.build_strategy_context(
+                            self.engine,
+                            day,
+                            [snapshot["strategy_id"]],
+                            timeframe="1d",
+                            params_map={snapshot["strategy_id"]: snapshot["params"]},
+                            overrides_map={snapshot["strategy_id"]: snapshot["overrides"]},
+                        )
+                        if context.current is None or context.current.is_empty():
+                            raise ValueError("当日日线数据为空")
+                        if "raw_close" not in context.current.columns:
+                            raise ValueError("缺少不复权价格，不能下单")
+                        if context.current["date"].min() != day or context.current["date"].max() != day:
+                            raise ValueError("策略输入日期不一致，已停止下单")
+                        if strategy.execution_backend != "matrix_native":
+                            required = (
+                                snapshot["overrides"]["entry_signals"]
+                                + snapshot["overrides"]["exit_signals"]
+                            )
+                            missing = [
+                                s
+                                for s in required
+                                if (s if s.startswith(("signal_", "csg_")) else f"signal_{s}")
+                                not in context.current.columns
+                            ]
+                            if missing:
+                                raise ValueError("买卖信号依赖尚不可用: " + ", ".join(missing))
+                        result = self.engine.run(
+                            snapshot["strategy_id"],
+                            context,
+                            pool=snapshot["symbols"],
+                            params=snapshot["params"],
+                            overrides=snapshot["overrides"],
+                        )
+                        results[key] = (result, context.current)
+                    result, frame = results[key]
+                    check_revision(self.data_dir, self.engine, state["snapshot"])
+                    self._daily_orders(state, result, frame, day.isoformat())
+                    state.update(
+                        last_bar=day.isoformat(), status="running", message="当日逐股信号已处理"
+                    )
         except Exception as exc:  # noqa: BLE001 — 金融计算无法确定时停用该绑定
             logger.warning(
                 "paper execution paused for %s: %s", state["account"], type(exc).__name__
@@ -375,16 +402,12 @@ class ExecutionService:
             orders.append(order)
         return order
 
-    def _daily_orders(self, state: dict, result, frame, day: str) -> None:
+    def _exit_orders(self, state: dict, frame, day: str, *, exits: set[str]) -> None:
+        """处理退出路径 (信号退出 + max_hold); 不产生任何新入场。"""
         snapshot = state["snapshot"]
         prices = {
             r["symbol"]: r["raw_close"] for r in frame.select("symbol", "raw_close").to_dicts()
         }
-        if result.as_of.isoformat() != day:
-            raise ValueError("策略结果日期不一致")
-        entries = {r["symbol"] for r in result.entry_signal_hits}
-        exits = {r["symbol"] for r in result.exit_signal_hits}
-        # 不使用池进出事件；无显式买点的策略由引擎给出候选入场命中。
         with paper.PAPER_LOCK:
             positions_before = paper.load_positions(self.data_dir, state["account"])
         hold_days = (
@@ -393,7 +416,7 @@ class ExecutionService:
             else {}
         )
         with paper.PAPER_LOCK:
-            acc, positions, orders = self._check_account(state)
+            _, positions, orders = self._check_account(state)
             for symbol, pos in positions.items():
                 if pos["qty"] <= 0:
                     continue
@@ -410,6 +433,20 @@ class ExecutionService:
                     )
             self._save(state)
             self._sell_intents(state, positions, orders, prices, attempt_day=day)
+
+    def _daily_orders(self, state: dict, result, frame, day: str) -> None:
+        snapshot = state["snapshot"]
+        prices = {
+            r["symbol"]: r["raw_close"] for r in frame.select("symbol", "raw_close").to_dicts()
+        }
+        if result.as_of.isoformat() != day:
+            raise ValueError("策略结果日期不一致")
+        entries = {r["symbol"] for r in result.entry_signal_hits}
+        exits = {r["symbol"] for r in result.exit_signal_hits}
+        # 不使用池进出事件；无显式买点的策略由引擎给出候选入场命中。
+        self._exit_orders(state, frame, day, exits=exits)
+        with paper.PAPER_LOCK:
+            acc, positions, orders = self._check_account(state)
             held = {s for s, p in positions.items() if p["qty"] > 0}
             pending = {
                 o["symbol"] for o in orders if o["side"] == "buy" and o["status"] == "pending"
