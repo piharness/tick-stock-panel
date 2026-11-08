@@ -114,7 +114,8 @@ def test_one_corrupt_file_falls_back_to_only_its_day(env):
     assert env.calls == [([A, B], BAD_DAY, BAD_DAY + timedelta(days=2), "stock")]
     assert result["status"] == "clean"
     backups = list((env.root / "integrity_backups").rglob("*.parquet"))
-    assert backups[0].read_bytes() == b"unreadable whole month"
+    # 修补会按坏日逐日备份同一月分区; rglob 顺序依文件系统而定, 不能假设坏文件排第一。
+    assert any(p.read_bytes() == b"unreadable whole month" for p in backups)
 
 
 @pytest.mark.parametrize("cancel", [False, True])
