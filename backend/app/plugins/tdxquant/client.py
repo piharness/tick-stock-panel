@@ -293,9 +293,16 @@ class TdxQuantClient:
             raise TdxQuantError(f"get_cw_data({code}) 返回异常结构: {type(out)!r}")
         if not out:
             return []
-        dates, values, types = out.get("Date"), out.get("Value"), out.get("Type", [])
-        if (not all(isinstance(v, list) for v in (dates, values, types))
-                or len(dates) != len(values)):
+        # 窗口内无除权事件时服务端只回 {"Value": []}(无 Date/Type 键, 实测),
+        # 与 SDK get_divid_factors 的 .get(key, []) 语义一致按空列表处理。
+        if "Date" not in out and "Value" not in out:
+            raise TdxQuantError(f"get_cw_data({code}) 返回未知结构: {sorted(out)[:5]}")
+        dates, values, types = out.get("Date") or [], out.get("Value") or [], out.get("Type") or []
+        if not all(isinstance(v, list) for v in (dates, values, types)):
+            raise TdxQuantError(f"get_cw_data({code}) Date/Value/Type 列结构异常")
+        if not dates and not values:
+            return []  # 无事件; 有 Date 无 Value(或反之)仍按结构异常拒绝
+        if len(dates) != len(values):
             raise TdxQuantError(f"get_cw_data({code}) Date/Value/Type 列结构异常")
         records = []
         fields = ("Bonus", "AllotPrice", "ShareBonus", "Allotment")

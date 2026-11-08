@@ -395,8 +395,15 @@ def sync_etf_adj_factor(
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     on_chunk_done=None,
+    scope: str = "symbols",
 ) -> tuple[int, list[str]]:
-    """同步 ETF 复权因子；失败由调用方降级为 warning。"""
+    """同步 ETF 复权因子；失败由调用方降级为 warning。
+
+    `scope` 必须**穿过**这一层, 不能在这里写死: 这是一层透传包装, 它一旦替调用方
+    声明 `universe`, ETF 回执就会在调用方只同步了部分 ETF 时也宣称全市场已覆盖。
+    漏传同样危险——默认 `symbols` 会让 ETF 永远没有覆盖, 而 ETF 恰恰是最需要这个
+    字段的地方(自定义源对 ETF 空返回, 与「该 ETF 无除权」无法区分)。
+    """
     return kline_sync.sync_adj_factor(
         symbols,
         repo,
@@ -405,6 +412,7 @@ def sync_etf_adj_factor(
         end_time=end_time,
         on_chunk_done=on_chunk_done,
         asset_type="etf",
+        scope=scope,
     )
 
 

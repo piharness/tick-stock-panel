@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 
 import polars as pl
@@ -26,6 +27,7 @@ from app.market_time import cn_today
 from app.services import index_sync, instrument_sync, kline_sync
 from app.services import preferences as _prefs
 from app.tickflow.capabilities import Cap, CapabilitySet
+from app.tickflow.partitions import list_partition_dates, locate_partition_dir
 from app.tickflow.pools import get_pool
 from app.tickflow.repository import KlineRepository
 
@@ -48,7 +50,12 @@ def _prune_partial_enriched_partitions(daily_dir: Path, enriched_dir: Path) -> l
 
     pruned: list[str] = []
     for part in enriched_dir.glob("date=*"):
-        daily_part = daily_dir / part.stem
+        try:
+            day = date.fromisoformat(part.stem.split("=")[1])
+        except ValueError:
+            continue
+        # kline_daily 月分区: 定位到日所在的月分区 (缺席回退日分区), 数据再按 date 过滤到当日。
+        daily_part = locate_partition_dir(daily_dir, "kline_daily", day)
         if not daily_part.exists():
             continue
         try:
@@ -58,8 +65,10 @@ def _prune_partial_enriched_partitions(daily_dir: Path, enriched_dir: Path) -> l
                 schema = pl.read_parquet_schema(path)
                 if not {"symbol", "open", "high"}.issubset(schema):
                     raise ValueError("daily 缺少 symbol/open/high, 无法判断有效标的覆盖")
-                columns = [c for c in ("symbol", "open", "high", "volume", "amount") if c in schema]
+                columns = [c for c in ("symbol", "date", "open", "high", "volume", "amount") if c in schema]
                 daily = pl.read_parquet(path, columns=columns)
+                if "date" in daily.columns:
+                    daily = daily.filter(pl.col("date") == day)
                 expected.update(filter_halt_days(daily)["symbol"].drop_nulls().to_list())
             actual: set[str] = set()
             for path in part.glob("*.parquet"):
@@ -86,20 +95,25 @@ def _prune_stale_price_partitions(
     """
     import shutil
 
-    common = sorted(
-        (
-            p.stem.split("=", 1)[1]
-            for p in enriched_dir.glob("date=*")
-            if (daily_dir / p.stem).exists()
-        ),
-        reverse=True,
-    )[:max_dates]
+    candidates: list[str] = []
+    for p in enriched_dir.glob("date=*"):
+        try:
+            day = date.fromisoformat(p.stem.split("=", 1)[1])
+        except ValueError:
+            continue
+        if locate_partition_dir(daily_dir, "kline_daily", day).exists():
+            candidates.append(day.isoformat())
+    common = sorted(candidates, reverse=True)[:max_dates]
     pruned: list[str] = []
     for ds in common:
         try:
-            daily = pl.read_parquet(
-                daily_dir / f"date={ds}" / "*.parquet", columns=["symbol", "close"]
-            )
+            day = date.fromisoformat(ds)
+            part_dir = locate_partition_dir(daily_dir, "kline_daily", day)
+            schema = pl.read_parquet_schema(next(part_dir.glob("*.parquet")))
+            columns = [c for c in ("symbol", "date", "close") if c in schema]
+            daily = pl.read_parquet(part_dir / "*.parquet", columns=columns)
+            if "date" in daily.columns:
+                daily = daily.filter(pl.col("date") == day)
             enr = pl.read_parquet(
                 enriched_dir / f"date={ds}" / "*.parquet", columns=["symbol", "raw_close"]
             )
@@ -431,6 +445,8 @@ def run_now(
             universe, repo, capset,
             start_time=adj_start, end_time=adj_end,
             on_chunk_done=_adj_chunk_progress,
+            # 这里是全市场清单: 声明 universe 才允许回执为「未失败的标的」提供覆盖。
+            scope="universe",
         )
         if affected_symbols:
             _refresh_single_view(repo, "adj_factor")
@@ -456,7 +472,9 @@ def run_now(
     enriched_dir = repo.store.data_dir / "kline_daily_enriched"
     enriched_exists = enriched_dir.exists() and any(enriched_dir.glob("date=*"))
     daily_dir = repo.store.data_dir / "kline_daily"
-    daily_days = len(list(daily_dir.glob("date=*"))) if daily_dir.exists() else 0
+    # 月分区后目录数是月数而非天数; 这里与 enriched 目录数比较判方向,
+    # 必须用真实日期数 (月分区读 date 列), 否则 121 < 367 会把增量检测关死。
+    daily_days = len(list_partition_dates(daily_dir)) if daily_dir.exists() else 0
     prev_enriched_days = len(list(enriched_dir.glob("date=*"))) if enriched_exists else 0
 
     # 部分分区修复 (#223) + 收盘价过期分区修复: 删除被实时合并提前创建、覆盖不全
@@ -481,8 +499,12 @@ def run_now(
     backward_extension = False
 
     if daily_days > prev_enriched_days and enriched_exists:
-        daily_dates = sorted(d.stem.split("=")[1] for d in daily_dir.glob("date=*"))
-        enriched_dates = sorted(d.stem.split("=")[1] for d in enriched_dir.glob("date=*"))
+        # kline_daily 月分区的真实日期从数据 date 列读; enriched 保持日分区,
+        # 目录名即日期。
+        daily_dates = sorted(list_partition_dates(daily_dir))
+        enriched_dates = sorted(
+            date.fromisoformat(d.stem.split("=")[1]) for d in enriched_dir.glob("date=*")
+        )
         earliest_enriched = enriched_dates[0]
         new_dates = set(daily_dates) - set(enriched_dates)
         if new_dates:
@@ -619,6 +641,8 @@ def run_now(
                             capset,
                             start_time=adj_start,
                             end_time=adj_end,
+                            # 清单来自 ETF 工具表, 是全量: 透传一层不能替调用方改口。
+                            scope="universe",
                         )
                         etf_adj_symbols = len(affected_etfs)
                         emit("sync_index", 88, f"ETF 除权因子完成,{etf_adj_symbols} 只")
@@ -932,6 +956,7 @@ def run_adj_factor_sync(
         universe, repo, capset,
         start_time=start, end_time=datetime.now(),
         on_chunk_done=_adj_chunk_progress,
+        scope="universe",
     )
     affected = sorted(set(affected))
     _refresh_single_view(repo, "adj_factor")

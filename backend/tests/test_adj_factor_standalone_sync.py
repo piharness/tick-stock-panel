@@ -38,9 +38,14 @@ def _patch_common(monkeypatch, tmp_path, *, written=2, affected=("600519.SH",),
 
     captured_sync: dict = {}
 
-    def fake_sync(symbols, repo, capset, start_time=None, end_time=None, on_chunk_done=None):
+    def fake_sync(symbols, repo, capset, start_time=None, end_time=None,
+                  on_chunk_done=None, scope=None):
         captured_sync["symbols"] = symbols
         captured_sync["start_time"] = start_time
+        # 调用方必须自己声明 universe: 这一层拿的是全市场清单, 但 `sync_adj_factor`
+        # 的默认是 `symbols`（fail-closed）。漏传不会报错, 只会让回执永远不给覆盖
+        # ——一个「绿但无感知」的降级, 所以在这里钉住。
+        captured_sync["scope"] = scope
         return written, list(affected)
 
     monkeypatch.setattr(kline_sync, "sync_adj_factor", fake_sync)
@@ -72,6 +77,7 @@ def test_full_history_window_and_partial_recompute(monkeypatch, tmp_path):
 
     assert sync["start_time"] is None, "无本地日K起点时不钳制, 仍拉全历史"
     assert sync["symbols"] == ["600519.SH", "000001.SZ"]
+    assert sync["scope"] == "universe", "全市场清单必须显式声明, 否则回执不给覆盖"
     assert recompute["symbols"] == ["600519.SH"], "只重算因子变化个股 (与管道 adj 增量分支同语义)"
     assert invalidated == ["adj_factor", "enriched"]
     assert refreshed == ["adj_factor", "kline_enriched"]

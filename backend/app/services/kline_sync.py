@@ -21,11 +21,13 @@ from typing import Any
 import polars as pl
 
 from app.data_providers.base import AssetType, ProviderRequestError
+from app.decision import receipt as sync_receipt
 from app.indicators.pipeline import filter_halt_days
 from app.market_time import CN_TZ, cn_now, cn_today
 from app.services import minute_adjust, preferences
 from app.tickflow.capabilities import Cap, CapabilitySet
 from app.tickflow.client import get_client
+from app.tickflow.partitions import partition_dirname
 from app.tickflow.rate_limits import chunked, resolve_limit, sleep_between_batches
 from app.tickflow.repository import KlineRepository, replace_with_retry
 
@@ -34,6 +36,11 @@ logger = logging.getLogger(__name__)
 # 自定义分钟源流式落盘的块大小(标的数): 每块拉完立即 on_segment 写盘,
 # 长任务中断只丢当前块; 与 cnfree 内部 _HIST_SYMBOL_BATCH 同量级。
 _CUSTOM_MINUTE_CHUNK = 50
+
+# 流式日K落盘暂存的攒批块数(标的数)。逐块写盘会让「标的数 × 交易日数」个
+# 微型 parquet 文件爆炸(5890 只 × 250 天 ≈ 147 万个, 实测仅写盘就 >80 分钟,
+# 远超看门狗的进度停滞阈值), 攒批后每块只产生「交易日数」个文件。
+_STAGING_FLUSH_CHUNKS = 256
 
 
 def _log_cap_unavailable(cap_id: str, action: str) -> None:
@@ -469,17 +476,37 @@ def _persist_daily_chunks(chunks, repo: KlineRepository) -> int:
     _sweep_stale_daily_staging(staging_base)
     root = staging_base / uuid.uuid4().hex
     written = 0
+    pending: list[pl.DataFrame] = []
+    flush_no = 0
+
+    def _flush() -> None:
+        """攒够一批再落盘: 每个月分区目录只多一个文件, 而不是每个标的一个。
+
+        staging 与正式 kline_daily 同按月分区组织, 提交阶段才能目录对目录
+        搬运; 文件名带日期, 避免同月多次 flush 互相覆盖。
+        """
+        nonlocal flush_no
+        if not pending:
+            return
+        merged = pl.concat(pending, how="diagonal_relaxed") if len(pending) > 1 else pending[0]
+        pending.clear()
+        for date_df in merged.partition_by("date"):
+            dt = date_df["date"][0]
+            ds = dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
+            out = root / partition_dirname("kline_daily", dt) / f"part-{flush_no}-{ds}.parquet"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            date_df.write_parquet(out)
+        flush_no += 1
+
     try:
-        for index, df in enumerate(chunks):
+        for df in chunks:
             if df.is_empty():
                 continue
-            for date_df in df.partition_by("date"):
-                dt = date_df["date"][0]
-                ds = dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
-                out = root / f"date={ds}" / f"part-{index}.parquet"
-                out.parent.mkdir(parents=True, exist_ok=True)
-                date_df.write_parquet(out)
-                written += date_df.height
+            pending.append(df)
+            written += df.height
+            if len(pending) >= _STAGING_FLUSH_CHUNKS:
+                _flush()
+        _flush()
 
         for date_dir in sorted(root.glob("date=*")):
             files = sorted(date_dir.glob("*.parquet"))
@@ -685,19 +712,85 @@ def _merge_adj_factor_store(out: Path, new_data: pl.DataFrame) -> tuple[int, lis
     return merged.height - before, changed_symbols
 
 
+def _store_reading(path: Path) -> dict[str, Any]:
+    """合并后表的读数(行数 / 表首 / 表末)。读不到就记 None——这里不猜。
+
+    读数在合并**之后**取,所以它是「这次同步离开时表是什么样」,不是「这次同步
+    写了什么」。两者不能互相推导: 增量同步常常写了 0 行但表已经变了(重复行
+    被 unique 覆盖),也可能写了 3 行而表首早在两年前。
+    """
+    none = {"rows": None, "first": None, "last": None}
+    if not path.is_file():
+        return none
+    try:
+        row = (pl.scan_parquet(str(path))
+               .select(pl.len().alias("n"),
+                       pl.col("trade_date").min().alias("lo"),
+                       pl.col("trade_date").max().alias("hi"))
+               .collect().row(0, named=True))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("adj_factor 表读数失败: %s", e)
+        return none
+
+    def _iso(v: Any) -> str | None:
+        if v is None:
+            return None
+        return v.isoformat() if hasattr(v, "isoformat") else str(v)
+
+    return {"rows": int(row["n"]), "first": _iso(row["lo"]), "last": _iso(row["hi"])}
+
+
+def _record_adj_receipt(*, data_dir: Path, asset_type: str, provider_name: str,
+                        scope: str, symbols: list[str],
+                        start_time: datetime | None, end_time: datetime | None,
+                        outcome: str, failed: list[str],
+                        store: dict[str, Any] | None) -> None:
+    """写一行同步回执。**失败只降级成 WARNING**: 回执丢一条不该让同步失败。
+
+    没有请求区间就不写。区间是回执的语义单位——一条不知道「问过哪一段」的回执,
+    读侧除了把它记成坏行之外无事可做。
+    """
+    if start_time is None or end_time is None:
+        logger.info("adj_factor 回执跳过: 没有请求区间(start/end 缺一)")
+        return
+    try:
+        row = sync_receipt.build_receipt(
+            asset_type=asset_type, provider=provider_name, scope=scope,
+            requested=symbols,
+            requested_from=start_time.date().isoformat(),
+            requested_to=end_time.date().isoformat(),
+            outcome=outcome, failed_symbols=failed, store=store,
+        )
+        sync_receipt.append_receipt(Path(data_dir), row)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("adj_factor 回执写入失败: %s", e)
+
+
 def sync_adj_factor(symbols: list[str], repo: KlineRepository,
                     capset: CapabilitySet,
                     start_time: datetime | None = None,
                     end_time: datetime | None = None,
                     on_chunk_done: Callable[[int, int], None] | None = None,
-                    asset_type: str = "stock") -> tuple[int, list[str]]:
+                    asset_type: str = "stock",
+                    failed_out: list[str] | None = None,
+                    scope: str = sync_receipt.SCOPE_SYMBOLS) -> tuple[int, list[str]]:
     """同步除权因子(Starter+)。SDK 接口:`tf.klines.ex_factors(symbols=...)`。
 
     支持增量: 传 start_time/end_time 只拉取该时间范围内的新除权事件。
     返回 (写入行数, 受影响的 symbol 列表) — 供 enriched 局部重算使用。
     受影响 = 因子新增或值变化 (ex_factor diff) 的标的; 仅事件明细列
     (dividend 等) 回填不改变复权价, 不计入受影响列表。
+
+    `failed_out` 是出参,不改变返回元组: 失败的标的不在 `affected` 里, 而
+    `affected` 是 enriched 的重算清单, 语义不同。调用方要的是「哪些标的这次
+    没拿到」, 混进 `affected` 会让它们被重算。
+
+    `scope` 是**调用方声明的意图**(`universe` = 全市场清单), 不是从
+    `len(symbols)` 反推的。默认 `symbols`: 声明不足时读侧不给任何标的记覆盖,
+    这个方向可以补; 反过来是凭空宣称已同步, 补不回来。
     """
+    if scope not in sync_receipt.SCOPES:
+        raise ValueError(f"scope 必须是 {sync_receipt.SCOPES} 之一, 收到 {scope!r}")
     if not symbols:
         return 0, []
 
@@ -722,17 +815,51 @@ def sync_adj_factor(symbols: list[str], repo: KlineRepository,
                         provider_name,
                     )
                 else:
+                    # 自定义源不报逐标的失败，而它对**整份 dump** 的失败也是空返回
+                    # （扶摇把 `FuyaoError` 吞成空表）。空返回因此同时代表「没有
+                    # 除权」与「没拿到」，两者在返回值上同形 ⇒ outcome 只能是
+                    # `unverified`：请求发生了，但覆盖不可判定。
+                    _record_adj_receipt(
+                        data_dir=repo.store.data_dir, asset_type=asset_type,
+                        provider_name=provider_name, scope=scope, symbols=symbols,
+                        start_time=start_time, end_time=end_time,
+                        outcome=sync_receipt.OUTCOME_UNVERIFIED, failed=[],
+                        store={"created": False,
+                               **_store_reading(repo.store.data_dir / "adj_factor" / "all.parquet")},
+                    )
                     return 0, []
             else:
                 factor_dir = "adj_factor_etf" if asset_type == "etf" else "adj_factor"
-                added, affected = _merge_adj_factor_store(
-                    repo.store.data_dir / factor_dir / "all.parquet", new_data
+                store = repo.store.data_dir / factor_dir / "all.parquet"
+                created = not store.exists()
+                added, affected = _merge_adj_factor_store(store, new_data)
+                _record_adj_receipt(
+                    data_dir=repo.store.data_dir, asset_type=asset_type,
+                    provider_name=provider_name, scope=scope, symbols=symbols,
+                    start_time=start_time, end_time=end_time,
+                    # 拿到行不代表拿到了**全**：前收盘价缺、涨跌停自检剔除的标的
+                    # 会静默缺席，而这份缺席与「这段时间没有除权」同形。所以同样
+                    # 记 `unverified`——它说的是「这次请求干了活」，不是「覆盖了」。
+                    outcome=sync_receipt.OUTCOME_UNVERIFIED, failed=[],
+                    store={"created": created, **_store_reading(store)},
                 )
                 return added, affected
-        # 自定义源未配置 adj_factor → 回退 TickFlow
+        # 自定义源未配置 adj_factor → 回退 TickFlow。
+        # 走到这里说明两件事之一: 没配这个数据集, 或它对 ETF 空返回。两种都由
+        # TickFlow 接手, 回执里的 provider 必须跟着改口——记着原来的名字, 读的人
+        # 会去错的源上找这次同步。
+        provider_name = "tickflow"
 
     if not capset.has(Cap.ADJ_FACTOR):
         _log_cap_unavailable("adj_factor", "除权因子同步")
+        # 请求没有发生: 记 skipped 而不是不记。空文件和「跑了但没权限」在账本读侧
+        # 长得一样, 而两者的动作相反(去授权 vs 去补数据)。
+        _record_adj_receipt(
+            data_dir=repo.store.data_dir, asset_type=asset_type,
+            provider_name=provider_name, scope=scope, symbols=symbols,
+            start_time=start_time, end_time=end_time,
+            outcome=sync_receipt.OUTCOME_SKIPPED, failed=[], store=None,
+        )
         return 0, []
 
     tf = get_client()
@@ -780,15 +907,40 @@ def sync_adj_factor(symbols: list[str], repo: KlineRepository,
         logger.warning("adj_factor 同步部分失败: %d/%d 标的未获取复权因子, 将保持旧复权价 (样例: %s)",
                        len(failed_syms), len(symbols), failed_syms[:10])
 
+    if failed_out is not None:
+        failed_out.extend(failed_syms)
+
+    factor_dir = "adj_factor_etf" if asset_type == "etf" else "adj_factor"
+    store = repo.store.data_dir / factor_dir / "all.parquet"
+
     if not all_dfs:
+        # 全部批次都失败时, `failed_syms` 里是整份清单; 一条都没失败却也没有数据,
+        # 那是「这段时间没有除权事件」的答案, 不是失败。两者都返回 (0, []), 所以
+        # 区分只能靠 outcome——这正是它存在的理由。
+        _record_adj_receipt(
+            data_dir=repo.store.data_dir, asset_type=asset_type,
+            provider_name=provider_name, scope=scope, symbols=symbols,
+            start_time=start_time, end_time=end_time,
+            outcome=(sync_receipt.OUTCOME_FAILED if failed_syms
+                     else sync_receipt.OUTCOME_OK),
+            failed=failed_syms, store={"created": False, **_store_reading(store)},
+        )
         return 0, []
 
     new_data = pl.concat(all_dfs, how="diagonal_relaxed") if len(all_dfs) > 1 else all_dfs[0]
 
-    factor_dir = "adj_factor_etf" if asset_type == "etf" else "adj_factor"
-    added, affected = _merge_adj_factor_store(repo.store.data_dir / factor_dir / "all.parquet", new_data)
+    created = not store.exists()
+    added, affected = _merge_adj_factor_store(store, new_data)
     logger.info("adj_factor merged: +%d new rows, %d changed symbols, %d fetched / %d symbols",
                 added, len(affected), new_data.height, len(symbols))
+    _record_adj_receipt(
+        data_dir=repo.store.data_dir, asset_type=asset_type,
+        provider_name=provider_name, scope=scope, symbols=symbols,
+        start_time=start_time, end_time=end_time,
+        outcome=(sync_receipt.OUTCOME_PARTIAL if failed_syms
+                 else sync_receipt.OUTCOME_OK),
+        failed=failed_syms, store={"created": created, **_store_reading(store)},
+    )
     return added, affected
 
 

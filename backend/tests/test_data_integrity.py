@@ -679,7 +679,7 @@ def test_quotes_flush_partition_keeps_quote_ts_for_integrity_scan(tmp_path, monk
     issues = scan_recent_integrity(tmp_path, today=TODAY)
     assert [(i.day, i.table, i.kind) for i in issues] == [(FRIDAY, "kline_daily", "snapshot")]
 
-    part_dir = tmp_path / "kline_daily" / f"date={FRIDAY.isoformat()}"
+    part_dir = tmp_path / "kline_daily" / f"date={FRIDAY:%Y-%m}"
     assert _quote_ts_max_ms(part_dir) == snapshot_ms
 
 

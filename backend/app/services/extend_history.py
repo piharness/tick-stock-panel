@@ -172,6 +172,7 @@ def run_extend_history(
             universe, repo, capset,
             start_time=adj_start, end_time=adj_end,
             on_chunk_done=_adj_chunk,
+            scope="universe",
         )
         emit("extend_history", 60, f"除权因子完成,{written_adj} 行")
         logger.info("extend_history: adj_factor done, %d rows", written_adj)
@@ -203,8 +204,11 @@ def run_extend_history(
     _invalidate(None)
 
     # 7. 统计结果
+    from app.tickflow.partitions import list_partition_dates
+
     daily_dir = repo.store.data_dir / "kline_daily"
-    daily_days = len(list(daily_dir.glob("date=*"))) if daily_dir.exists() else 0
+    # 月分区布局下目录数是月数; 报给用户的"覆盖天数"必须读真实日期数。
+    daily_days = len(list_partition_dates(daily_dir)) if daily_dir.exists() else 0
 
     emit("extend_history", 100, f"完成,已扩展至 {new_start}")
 

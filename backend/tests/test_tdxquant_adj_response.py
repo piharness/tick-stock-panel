@@ -68,7 +68,12 @@ def test_event_values_and_dates_match_sdk_dataframe(make_client):
     assert calls[-1] == ("600000.SH", "2024-01-01 00:00:00", "2024-12-31 00:00:00")
 
 
-@pytest.mark.parametrize("payload", [{"ErrorId": 0}, {"ErrorId": 0, "Date": [], "Type": [], "Value": []}])
+@pytest.mark.parametrize("payload", [
+    {"ErrorId": 0},
+    {"ErrorId": 0, "Date": [], "Type": [], "Value": []},
+    # 实测: 窗口内无除权事件的标的只回 Value, 没有 Date/Type 键。
+    {"Error": "", "ErrorId": "0", "Value": []},
+])
 def test_valid_empty_sdk_frame_means_no_events(make_client, payload):
     client, _ = make_client([payload])
     assert client._tqs.get_divid_factors("000002.SZ").empty

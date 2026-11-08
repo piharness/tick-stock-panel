@@ -68,10 +68,29 @@ def test_sync_promotes_staged_files_without_reading_them_back(monkeypatch, repo)
     )
 
     assert written == 2
-    parts = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01-02").glob("*.parquet"))
-    assert len(parts) == 2
+    parts = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01").glob("*.parquet"))
+    assert parts  # 直接改名晋级, 未读回暂存文件
     stored = pl.concat([pl.read_parquet(part) for part in parts])
     assert set(stored["symbol"].to_list()) == {"000001.SZ", "000002.SZ"}
+
+
+def test_staging_files_are_batched_per_date_not_per_symbol(monkeypatch, repo):
+    """回归: 逐标的一文件会让 5890 只 × 250 天产生 147 万个微型 parquet,
+    落盘阶段超过看门狗的进度停滞阈值(1200s), 任务被误判卡死。"""
+    symbols = [f"{600000 + i:06d}.SH" for i in range(600)]
+    provider = _StreamingProvider([_daily(sym, date(2020, 1, 2)) for sym in symbols])
+    _route_fuyao(monkeypatch, provider)
+
+    written = kline_sync.sync_and_persist_daily_batch(
+        symbols, repo, object(),
+        start_date=datetime(2020, 1, 1), end_date=datetime(2020, 1, 2),
+    )
+
+    assert written == 600
+    parts = list((repo.store.data_dir / "kline_daily" / "date=2020-01").glob("*.parquet"))
+    assert len(parts) == 3  # 600 只 / 攒批 256
+    stored = pl.concat([pl.read_parquet(part) for part in parts])
+    assert set(stored["symbol"].to_list()) == set(symbols)
 
 
 def test_sync_persists_streamed_fuyao_chunks_only_after_fetch(monkeypatch, repo):
@@ -88,7 +107,7 @@ def test_sync_persists_streamed_fuyao_chunks_only_after_fetch(monkeypatch, repo)
 
     assert written == 2
     assert provider.get_daily_called is False
-    parts = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01-02").glob("*.parquet"))
+    parts = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01").glob("*.parquet"))
     stored = pl.concat([pl.read_parquet(part) for part in parts])
     assert set(stored["symbol"].to_list()) == {"000001.SZ", "000002.SZ"}
     assert not (repo.store.data_dir / ".daily_sync_staging").exists()
@@ -106,14 +125,14 @@ def test_sync_merges_after_direct_promotion_without_duplicate_rows(monkeypatch, 
         start_date=datetime(2020, 1, 1), end_date=datetime(2020, 1, 2),
     )
 
-    files = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01-02").glob("*.parquet"))
+    files = sorted((repo.store.data_dir / "kline_daily" / "date=2020-01").glob("*.parquet"))
     stored = pl.concat([pl.read_parquet(file) for file in files])
     assert stored.unique(subset=["symbol", "date"]).height == 1
     assert stored.height == 1
 
 
 def test_sync_merges_into_existing_daily_partition(monkeypatch, repo):
-    target = repo.store.data_dir / "kline_daily" / "date=2020-01-02"
+    target = repo.store.data_dir / "kline_daily" / "date=2020-01"
     target.mkdir(parents=True)
     pl.DataFrame({
         "symbol": ["000001.SZ"], "date": [date(2020, 1, 2)], "close": [9.0],
