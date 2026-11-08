@@ -20,7 +20,14 @@ vi.mock('@/lib/api', () => ({
 function mkStrategy(p: Partial<StrategyDetail> & Pick<StrategyDetail, 'id' | 'name' | 'source'>): StrategyDetail {
   return {
     description: '', tags: [], research_only: false,
-    execution_backend: 'polars_expr', asset_types: ['stock'], timeframes: ['1d'],
+    execution_backend: 'polars_expr',
+    capabilities: {
+      monitor: { supported: true, reason: '' },
+      overlay: { supported: true, reason: '' },
+      walkforward: { supported: true, reason: '' },
+      paper: { supported: true, reason: '' },
+    },
+    asset_types: ['stock'], timeframes: ['1d'],
     version: '1', basic_filter: {}, params: [], params_defaults: {},
     scoring: {}, scoring_directions: {}, entry_signals: [], exit_signals: [],
     minute_exit_trigger_supported_signals: [], stop_loss: null, take_profit: null,

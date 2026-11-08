@@ -36,13 +36,26 @@ vi.mock('@/lib/api', () => ({
 }))
 
 function makeDetail(overrides: Partial<StrategyDetail> = {}): StrategyDetail {
+  const backend = overrides.execution_backend ?? 'polars_expr'
+  const unsupported = backend === 'composite' || backend === 'minute_filter'
+  const overlayReason = backend === 'composite'
+    ? '叠加策略暂不支持叠加条件，请对子策略单独配置'
+    : backend === 'minute_filter'
+      ? '分钟策略暂不支持叠加条件（分钟帧不含 enriched 因子列）'
+      : ''
   return {
     id: 'test_strategy',
     name: '测试策略',
     description: '测试描述',
     tags: [],
     source: 'custom',
-    execution_backend: 'polars_expr',
+    execution_backend: backend,
+    capabilities: {
+      monitor: { supported: !unsupported, reason: unsupported ? '暂不支持实时监控' : '' },
+      overlay: { supported: !unsupported, reason: overlayReason },
+      walkforward: { supported: !unsupported, reason: unsupported ? '暂不支持步进优化' : '' },
+      paper: { supported: !unsupported, reason: unsupported ? '暂不支持模拟盘跟单' : '' },
+    },
     asset_types: ['stock'],
     timeframes: ['1d'],
     version: '1',

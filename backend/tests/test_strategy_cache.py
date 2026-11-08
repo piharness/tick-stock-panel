@@ -47,3 +47,25 @@ def test_new_date_resets_results_and_ever_rows(tmp_path):
     assert cached["as_of"] == "2026-07-21"
     assert set(cached["results"]) == {"strategy_b"}
     assert set(cached["today_ever_rows"]) == {"strategy_b"}
+
+
+def test_legacy_cache_without_revision_is_ignored_and_not_merged(tmp_path):
+    """升级后旧缓存没有口径版本: 不展示、也不与同日新结果合并。"""
+    import json
+
+    path = tmp_path / "user_data" / "strategy_cache.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({
+        "as_of": "2026-07-20",
+        "results": {"stale": _result("000001.SZ")},
+        "today_ever_matched": {"stale": ["000001.SZ"]},
+        "today_ever_rows": {"stale": {"000001.SZ": {"symbol": "000001.SZ"}}},
+    }), encoding="utf-8")
+
+    assert strategy_cache.read_cache(tmp_path) is None
+
+    strategy_cache.write_cache(tmp_path, "2026-07-20", {"fresh": _result("600000.SH")})
+    cached = strategy_cache.read_cache(tmp_path)
+    assert set(cached["results"]) == {"fresh"}
+    assert set(cached["today_ever_rows"]) == {"fresh"}
+    assert cached["cache_revision"] == strategy_cache._CACHE_REVISION

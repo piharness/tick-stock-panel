@@ -841,6 +841,14 @@ function RulesList({ rulesQuery, onEdit }: {
                   {r.asset_type === 'index' && (
                     <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold bg-sky-500/10 text-sky-400">指数</span>
                   )}
+                  {r.type === 'strategy' && r.runnable === false && (
+                    <span
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold bg-warning/10 text-warning"
+                      title={r.unsupported_reason || '当前策略类型不支持实时监控'}
+                    >
+                      不支持实时监控
+                    </span>
+                  )}
                   {/* 个股类型: 直接显示可点击的代码+名称; 分组类型: 分组chip跳自选页; 其他类型显示规则名 */}
                   {r.scope === 'symbols' && r.symbols.length > 0 ? (
                     <button
@@ -887,10 +895,19 @@ function RulesList({ rulesQuery, onEdit }: {
                     <>
                       <button
                         onClick={() => toggleEnabled(r)}
-                        title={r.enabled ? '停用' : '启用'}
+                        disabled={!r.enabled && r.runnable === false}
+                        title={
+                          !r.enabled && r.runnable === false
+                            ? (r.unsupported_reason || '当前策略类型不支持实时监控，无法启用')
+                            : r.enabled ? '停用' : '启用'
+                        }
                         className={cn(
-                          'p-1 rounded-md transition-all cursor-pointer',
-                          r.enabled ? 'text-accent hover:bg-accent/10' : 'text-muted hover:bg-elevated hover:text-accent',
+                          'p-1 rounded-md transition-all',
+                          !r.enabled && r.runnable === false
+                            ? 'cursor-not-allowed text-muted/40'
+                            : r.enabled
+                              ? 'cursor-pointer text-accent hover:bg-accent/10'
+                              : 'cursor-pointer text-muted hover:bg-elevated hover:text-accent',
                         )}
                       >
                         <Zap className="h-3.5 w-3.5" />
@@ -925,10 +942,15 @@ function RulesList({ rulesQuery, onEdit }: {
                 </div>
               </div>
 
-              {r.runtime_warning && (
+              {(r.runtime_warning || (r.type === 'strategy' && r.runnable === false && r.unsupported_reason)) && (
                 <div className="mt-1 flex items-center gap-1 text-[9px] text-warning">
                   <AlertTriangle className="h-3 w-3 shrink-0" />
-                  <span className="truncate" title={r.runtime_warning}>{r.runtime_warning}</span>
+                  <span
+                    className="truncate"
+                    title={r.runtime_warning || r.unsupported_reason}
+                  >
+                    {r.runtime_warning || r.unsupported_reason}
+                  </span>
                 </div>
               )}
 

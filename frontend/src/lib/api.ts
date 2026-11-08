@@ -870,6 +870,14 @@ export interface CompositeChildInfo {
   weight: number
 }
 
+export type StrategyCapabilityKey = 'monitor' | 'overlay' | 'walkforward' | 'paper'
+
+/** 单个能力项: supported=false 时 reason 为不可用原因; supported=true 时 reason 可为约束说明。 */
+export interface StrategyCapability {
+  supported: boolean
+  reason: string
+}
+
 export interface StrategyDetail {
   id: string
   name: string
@@ -878,6 +886,8 @@ export interface StrategyDetail {
   source: 'custom' | 'ai' | 'composite'
   research_only?: boolean
   execution_backend: 'polars_expr' | 'matrix_native' | 'python_history_legacy' | 'composite' | 'minute_filter'
+  /** 后端按执行后端派生的能力表 (monitor/overlay/walkforward/paper) */
+  capabilities: Record<StrategyCapabilityKey, StrategyCapability>
   asset_types: string[]
   timeframes: string[]
   version: string
@@ -1106,6 +1116,10 @@ export interface MonitorRule {
   webhook_channels?: string[]  // 合法值: feishu | wecom | custom | email
   created_at?: string
   runtime_warning?: string
+  /** 读取时派生 (不落盘): 规则当前是否可运行; 仅 strategy 规则会返回 false */
+  runnable?: boolean
+  /** 读取时派生 (不落盘): 不可运行原因 (如策略类型不支持实时监控) */
+  unsupported_reason?: string
   // ladder 专属: 封单监控; volume_delta 复用 metric 表示阈值口径 (volume=手数, amount=金额)
   metric?: 'sealed_vol' | 'sealed_amount' | 'volume' | 'amount'
   threshold?: number                        // 封单 <= 此值时报警
@@ -4934,11 +4948,20 @@ export const api = {
   monitorRuleOptions: () =>
     request<MonitorRuleOptions>('/api/monitor-rules/options'),
 
-  monitorRuleSave: (rule: MonitorRule) =>
-    request<{ ok: boolean; rule: MonitorRule }>('/api/monitor-rules', {
+  monitorRuleSave: (rule: MonitorRule) => {
+    // 读取时派生的展示字段不参与持久化; 后端 Pydantic 会忽略未知键,
+    // 这里显式剥离, 避免编辑回写把旧派生状态带进请求。
+    const {
+      runtime_warning: _runtimeWarning,
+      runnable: _runnable,
+      unsupported_reason: _unsupportedReason,
+      ...persisted
+    } = rule
+    return request<{ ok: boolean; rule: MonitorRule }>('/api/monitor-rules', {
       method: 'POST',
-      body: JSON.stringify(rule),
-    }),
+      body: JSON.stringify(persisted),
+    })
+  },
 
   monitorRuleDelete: (id: string) =>
     request<{ ok: boolean }>(`/api/monitor-rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),

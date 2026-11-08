@@ -942,7 +942,7 @@ class StrategyEngine:
         params: dict | None = None,
         overrides: dict | None = None,
     ) -> StrategyResult:
-        """执行策略: 基础过滤 → 策略过滤 → 评分排序
+        """执行策略: 基础过滤 → 策略过滤 → 评分 → 叠加条件 → 排序
 
         Args:
             strategy_id:        策略 ID
@@ -1106,9 +1106,13 @@ class StrategyEngine:
             expr = s.filter_fn(df, params)
             df = df.filter(expr)
 
-        # Stage 2.5: 叠加条件 (每策略 overlay 硬过滤) — 策略过滤之后、评分之前:
-        # 评分 min-max 归一化与 limit 截断都在过滤后的候选上进行; exit_signal_hits
-        # 已在 :942 过滤前的帧上收集, 已持仓的卖出信号不受影响。
+        # Stage 3: 评分
+        df = self._apply_scoring(df, scoring, scoring_directions)
+
+        # Stage 3.5: 叠加条件 (每策略 overlay 硬过滤) — 评分之后、命中收集之前:
+        # 与回测 _apply_score / matrix 路径同一顺序, 评分归一化样本是策略候选层
+        # (basic+filter), overlay 只挡入场, 不改变 min-max 样本; exit_signal_hits
+        # 已在过滤前的帧上收集, 已持仓的卖出信号不受影响。
         if overlay_conditions:
             from app.strategy import custom_signals
             try:
@@ -1157,8 +1161,6 @@ class StrategyEngine:
                 else:
                     df = df.filter(overlay_expr.fill_null(False))
 
-        # Stage 3: 评分
-        df = self._apply_scoring(df, scoring, scoring_directions)
         entry_signal_hits = self._collect_signal_hits(df, entry_signals)
         if not entry_signals and (
             s.filter_history_fn or s.filter_fn or s.execution_backend == "minute_filter"
@@ -1524,7 +1526,7 @@ class StrategyEngine:
             exit_active = exit_active & asset_mask
         # 叠加条件 (每策略 overlay 硬过滤): 在带完整 enriched 列 (ext_*/因子) 的
         # target_frame 上评估, 按符号掩码 entry (只挡入场, exit/持仓卖出不动)。
-        # 与 polars 路径 Stage 2.5 同一套条件编译与 fail-closed 语义。
+        # 与 polars 路径 Stage 3.5 同一套条件编译与 fail-closed 语义。
         overlay_conditions = self._effective_overlay(overrides)
         if overlay_conditions:
             from app.strategy import custom_signals

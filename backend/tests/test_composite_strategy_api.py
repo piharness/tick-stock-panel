@@ -182,6 +182,10 @@ def test_strategy_detail_shows_composite_children(tmp_path):
     assert detail["composite_children"] is not None
     children_map = {c["id"]: c["weight"] for c in detail["composite_children"]}
     assert children_map == {"child_a": 0.4, "child_b": 0.6}
+    caps = detail["capabilities"]
+    for feature in ("monitor", "overlay", "walkforward", "paper"):
+        assert caps[feature]["supported"] is False
+        assert caps[feature]["reason"]
 
 
 def test_strategy_detail_non_composite_has_null_children(tmp_path):
@@ -191,6 +195,7 @@ def test_strategy_detail_non_composite_has_null_children(tmp_path):
 
     detail = _strategy_detail(engine.get("child_a"))
     assert detail["composite_children"] is None
+    assert detail["capabilities"]["overlay"]["supported"] is True
 
 
 # ───────────────────────── 删除防护 ─────────────────────────

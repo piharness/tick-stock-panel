@@ -2,6 +2,7 @@
 
 缓存结构:
   {
+    "cache_revision": 1,  # 结果口径版本; 旧版本读取时视为无缓存
     "as_of": "2024-01-15",
     "results": { strategy_id: { total, as_of, rows } },
     "today_ever_matched": { strategy_id: [symbol, ...] },    // 今日曾命中 symbol 并集
@@ -36,6 +37,11 @@ logger = logging.getLogger(__name__)
 
 _CACHE_FILENAME = "strategy_cache.json"
 
+# 缓存结果口径版本。任何会改变策略结果语义 (评分样本/叠加条件/信号计算/
+# 引擎执行顺序) 的升级都必须递增: read_cache 会忽略旧版本, 同日写入也不会
+# 与旧结果合并, 从而触发一次完整重算。旧文件没有该字段 → 视为版本 0。
+_CACHE_REVISION = 1
+
 # 读写同一 JSON 文件的进程内锁: write_cache 的 read-modify-write 与并发 read_cache
 # 无锁会丢更新/读到半写文件。read_cache 与 write_cache 共用此锁; write 内部复用
 # _read_cache_unlocked 避免自死锁。写入用临时文件 + os.replace 做到原子替换。
@@ -51,6 +57,10 @@ _memory_cache: dict[str, tuple[int, int, dict]] = {}
 
 def _cache_path(data_dir: Path) -> Path:
     return data_dir / "user_data" / _CACHE_FILENAME
+
+
+def _revision_matches(cached: dict | None) -> bool:
+    return isinstance(cached, dict) and cached.get("cache_revision") == _CACHE_REVISION
 
 
 def _enriched_parquet_path(data_dir: Path, as_of: str) -> Path:
@@ -77,7 +87,11 @@ def read_cache(data_dir: Path) -> dict | None:
     端点叠加监控引擎的内存实时结果 (latest_strategy_results) 来保证。
     """
     with _file_lock:
-        return _read_cache_unlocked(data_dir)
+        cached = _read_cache_unlocked(data_dir)
+        if cached is not None and not _revision_matches(cached):
+            logger.info("策略缓存口径版本过旧, 忽略并等待重算")
+            return None
+        return cached
 
 
 def clear_cache(data_dir: Path) -> None:
@@ -164,8 +178,11 @@ def _write_cache_locked(
     results: dict[str, Any],
 ) -> None:
     """持 _file_lock 后的实际写入逻辑 (read-merge-write + 原子替换)。"""
-    # 读取旧缓存 (已持锁, 走不重入的 _read_cache_unlocked)
+    # 读取旧缓存 (已持锁, 走不重入的 _read_cache_unlocked)。
+    # 口径版本不符时按「无旧缓存」处理, 不把旧结果合并进新结果。
     old = _read_cache_unlocked(data_dir)
+    if not _revision_matches(old):
+        old = None
     old_as_of = old.get("as_of") if old else None
     old_ever_rows: dict[str, dict[str, dict]] = old.get("today_ever_rows", {}) if old else {}
 
@@ -202,6 +219,7 @@ def _write_cache_locked(
     enriched_mtime = _get_enriched_mtime(data_dir, as_of)
 
     payload = {
+        "cache_revision": _CACHE_REVISION,
         "as_of": as_of,
         "results": merged_results,
         "today_ever_matched": today_ever_matched,

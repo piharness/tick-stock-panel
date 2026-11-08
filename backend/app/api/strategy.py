@@ -27,6 +27,7 @@ from app.strategy.ai_generator import (
     _strategy_execution_backend,
     find_meta_assignment,
 )
+from app.strategy.capabilities import strategy_capabilities, strategy_capability
 from app.strategy.engine import StrategyDef, StrategyEngine
 from app.strategy.monitor import StrategyMonitorService
 from app.strategy.prompt_builder import build_step1, build_step2
@@ -200,6 +201,9 @@ def _strategy_detail(
         "source": s.source,
         "research_only": s.meta.get("research_only", False),
         "execution_backend": s.execution_backend,
+        # 各能力 (monitor/overlay/walkforward/paper) 的支持状态与原因;
+        # 前端只读展示/禁用入口, 保存与运行时仍由后端二次校验。
+        "capabilities": strategy_capabilities(s.execution_backend),
         "asset_types": s.meta.get("asset_types", ["stock"]),
         "timeframes": s.meta.get("timeframes", ["1d"]),
         "version": s.meta.get("version", "1.0.0"),
@@ -517,31 +521,27 @@ def _overlay_changed(old, new) -> bool:
     return _norm(old) != _norm(new)
 
 
-# 叠加条件第一版只支持日线 polars_expr / matrix_native; composite 已有自身
-# 的叠加合并语义, minute 帧不带 enriched 列 (ext_*/因子列不可见)。
-_OVERLAY_UNSUPPORTED_BACKENDS = frozenset({"composite", "minute_filter"})
-
-
 def _validate_overlay_filter(strategy, overrides: dict) -> None:
     """叠加条件 (overlay_filter) 保存校验: 条件合法性 + 策略类型支持。
 
-    键缺失或值为 None/空列表时跳过条件校验 (None/[] = 清空叠加条件)。
+    键缺失、None 或空列表均视为清空叠加条件, 直接跳过; 否则先按能力表
+    拦截不支持的后端, 再校验条件结构。matrix_native 额外复用回测的数值
+    字段检查, 避免保存时放过字符串字段、运行时才失败。
     """
     conditions = overrides.get("overlay_filter")
-    if conditions is None:
+    if conditions is None or conditions == []:
         return
-    if strategy.execution_backend in _OVERLAY_UNSUPPORTED_BACKENDS:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"{strategy.execution_backend} 策略暂不支持叠加条件; "
-                "composite 请对子策略单独配置, 分钟策略不支持"
-            ),
-        )
+    capability = strategy_capability(strategy.execution_backend, "overlay")
+    if not capability["supported"]:
+        raise HTTPException(status_code=400, detail=str(capability["reason"]))
     from app.strategy import custom_signals
 
     try:
         custom_signals.validate_overlay_conditions(conditions)
+        if strategy.execution_backend == "matrix_native":
+            from app.backtest.strategy import _overlay_numeric_fields
+
+            _overlay_numeric_fields({"overlay_filter": conditions})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

@@ -167,6 +167,52 @@ def test_run_overlay_filters_candidates_and_nulls(tmp_path) -> None:
     assert symbols == {"LOW.SZ"}
 
 
+def test_run_overlay_keeps_scoring_universe_consistent_with_backtest(tmp_path) -> None:
+    """叠加条件是入场硬过滤, 不参与评分归一化 —— 与回测候选评分同序。
+
+    回测 _apply_score 在策略候选层 (basic+filter) 上做截面 min-max, overlay
+    之后才 AND 到 entry; 实盘 polars 路径必须在同一样本上评分, 否则同一
+    策略的 score / score_min / score_max 会因 overlay 剔除极值而漂移。
+    """
+    from app.backtest.strategy import StrategyBacktestService
+
+    panel = pl.DataFrame({
+        "symbol": ["A", "B", "OUT"],
+        "date": [date(2026, 1, 2)] * 3,
+        "close": [10.0, 20.0, 1000.0],
+    })
+    engine = _engine(tmp_path, _strategy_code("ov_score"), "ov_score")
+    ctx = StrategyDataContext(
+        asset_type="stock", timeframe="1d", as_of=date(2026, 1, 2), current=panel,
+    )
+    overrides = {
+        "basic_filter": {"enabled": False},
+        "overlay_filter": [{"left": "close", "op": "<=", "right": 100}],
+        "scoring": {"close": 1.0},
+        "scoring_replace": True,
+    }
+    result = engine.run("ov_score", ctx, overrides=overrides)
+    live_scores = {r["symbol"]: r["score"] for r in result.rows}
+    assert set(live_scores) == {"A", "B"}  # OUT 被 overlay 挡在入场之外
+
+    strategy = SimpleNamespace(
+        meta={"scoring": {"close": 1.0}, "order_by": "score", "descending": True}
+    )
+    backtest = StrategyBacktestService._apply_score(
+        panel,
+        strategy,
+        overrides,
+        universe_mask=pl.Series("candidate", [True, True, True]),
+    )
+    bt_scores = dict(zip(
+        backtest["symbol"].to_list(), backtest["score"].to_list(), strict=True,
+    ))
+    assert live_scores["A"] == pytest.approx(bt_scores["A"])
+    assert live_scores["B"] == pytest.approx(bt_scores["B"])
+    # 归一化样本包含被 overlay 剔除的 1000, 所以 B 不是 100 分
+    assert live_scores["B"] == pytest.approx(100.0 * 10.0 / 990.0)
+
+
 def test_run_overlay_keeps_exit_hits_of_filtered_rows(tmp_path) -> None:
     """已持仓卖出不受叠加条件影响: 被过滤行的 exit 信号仍在过滤前帧上收集。"""
     engine = _engine(tmp_path, _strategy_code("ov2", with_exit=True), "ov2")

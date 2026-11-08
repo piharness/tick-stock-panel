@@ -67,6 +67,7 @@ def test_external_rewrite_invalidates_mirror(tmp_path):
     # 文件系统时间戳分辨率导致的指纹碰撞
     path = tmp_path / "user_data" / "strategy_cache.json"
     external = {
+        "cache_revision": strategy_cache._CACHE_REVISION,
         "as_of": "2026-10-19",
         "results": {"ext": _result("300750.SZ")},
         "today_ever_matched": {},

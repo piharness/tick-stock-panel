@@ -40,10 +40,9 @@ interface Props {
   onDeleted?: () => void
 }
 
-// ===== 叠加条件支持判定: 与后端 _OVERLAY_UNSUPPORTED_BACKENDS 同集 =====
-// composite 已有自身叠加合并语义, 分钟策略帧不带 enriched 列 (ext_*/因子不可见)。
+// ===== 叠加条件支持判定: 直接读后端能力表, 不在前端重复维护后端集合 =====
 function overlaySupported(d: StrategyDetail | null): boolean {
-  return !!d && !['composite', 'minute_filter'].includes(d.execution_backend)
+  return d?.capabilities?.overlay?.supported ?? false
 }
 
 // ===== 设置分区 (左侧导航) =====
@@ -343,6 +342,7 @@ export function StrategySettingsDialog({ strategyId, onClose, onSaved, onAiModif
   })
   // matrix 策略的矩阵 fields 是 float 数组, 字符串扩展字段进不了回测矩阵 → 不提供
   const isMatrixBackend = detail?.execution_backend === 'matrix_native'
+  const overlayCapability = detail?.capabilities?.overlay
   const overlayStringFields = isMatrixBackend ? [] : (overlayOptions.data?.stringFields ?? [])
   const overlayFields = isMatrixBackend
     ? (overlayOptions.data?.fields ?? []).filter(f => !(overlayOptions.data?.stringFields ?? []).includes(f.key))
@@ -746,7 +746,7 @@ export function StrategySettingsDialog({ strategyId, onClose, onSaved, onAiModif
                           </div>
                         ) : (
                           <div className="py-2 text-xs text-muted">
-                            当前策略类型不支持叠加条件（composite 请对子策略单独配置，分钟策略不支持）。
+                            {overlayCapability?.reason || '当前策略类型不支持叠加条件。'}
                           </div>
                         )}
                       </Card>

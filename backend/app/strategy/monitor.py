@@ -23,6 +23,7 @@ import polars as pl
 
 from app.market_time import cn_today
 from app.strategy import config as _strategy_config
+from app.strategy.capabilities import strategy_capability
 from app.strategy.custom_signals import _OP_BUILDERS  # type: ignore  # 复用运算符构造器
 from app.strategy.custom_signals import signal_names as _custom_signal_names
 from app.strategy.intraday_signals import INTRADAY_SIGNAL_LABELS, uses_intraday_signals
@@ -1251,11 +1252,16 @@ class MonitorRuleEngine:
             as_of=cn_today(),
             current=df,
         )
-        if getattr(s, "execution_backend", "polars_expr") == "composite":
-            # 叠加策略首版不支持实时监控: 各子策略需独立预热实时矩阵, 热路径成本为 N 倍,
-            # 违反"实时热路径不得随历史数据量线性增长"约束。fail-closed 跳过本轮,
+        monitor_capability = strategy_capability(
+            getattr(s, "execution_backend", "polars_expr"), "monitor"
+        )
+        if not monitor_capability["supported"]:
+            # composite 需为各子策略独立预热实时矩阵, 热路径成本随子策略数增长;
+            # minute_filter 的实时帧不含分钟窗口。两者均 fail-closed 跳过本轮,
             # /cached 端点回退到盘后 strategy_cache.json 的批量结果。
-            logger.debug("叠加策略 %s 暂不支持实时监控, 跳过", sid)
+            logger.debug(
+                "策略 %s 暂不支持实时监控 (%s), 跳过", sid, monitor_capability["reason"]
+            )
             return []
         if getattr(s, "execution_backend", "polars_expr") == "matrix_native":
             matrix = self._active_matrix_snapshots.get(at)

@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.strategy import monitor_rules
+from app.strategy.capabilities import resolve_monitor_capability, strategy_capability
 from app.strategy.intraday_signals import INTRADAY_SIGNAL_LABELS, uses_intraday_signals
 
 logger = logging.getLogger(__name__)
@@ -269,6 +270,17 @@ def list_rules(request: Request):
                     rule["runtime_warning"] = "绑定的自选分组已删除, 规则已暂停监控, 编辑可重新选择"
         except Exception:  # noqa: BLE001
             pass
+    # 策略规则按当前策略后端派生可运行状态 (只读派生, 不回写 JSON):
+    # 不支持实时监控的后端 (composite/minute_filter) 与已删除策略均标记
+    # runnable=false, 前端据此显示徽标并禁止重新启用。
+    strategy_engine = getattr(request.app.state, "strategy_engine", None)
+    for rule in rules:
+        if rule.get("type") != "strategy":
+            continue
+        capability = resolve_monitor_capability(strategy_engine, rule.get("strategy_id"))
+        rule["runnable"] = bool(capability["supported"])
+        if not capability["supported"]:
+            rule["unsupported_reason"] = str(capability["reason"])
     # 按 created_at 倒序
     rules.sort(key=lambda r: r.get("created_at", ""), reverse=True)
     return {"rules": rules}
@@ -289,6 +301,8 @@ def save_rule(req: RuleModel, request: Request):
                 status_code=403,
                 detail="封单监控需要 Pro+ 套餐 (批量五档能力),请升级后在「设置」页配置",
             )
+    # 编辑现有规则时, 保留原 created_at (避免按时间排序时位置跳动)
+    existing = monitor_rules.load_one(_data_dir(request), rule["id"])
     if rule.get("type") == "strategy":
         from app.strategy.engine import StrategyDataContext
 
@@ -307,8 +321,14 @@ def save_rule(req: RuleModel, request: Request):
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
-    # 编辑现有规则时, 保留原 created_at (避免按时间排序时位置跳动)
-    existing = monitor_rules.load_one(_data_dir(request), rule["id"])
+        # 能力门控只拦「新建」与「停用 → 启用」; 已存在规则仍允许
+        # 改名/改绑/停用/删除, 避免升级后用户无法处置历史配置。
+        capability = strategy_capability(strategy.execution_backend, "monitor")
+        was_enabled = bool(existing and existing.get("enabled", True))
+        if not capability["supported"] and (
+            existing is None or (not was_enabled and rule.get("enabled", True))
+        ):
+            raise HTTPException(status_code=400, detail=str(capability["reason"]))
     # 批次派生规则由「持仓提醒」页托管, 监控中心只读 (启停/改/删均回持仓页)
     if existing and existing.get("lot_id"):
         raise HTTPException(status_code=409, detail="该规则由「持仓提醒」页托管, 请在持仓提醒页修改")
