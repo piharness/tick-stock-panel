@@ -1,0 +1,57 @@
+panel dates=367 symbols=5581  H_GRID=(1, 2, 3, 5, 10, 20, 40, 60)  costs_bp=(0.0, 10.0, 20.0, 30.0)
+[parity] fwd_grid(h=20) vs ce_path_audit.ret_grid: max|diff|=0 extra cohort rows in this grid=[346] of T=367
+[parity] round-2 grid h=20: n=326 sd=439.7bp (ce_path_audit power.hold20: n=326 sd=439.7bp)
+
+############ mom_bottom20  pick-dates=327
+  h=  1 n= 327 n_indep= 327.0 mean=   +14.8bp sd=  130.1 se_nw=   8.0 t=+1.85 | net t @c20=-0.65
+  h=  2 n= 327 n_indep= 163.5 mean=   +17.0bp sd=  198.7 se_nw=  15.1 t=+1.12 | net t @c20=-0.20
+  h=  3 n= 327 n_indep= 109.0 mean=   +17.2bp sd=  248.8 se_nw=  21.4 t=+0.80 | net t @c20=-0.13
+  h=  5 n= 327 n_indep=  65.4 mean=   +12.4bp sd=  330.6 se_nw=  32.2 t=+0.38 | net t @c20=-0.24
+  h= 10 n= 327 n_indep=  32.7 mean=    +3.8bp sd=  425.3 se_nw=  44.0 t=+0.09 | net t @c20=-0.37
+  h= 20 n= 327 n_indep=  16.4 mean=   -88.2bp sd=  440.1 se_nw=  72.6 t=-1.22 | net t @c20=-1.49
+  h= 40 n= 307 n_indep=   7.7 mean=  -127.2bp sd=  640.8 se_nw=  72.5 t=-1.76 | net t @c20=-2.03
+  h= 60 n= 287 n_indep=   4.8 mean=  -358.9bp sd=  552.0 se_nw=  21.9 t=-16.40 | net t @c20=-17.31
+  [note] full grid h=20: n=327 sd=440.1bp (round-2 grid gave n=326 sd=439.7bp; the difference is the one cohort date exit_paths never computes)
+
+############ mom_top20  pick-dates=327
+  h=  1 n= 327 n_indep= 327.0 mean=   +61.5bp sd=  243.6 se_nw=  12.4 t=+4.96 | net t @c20=+3.35
+  h=  2 n= 327 n_indep= 163.5 mean=   +43.5bp sd=  356.8 se_nw=  24.9 t=+1.75 | net t @c20=+0.94
+  h=  3 n= 327 n_indep= 109.0 mean=   +25.3bp sd=  444.6 se_nw=  35.8 t=+0.71 | net t @c20=+0.15
+  h=  5 n= 327 n_indep=  65.4 mean=    +2.4bp sd=  602.9 se_nw=  59.5 t=+0.04 | net t @c20=-0.30
+  h= 10 n= 327 n_indep=  32.7 mean=   -32.2bp sd=  790.9 se_nw= 121.8 t=-0.26 | net t @c20=-0.43
+  h= 20 n= 327 n_indep=  16.4 mean=   -73.1bp sd= 1116.6 se_nw= 201.2 t=-0.36 | net t @c20=-0.46
+  h= 40 n= 307 n_indep=   7.7 mean=  -199.3bp sd= 1442.7 se_nw= 276.4 t=-0.72 | net t @c20=-0.79
+  h= 60 n= 287 n_indep=   4.8 mean=  -446.4bp sd= 1362.9 se_nw= 255.6 t=-1.75 | net t @c20=-1.82
+
+############ [PLACEBO] zero signal, 100 draws per horizon
+  h=  1 n_dates=327 draws=100 sd(t)=0.98 P(|t|>=2)=3.0% (nominal 4.6%)
+  h=  2 n_dates=327 draws=100 sd(t)=0.97 P(|t|>=2)=1.0% (nominal 4.6%)
+  h=  3 n_dates=327 draws=100 sd(t)=0.95 P(|t|>=2)=3.0% (nominal 4.6%)
+  h=  5 n_dates=327 draws=100 sd(t)=1.13 P(|t|>=2)=8.0% (nominal 4.6%)
+  h= 10 n_dates=327 draws=100 sd(t)=1.17 P(|t|>=2)=8.0% (nominal 4.6%)
+  h= 20 n_dates=327 draws=100 sd(t)=1.19 P(|t|>=2)=9.0% (nominal 4.6%)
+  h= 40 n_dates=307 draws=100 sd(t)=1.57 P(|t|>=2)=17.0% (nominal 4.6%)
+  h= 60 n_dates=287 draws=100 sd(t)=2.01 P(|t|>=2)=23.0% (nominal 4.6%)
+
+############ [FRONTIER] net edge a_h - c and blocks needed
+  delta=1.5bp/day  c= 0.0bp  tradeable h: 1 .. 60  (break-even h >= 0.0)
+  delta=1.5bp/day  c=10.0bp  tradeable h: 10 .. 60  (break-even h >= 6.7)
+  delta=1.5bp/day  c=20.0bp  tradeable h: 20 .. 60  (break-even h >= 13.3)
+  delta=1.5bp/day  c=30.0bp  tradeable h: 40 .. 60  (break-even h >= 20.0)
+  delta=3.0bp/day  c= 0.0bp  tradeable h: 1 .. 60  (break-even h >= 0.0)
+  delta=3.0bp/day  c=10.0bp  tradeable h: 5 .. 60  (break-even h >= 3.3)
+  delta=3.0bp/day  c=20.0bp  tradeable h: 10 .. 60  (break-even h >= 6.7)
+  delta=3.0bp/day  c=30.0bp  tradeable h: 20 .. 60  (break-even h >= 10.0)
+
+############ [P] round-2 MDE: mean-based vs CE bootstrap SE
+  mom_bottom20/hold20 (no SL/TP): mean-based SE=13.7%/yr | CE bootstrap SE=12.5%/yr | ratio=1.10 | MDE(mean)=305bp/20d
+  mom_bottom20/SL5%: mean-based SE=9.2%/yr | CE bootstrap SE=4.5%/yr | ratio=2.04 | MDE(mean)=204bp/20d
+
+############ [VERDICT] pre-registered rules
+  mom_bottom20 @c=20bp: max t_net = -0.13 at h=3  curve=h1:-0.65 h2:-0.20 h3:-0.13 h5:-0.24 h10:-0.37 h20:-1.49 h40:-2.03 h60:-17.31
+  mom_top20 @c=20bp: max t_net = +3.35 at h=1  curve=h1:+3.35 h2:+0.94 h3:+0.15 h5:-0.30 h10:-0.43 h20:-0.46 h40:-0.79 h60:-1.82
+  R3-A  round-2 recommendation revoked (max t_net < 2 at c=20bp): False
+  R3-B  mom_bottom20: t(h=5)/t(h=20) = -0.31  (needs >=1.5 for 'shorten it' to pay)
+  R3-B  mom_top20: t(h=5)/t(h=20) = -0.11  (needs >=1.5 for 'shorten it' to pay)
+
+wrote analysis\horizon_scale_result.json  elapsed=20.9s

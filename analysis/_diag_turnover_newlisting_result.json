@@ -1,0 +1,48 @@
+{
+  "base": {
+    "n": 4238,
+    "days": 358,
+    "mean_bp": -160.0,
+    "t": -2.55,
+    "mde_bp": 125.7
+  },
+  "上市<250天": {
+    "n": 298,
+    "days": 197,
+    "mean_bp": -300.0,
+    "t": -2.37,
+    "mde_bp": 253.2,
+    "events_in_group": 383,
+    "group_rows": 8424
+  },
+  "250-500天": {
+    "n": 31,
+    "days": 31,
+    "mean_bp": -432.2,
+    "t": -1.56,
+    "mde_bp": 555.2,
+    "events_in_group": 35,
+    "group_rows": 7241
+  },
+  ">500天": {
+    "n": 3909,
+    "days": 358,
+    "mean_bp": -148.7,
+    "t": -2.21,
+    "mde_bp": 134.7,
+    "events_in_group": 4400,
+    "group_rows": 1123146
+  },
+  "event_age": {
+    "median": 5674.5,
+    "share_lt250": 0.079,
+    "share_lt500": 0.087
+  },
+  "pure_newlisting": {
+    "n": 8244,
+    "days": 361,
+    "mean_bp": -62.2,
+    "t": -2.47,
+    "mde_bp": 50.3
+  }
+}

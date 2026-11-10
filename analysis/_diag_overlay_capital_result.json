@@ -1,0 +1,250 @@
+{
+  "seed": 20261110,
+  "panel": [
+    "2025-05-07",
+    "2026-11-06"
+  ],
+  "dates": 367,
+  "cohorts": 327,
+  "cost_one_way_bp": 10.0,
+  "variants": {
+    "all": {
+      "gap": {
+        "n": 327,
+        "mean_bp": -13.4,
+        "sd_bp": 121.6,
+        "t": -2.0,
+        "sharpe_ann": -1.74,
+        "ann_pct": -33.6,
+        "hit": 0.468,
+        "p5_bp": -195.8,
+        "p50_bp": -7.6,
+        "halves": [
+          -9.7,
+          -17.1
+        ]
+      },
+      "i1": {
+        "n": 327,
+        "mean_bp": 49.3,
+        "sd_bp": 208.9,
+        "t": 4.26,
+        "sharpe_ann": 3.73,
+        "ann_pct": 123.2,
+        "hit": 0.59,
+        "p5_bp": -268.9,
+        "p50_bp": 45.1,
+        "halves": [
+          60.0,
+          38.4
+        ]
+      },
+      "s1": {
+        "n": 327,
+        "mean_bp": 34.1,
+        "sd_bp": 239.4,
+        "t": 2.58,
+        "sharpe_ann": 2.25,
+        "ann_pct": 85.3,
+        "hit": 0.572,
+        "p5_bp": -350.6,
+        "p50_bp": 26.6,
+        "halves": [
+          49.0,
+          19.2
+        ]
+      },
+      "c2": {
+        "n": 327,
+        "mean_bp": 46.4,
+        "sd_bp": 307.9,
+        "t": 2.73,
+        "sharpe_ann": 2.38,
+        "ann_pct": 116.0,
+        "hit": 0.575,
+        "p5_bp": -465.1,
+        "p50_bp": 73.2,
+        "halves": [
+          64.8,
+          27.8
+        ]
+      },
+      "book": {
+        "n": 327,
+        "mean_bp": 38.8,
+        "sd_bp": 216.3,
+        "t": 3.24,
+        "sharpe_ann": 2.84,
+        "ann_pct": 97.0,
+        "hit": 0.566,
+        "p5_bp": -302.7,
+        "p50_bp": 29.3,
+        "halves": [
+          51.4,
+          26.2
+        ]
+      },
+      "hold20": {
+        "n": 327,
+        "mean_bp": 63.1,
+        "sd_bp": 856.4,
+        "t": 1.33,
+        "sharpe_ann": 1.17,
+        "ann_pct": 157.8,
+        "hit": 0.532,
+        "p5_bp": -1265.1,
+        "p50_bp": 64.5,
+        "halves": [
+          75.4,
+          50.7
+        ]
+      },
+      "names_per_day": 20.0,
+      "median_amount_cny": 1462675850.0,
+      "identity_book_minus_i1_plus_halfgap_bp": -5.37,
+      "raw_gap_bp": -45.8,
+      "raw_i1_bp": 72.2,
+      "net_sweep_bp": {
+        "book@0bp": 38.8,
+        "i1@0bp": 49.3,
+        "s1@0bp": 34.1,
+        "book@5bp": 31.3,
+        "i1@5bp": 39.2,
+        "s1@5bp": 24.1,
+        "book@10bp": 23.8,
+        "i1@10bp": 29.2,
+        "s1@10bp": 14.1,
+        "book@15bp": 16.3,
+        "i1@15bp": 19.2,
+        "s1@15bp": 4.1,
+        "book@20bp": 8.8,
+        "i1@20bp": 9.1,
+        "s1@20bp": -5.9
+      },
+      "book_raw_split_bp": {
+        "limit_up_at_close": 146.5,
+        "tradable_at_close": 22.4,
+        "share_limit_up": 0.179
+      }
+    },
+    "buyable": {
+      "gap": {
+        "n": 327,
+        "mean_bp": -75.7,
+        "sd_bp": 116.7,
+        "t": -11.73,
+        "sharpe_ann": -10.26,
+        "ann_pct": -189.2,
+        "hit": 0.235,
+        "p5_bp": -236.7,
+        "p50_bp": -66.4,
+        "halves": [
+          -79.3,
+          -72.1
+        ]
+      },
+      "i1": {
+        "n": 327,
+        "mean_bp": 56.6,
+        "sd_bp": 230.9,
+        "t": 4.43,
+        "sharpe_ann": 3.87,
+        "ann_pct": 141.5,
+        "hit": 0.584,
+        "p5_bp": -279.0,
+        "p50_bp": 56.5,
+        "halves": [
+          77.9,
+          35.2
+        ]
+      },
+      "s1": {
+        "n": 327,
+        "mean_bp": -20.3,
+        "sd_bp": 253.2,
+        "t": -1.45,
+        "sharpe_ann": -1.27,
+        "ann_pct": -50.7,
+        "hit": 0.446,
+        "p5_bp": -409.5,
+        "p50_bp": -28.0,
+        "halves": [
+          -2.2,
+          -38.5
+        ]
+      },
+      "c2": {
+        "n": 327,
+        "mean_bp": 37.7,
+        "sd_bp": 322.2,
+        "t": 2.11,
+        "sharpe_ann": 1.85,
+        "ann_pct": 94.2,
+        "hit": 0.569,
+        "p5_bp": -484.3,
+        "p50_bp": 47.1,
+        "halves": [
+          67.4,
+          7.8
+        ]
+      },
+      "book": {
+        "n": 327,
+        "mean_bp": 16.3,
+        "sd_bp": 235.4,
+        "t": 1.25,
+        "sharpe_ann": 1.09,
+        "ann_pct": 40.7,
+        "hit": 0.505,
+        "p5_bp": -336.0,
+        "p50_bp": 7.7,
+        "halves": [
+          35.9,
+          -3.4
+        ]
+      },
+      "hold20": {
+        "n": 327,
+        "mean_bp": -14.1,
+        "sd_bp": 865.8,
+        "t": -0.3,
+        "sharpe_ann": -0.26,
+        "ann_pct": -35.3,
+        "hit": 0.483,
+        "p5_bp": -1451.9,
+        "p50_bp": -23.6,
+        "halves": [
+          -47.9,
+          19.9
+        ]
+      },
+      "names_per_day": 16.4,
+      "median_amount_cny": 1495831350.0,
+      "identity_book_minus_i1_plus_halfgap_bp": -4.12,
+      "raw_gap_bp": -108.5,
+      "raw_i1_bp": 79.6,
+      "net_sweep_bp": {
+        "book@0bp": 16.3,
+        "i1@0bp": 56.6,
+        "s1@0bp": -20.3,
+        "book@5bp": 8.8,
+        "i1@5bp": 46.6,
+        "s1@5bp": -30.3,
+        "book@10bp": 1.3,
+        "i1@10bp": 36.5,
+        "s1@10bp": -40.2,
+        "book@15bp": -6.2,
+        "i1@15bp": 26.5,
+        "s1@15bp": -50.2,
+        "book@20bp": -13.7,
+        "i1@20bp": 16.4,
+        "s1@20bp": -60.2
+      },
+      "book_raw_split_bp": {
+        "limit_up_at_close": null,
+        "tradable_at_close": 22.4,
+        "share_limit_up": 0.0
+      }
+    }
+  }
+}

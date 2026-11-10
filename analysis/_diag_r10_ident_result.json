@@ -1,0 +1,339 @@
+{
+  "seed": 20261114,
+  "panel": {
+    "dates": 367,
+    "symbols": 5581,
+    "date_min": "2025-05-07",
+    "date_max": "2026-11-06",
+    "ok_cells": 1775309,
+    "sub_cells": 3325
+  },
+  "note": "x = P(a 09:30 limit order at the limit price actually fills) on a LOCKED one-price board.  Only x * locked-branch return is in question; the 16 break-cells are assumption-free.",
+  "A_parity_sets": {
+    "sel_open_all": {
+      "cells": 57,
+      "cohorts": 50,
+      "events": 12,
+      "mean_sl5_bp": 4822.6,
+      "mean_buyhold20_bp": 5000.6,
+      "median_bp": 649.7,
+      "sd_bp": 9253.7,
+      "t_mean": 3.93,
+      "n_positive": 31,
+      "sign_p_le": 0.7865,
+      "ce_g1_bp": 2969.3
+    },
+    "locked_41": {
+      "cells": 41,
+      "cohorts": 37,
+      "events": 12,
+      "mean_sl5_bp": 6621.8,
+      "mean_buyhold20_bp": 6833.4,
+      "median_bp": 2724.7,
+      "sd_bp": 10325.8,
+      "t_mean": 4.11,
+      "n_positive": 28,
+      "sign_p_le": 0.9942,
+      "ce_g1_bp": 4440.1
+    },
+    "fill_16": {
+      "cells": 16,
+      "cohorts": 16,
+      "events": 0,
+      "mean_sl5_bp": 212.3,
+      "mean_buyhold20_bp": 304.3,
+      "median_bp": -500.0,
+      "sd_bp": 1960.3,
+      "t_mean": 0.43,
+      "n_positive": 3,
+      "sign_p_le": 0.0106,
+      "ce_g1_bp": 45.8
+    },
+    "buyable_no_assumption": {
+      "cells": 3239,
+      "cohorts": 326,
+      "events": 50,
+      "mean_sl5_bp": -4.1,
+      "mean_buyhold20_bp": 26.7,
+      "median_bp": -500.0,
+      "sd_bp": 1776.1,
+      "t_mean": -0.13,
+      "n_positive": 382,
+      "sign_p_le": 0.0,
+      "ce_g1_bp": -45.2
+    },
+    "basket_sub": {
+      "cells": 3296,
+      "cohorts": 326,
+      "events": 62,
+      "mean_sl5_bp": 79.4,
+      "mean_buyhold20_bp": 112.7,
+      "median_bp": -500.0,
+      "sd_bp": 2225.2,
+      "t_mean": 2.05,
+      "n_positive": 413,
+      "sign_p_le": 0.0,
+      "ce_g1_bp": 26.2
+    }
+  },
+  "A2_json_recheck": {
+    "n": 16,
+    "mean_sl5_bp": 212.3,
+    "median_sl5_bp": -500.0,
+    "positives": 3,
+    "mean_buyhold20_bp": 304.3,
+    "positives_buyhold20": 7,
+    "compounded_pct": 11.1
+  },
+  "B_market_pool": {
+    "cohorts": 326,
+    "mean_20d_sl5_net_bp": 75.9,
+    "ce_g1_bp": 49.0,
+    "pairs": {
+      "basket_sub": {
+        "n_cohorts": 326,
+        "delta_bp": -0.8,
+        "ci5_bp": -133.3,
+        "ci95_bp": 144.9,
+        "p_gt0": 0.505,
+        "ci_kind": "block bootstrap"
+      },
+      "fill_16": {
+        "n_cohorts": 16,
+        "delta_bp": 17.4,
+        "ci5_bp": -1029.1,
+        "ci95_bp": 1063.9,
+        "p_gt0": null,
+        "ci_kind": "t (df=15, no bootstrap: n<25)"
+      },
+      "locked_41": {
+        "n_cohorts": 37,
+        "delta_bp": 6378.4,
+        "ci5_bp": 2701.8,
+        "ci95_bp": 10155.9,
+        "p_gt0": 1.0,
+        "ci_kind": "block bootstrap"
+      },
+      "buyable_no_assumption": {
+        "n_cohorts": 326,
+        "delta_bp": -81.7,
+        "ci5_bp": -196.7,
+        "ci95_bp": 39.7,
+        "p_gt0": 0.092,
+        "ci_kind": "block bootstrap"
+      },
+      "sel_open_all": {
+        "n_cohorts": 50,
+        "delta_bp": 4499.6,
+        "ci5_bp": 1243.8,
+        "ci95_bp": 8854.1,
+        "p_gt0": 1.0,
+        "ci_kind": "block bootstrap"
+      }
+    }
+  },
+  "B2_ce_parity": {
+    "n": 326,
+    "delta_bp": -22.8,
+    "ci5_bp": -150.1,
+    "ci95_bp": 104.2,
+    "p_gt0": 0.358
+  },
+  "C_power": {
+    "fill16": {
+      "sd_bp": 1960.3,
+      "mean_bp": 212.3,
+      "n_required_80pct": 670,
+      "sessions_required": 15368.0,
+      "years_required": 61.0
+    },
+    "locked41": {
+      "sd_bp": 10325.8,
+      "mean_bp": 6621.8,
+      "n_required_80pct": 20,
+      "attempts_per_year": 28.2
+    },
+    "fills_per_100_sessions": 4.36
+  },
+  "C2_loo_wins": {
+    "base_mean_bp": 212.3,
+    "wins": [
+      {
+        "symbol": "600403.SH",
+        "date": "2025-10-20",
+        "sl5_bp": 3954.9,
+        "mean_without_bp": -37.2
+      },
+      {
+        "symbol": "001331.SZ",
+        "date": "2025-12-25",
+        "sl5_bp": 2603.3,
+        "mean_without_bp": 52.9
+      },
+      {
+        "symbol": "002969.SZ",
+        "date": "2026-01-19",
+        "sl5_bp": 5444.0,
+        "mean_without_bp": -136.5
+      }
+    ],
+    "n_positive": 3,
+    "sign_p_one_sided": 0.0106
+  },
+  "D_fill_threshold": {
+    "attempts": 57,
+    "attempts_per_year": 39.1,
+    "p_break_given_open_at_limit": 0.2807,
+    "r_break_bp": 212.3,
+    "r_locked_bp": 6621.8,
+    "grid": [
+      {
+        "x": 0.0,
+        "ev_per_attempt_bp": 59.6,
+        "realised_trades_over_sample": 16.0,
+        "utilisation": 0.872,
+        "arith_annual_pct": 20.3,
+        "locked_fills_per_year": 0.0,
+        "years_to_detect": null
+      },
+      {
+        "x": 0.001,
+        "ev_per_attempt_bp": 64.4,
+        "realised_trades_over_sample": 16.0,
+        "utilisation": 0.874,
+        "arith_annual_pct": 22.0,
+        "locked_fills_per_year": 0.03,
+        "years_to_detect": 710.4
+      },
+      {
+        "x": 0.005,
+        "ev_per_attempt_bp": 83.4,
+        "realised_trades_over_sample": 16.2,
+        "utilisation": 0.883,
+        "arith_annual_pct": 28.8,
+        "locked_fills_per_year": 0.14,
+        "years_to_detect": 142.1
+      },
+      {
+        "x": 0.01,
+        "ev_per_attempt_bp": 107.2,
+        "realised_trades_over_sample": 16.4,
+        "utilisation": 0.894,
+        "arith_annual_pct": 37.5,
+        "locked_fills_per_year": 0.28,
+        "years_to_detect": 71.0
+      },
+      {
+        "x": 0.02,
+        "ev_per_attempt_bp": 154.9,
+        "realised_trades_over_sample": 16.8,
+        "utilisation": 0.917,
+        "arith_annual_pct": 55.6,
+        "locked_fills_per_year": 0.56,
+        "years_to_detect": 35.5
+      },
+      {
+        "x": 0.05,
+        "ev_per_attempt_bp": 297.7,
+        "realised_trades_over_sample": 18.1,
+        "utilisation": 0.984,
+        "arith_annual_pct": 114.6,
+        "locked_fills_per_year": 1.41,
+        "years_to_detect": 14.2
+      },
+      {
+        "x": 0.1,
+        "ev_per_attempt_bp": 535.9,
+        "realised_trades_over_sample": 20.1,
+        "utilisation": 1.0,
+        "arith_annual_pct": 209.7,
+        "locked_fills_per_year": 2.82,
+        "years_to_detect": 7.1
+      },
+      {
+        "x": 0.25,
+        "ev_per_attempt_bp": 1250.4,
+        "realised_trades_over_sample": 26.2,
+        "utilisation": 1.0,
+        "arith_annual_pct": 489.4,
+        "locked_fills_per_year": 7.04,
+        "years_to_detect": 2.8
+      },
+      {
+        "x": 0.5,
+        "ev_per_attempt_bp": 2441.1,
+        "realised_trades_over_sample": 36.5,
+        "utilisation": 1.0,
+        "arith_annual_pct": 955.4,
+        "locked_fills_per_year": 14.08,
+        "years_to_detect": 1.4
+      },
+      {
+        "x": 1.0,
+        "ev_per_attempt_bp": 4822.6,
+        "realised_trades_over_sample": 57.0,
+        "utilisation": 1.0,
+        "arith_annual_pct": 1887.5,
+        "locked_fills_per_year": 28.15,
+        "years_to_detect": 0.7
+      }
+    ],
+    "x_star_breakeven": 0.0,
+    "x_star_10pct_annual": 0.0
+  },
+  "D2_locked_concentration": {
+    "cells": 42,
+    "symbols": 18,
+    "top": [
+      {
+        "symbol": "688585.SH",
+        "signal_days": 6,
+        "first": "2025-07-11",
+        "last": "2025-07-18"
+      },
+      {
+        "symbol": "002931.SZ",
+        "signal_days": 6,
+        "first": "2026-01-08",
+        "last": "2026-01-21"
+      },
+      {
+        "symbol": "605178.SH",
+        "signal_days": 5,
+        "first": "2025-10-23",
+        "last": "2025-10-29"
+      },
+      {
+        "symbol": "600825.SH",
+        "signal_days": 5,
+        "first": "2026-09-28",
+        "last": "2026-10-09"
+      },
+      {
+        "symbol": "001331.SZ",
+        "signal_days": 4,
+        "first": "2025-12-22",
+        "last": "2026-01-06"
+      }
+    ],
+    "max_concurrent_same_name": 6
+  },
+  "E_data_path": {
+    "daily_partitions": 367,
+    "minute_dates": 21,
+    "depth5_files": 0,
+    "auction_benchmark_files": 1,
+    "depth5_writer_exists": true,
+    "depth5_field_bid1_vol": true,
+    "depth5_sealed_is_bid1_when_limit_up": true,
+    "depth5_persist_path": true,
+    "depth5_persist_cadence": "one finalise per day (盘后定版)",
+    "provider_has_depth5_capability": true
+  },
+  "E2_locked_traded_amount": {
+    "n": 42,
+    "median_cny": 81152500.0,
+    "p10_cny": 19583970.0,
+    "p90_cny": 446013430.0
+  }
+}

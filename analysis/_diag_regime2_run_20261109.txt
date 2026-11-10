@@ -1,0 +1,20 @@
+panel dates=367 symbols=5581  regime days mapped=364
+[R6-B] bucket persistence of the mapped calendar:
+   strong days=186 runs= 95 mean_run=1.96
+   range  days= 39 runs= 36 mean_run=1.08
+   weak   days=139 runs= 82 mean_run=1.7
+
+############ mom_top20  cohorts=327  runs=186
+  pooled (one estimator for every cell; R6-A):
+   S0  legal=N   +55.87bp  iid_t +4.71  NW_t +5.30  CI[  +36.10,  +75.78]bp  P(<=0)=0.000  net_NW_t 3.4
+   S1  legal=Y   +24.93bp  iid_t +1.83  NW_t +1.93  CI[   +1.00,  +51.26]bp  P(<=0)=0.019  net_NW_t 0.38
+   S1L legal=Y   -10.90bp  iid_t -0.83  NW_t -0.95  CI[  -32.75,  +12.46]bp  P(<=0)=0.832  net_NW_t -2.68
+   S3  legal=Y   -28.95bp  iid_t -4.13  NW_t -2.88  CI[  -48.75,   -9.43]bp  P(<=0)=0.998  net_NW_t -4.88
+   S2  legal=Y    -1.59bp  iid_t -0.12  NW_t -0.13  CI[  -24.93,  +22.69]bp  P(<=0)=0.543  net_NW_t -1.78
+   S5  legal=Y   +44.53bp  iid_t +1.82  NW_t +2.25  CI[   +7.99,  +84.68]bp  P(<=0)=0.007  net_NW_t 1.24
+   S6  legal=Y   +14.80bp  iid_t +0.56  NW_t +0.63  CI[  -30.41,  +63.02]bp  P(<=0)=0.263  net_NW_t -0.22
+   S7  legal=Y    -9.03bp  iid_t -0.14  NW_t -0.17  CI[ -112.67,  +93.69]bp  P(<=0)=0.585  net_NW_t -0.54
+   S8  legal=Y   +25.80bp  iid_t +0.12  NW_t +0.18  CI[ -277.40, +314.78]bp  P(<=0)=0.441  net_NW_t 0.04
+   WIN      legal=-   +94.33%  iid_t +22.88  NW_t +29.45  CI[  +88.59, +100.72]%  P(<=0)=0.000   [part 3 printed iid(held=1) t +102.33]
+  by bucket (same three estimators + run-cluster t):
+   strong n=170 runs=83

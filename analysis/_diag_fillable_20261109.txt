@@ -1,0 +1,66 @@
+panel dates=367 symbols=5581  one-price days=3115 (0.2% of cells)  limit-up cells=27016
+
+############ variant grid: BASE / FILL / FILL+nolimitup
+
+== mom_bottom20
+  h=  1  BASE t= +2.06 (mean    +14.8) | FILL t= +2.10 (mean    +15.6, dropped 2.0%) | FILL_nolu t= +2.13
+  h=  2  BASE t= +1.09 (mean    +17.0) | FILL t= +1.45 (mean    +22.8, dropped 2.2%) | FILL_nolu t= +1.53
+  h=  3  BASE t= +0.72 (mean    +17.2) | FILL t= +1.12 (mean    +26.3, dropped 2.1%) | FILL_nolu t= +1.21
+  h=  5  BASE t= +0.30 (mean    +12.4) | FILL t= +0.55 (mean    +21.5, dropped 2.2%) | FILL_nolu t= +0.62
+  h= 10  BASE t= +0.05 (mean     +3.8) | FILL t= +0.16 (mean    +11.4, dropped 2.1%) | FILL_nolu t= +0.24
+  h= 20  BASE t= -0.81 (mean    -88.2) | FILL t= -0.73 (mean    -79.6, dropped 2.1%) | FILL_nolu t= -0.67
+  h= 40  BASE t= -0.55 (mean   -127.2) | FILL t= -0.57 (mean   -131.4, dropped 2.9%) | FILL_nolu t= -0.59
+  h= 60  BASE t= -1.42 (mean   -358.9) | FILL t= -1.40 (mean   -359.7, dropped 3.1%) | FILL_nolu t= -1.44
+
+== mom_top20
+  h=  1  BASE t= +4.57 (mean    +61.5) | FILL t= +4.56 (mean    +62.8, dropped 2.5%) | FILL_nolu t= +4.56
+  h=  2  BASE t= +1.56 (mean    +43.5) | FILL t= +1.39 (mean    +39.3, dropped 2.8%) | FILL_nolu t= +1.27
+  h=  3  BASE t= +0.59 (mean    +25.3) | FILL t= +0.42 (mean    +18.0, dropped 3.1%) | FILL_nolu t= +0.57
+  h=  5  BASE t= +0.03 (mean     +2.4) | FILL t= -0.07 (mean     -5.3, dropped 3.4%) | FILL_nolu t= +0.12
+  h= 10  BASE t= -0.23 (mean    -32.2) | FILL t= -0.44 (mean    -59.0, dropped 3.3%) | FILL_nolu t= -0.24
+  h= 20  BASE t= -0.26 (mean    -73.1) | FILL t= -0.41 (mean   -110.0, dropped 3.1%) | FILL_nolu t= -0.26
+  h= 40  BASE t= -0.38 (mean   -199.3) | FILL t= -0.46 (mean   -235.3, dropped 3.1%) | FILL_nolu t= -0.36
+  h= 60  BASE t= -0.72 (mean   -446.4) | FILL t= -0.82 (mean   -494.4, dropped 2.6%) | FILL_nolu t= -0.63
+
+############ [F1b] picks that closed limit-up on the signal date
+  mom_bottom20: 91/6540 = 1.4% of picks closed limit-up on the signal date
+  mom_top20: 1177/6540 = 18.0% of picks closed limit-up on the signal date
+
+############ [F2] active return vs market exposure (a = alpha + beta*u)
+  mom_top20     h=  1  mean_a=   +61.5bp  beta=+0.13 alpha=   +60.1bp (t=+4.43)  |  market  +27.6%/yr
+  mom_top20     h=  2  mean_a=   +43.5bp  beta=+0.18 alpha=   +40.4bp (t=+2.04)  |  market  +21.3%/yr
+  mom_top20     h=  3  mean_a=   +25.3bp  beta=+0.18 alpha=   +21.2bp (t=+0.86)  |  market  +18.5%/yr
+  mom_top20     h=  5  mean_a=    +2.4bp  beta=+0.28 alpha=    -6.3bp (t=-0.19)  |  market  +15.7%/yr
+  mom_bottom20  h=  1  mean_a=   +14.8bp  beta=+0.26 alpha=   +12.0bp (t=+1.70)  |  market  +27.6%/yr
+  mom_bottom20  h=  2  mean_a=   +17.0bp  beta=+0.27 alpha=   +12.4bp (t=+1.15)  |  market  +21.3%/yr
+  mom_top20     h= 20  mean_a=   -73.1bp  beta=+0.50 alpha=  -117.7bp (t=-1.95)  |  market  +11.2%/yr
+
+############ [F3] placebo calibration (200 draws per horizon)
+  h=  1 dates=327 sd(null t)=1.00  P(|t|>=2)= 5.5%  P(|t|>=2.8)= 1.0%
+  h=  2 dates=327 sd(null t)=0.71  P(|t|>=2)= 0.0%  P(|t|>=2.8)= 0.0%
+  h=  3 dates=327 sd(null t)=0.56  P(|t|>=2)= 0.0%  P(|t|>=2.8)= 0.0%
+  h=  5 dates=327 sd(null t)=0.45  P(|t|>=2)= 0.0%  P(|t|>=2.8)= 0.0%
+  h= 10 dates=327 sd(null t)=0.32  P(|t|>=2)= 0.0%  P(|t|>=2.8)= 0.0%
+  h= 20 dates=327 sd(null t)=0.23  P(|t|>=2)= 0.0%  P(|t|>=2.8)= 0.0%
+  h= 40 dates=307 sd(null t)=0.16  P(|t|>=2)= 0.0%  P(|t|>=2.8)= 0.0%
+  h= 60 dates=287 sd(null t)=0.12  P(|t|>=2)= 0.0%  P(|t|>=2.8)= 0.0%
+
+  cell                         t    p_placebo  q_BH
+  mom_top20     h=  1  t= +4.56  p=0.000  q=0.000 <== survives 5%
+  mom_bottom20  h= 20  t= -0.73  p=0.000  q=0.000 <== survives 5%
+  mom_bottom20  h= 40  t= -0.57  p=0.000  q=0.000 <== survives 5%
+  mom_bottom20  h= 60  t= -1.40  p=0.000  q=0.000 <== survives 5%
+  mom_top20     h= 60  t= -0.82  p=0.000  q=0.000 <== survives 5%
+  mom_top20     h= 40  t= -0.46  p=0.005  q=0.013 <== survives 5%
+  mom_bottom20  h=  2  t= +1.45  p=0.015  q=0.034 <== survives 5%
+  mom_top20     h=  2  t= +1.39  p=0.020  q=0.040 <== survives 5%
+  mom_bottom20  h=  3  t= +1.12  p=0.045  q=0.080
+  mom_bottom20  h=  1  t= +2.10  p=0.050  q=0.080
+  mom_top20     h= 20  t= -0.41  p=0.080  q=0.116
+  mom_top20     h= 10  t= -0.44  p=0.155  q=0.207
+  mom_bottom20  h=  5  t= +0.55  p=0.230  q=0.283
+  mom_top20     h=  3  t= +0.42  p=0.445  q=0.509
+  mom_bottom20  h= 10  t= +0.16  p=0.590  q=0.629
+  mom_top20     h=  5  t= -0.07  p=0.890  q=0.890
+
+wrote analysis\_diag_fillable_result.json  elapsed=23.2s

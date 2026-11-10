@@ -1,0 +1,23 @@
+panel dates=367 symbols=5581 hold=20
+
+############ hold20 (no SL/TP)  universe avg holding = 20.0 days
+  block=  5 (hold/block= 4.0)  FP=4/200 =  2.0%  delta mean=  -3.2 sd= 16.8 p5= -34.3 p95= +25.9
+  block= 10 (hold/block= 2.0)  FP=4/200 =  2.0%  delta mean=  -3.2 sd= 16.8 p5= -34.3 p95= +25.9
+  block= 20 (hold/block= 1.0)  FP=4/200 =  2.0%  delta mean=  -3.2 sd= 16.8 p5= -34.3 p95= +25.9
+  block= 40 (hold/block= 0.5)  FP=5/200 =  2.5%  delta mean=  -3.2 sd= 16.8 p5= -34.3 p95= +25.9
+
+############ SL5%  universe avg holding = 12.1 days
+  block=  5 (hold/block= 2.4)  FP=3/200 =  1.5%  delta mean=  -2.3 sd= 11.8 p5= -21.9 p95= +18.4
+  block= 10 (hold/block= 1.2)  FP=3/200 =  1.5%  delta mean=  -2.3 sd= 11.8 p5= -21.9 p95= +18.4
+  block= 20 (hold/block= 0.6)  FP=5/200 =  2.5%  delta mean=  -2.3 sd= 11.8 p5= -21.9 p95= +18.4
+  block= 40 (hold/block= 0.3)  FP=9/200 =  4.5%  delta mean=  -2.3 sd= 11.8 p5= -21.9 p95= +18.4
+
+############ the single rejection, re-tested per block length
+  hold20 (no SL/TP)  block=  5  delta= -105.4bp [ -168.4,  -29.7]  P(>0)=0.013
+  hold20 (no SL/TP)  block= 10  delta= -105.4bp [ -189.9,   -3.8]  P(>0)=0.043
+  hold20 (no SL/TP)  block= 20  delta= -105.4bp [ -186.5,  +18.3]  P(>0)=0.095
+  hold20 (no SL/TP)  block= 40  delta= -105.4bp [ -185.2,  +37.1]  P(>0)=0.138
+  SL5%               block=  5  delta=  -73.2bp [ -112.5,  -29.5]  P(>0)=0.000
+  SL5%               block= 10  delta=  -73.2bp [ -112.3,  -21.9]  P(>0)=0.005
+  SL5%               block= 20  delta=  -73.2bp [ -115.6,  -21.8]  P(>0)=0.010
+  SL5%               block= 40  delta=  -73.2bp [ -113.3,  -14.0]  P(>0)=0.007

@@ -1,0 +1,27 @@
+panel dates=367 symbols=5581  to20 finite cells=1894592
+
+############ [G1] universe benchmark vs turnover-decile-matched benchmark
+
+== mom_bottom20
+  h=  1 universe-bench t= +2.07 (mean    +14.9bp) | matched-bench t= +2.16 (mean    +13.7bp) | n=327
+  h=  2 universe-bench t= +1.09 (mean    +16.9bp) | matched-bench t= +1.39 (mean    +19.4bp) | n=327
+  h=  3 universe-bench t= +0.72 (mean    +17.1bp) | matched-bench t= +1.19 (mean    +25.1bp) | n=327
+  h=  5 universe-bench t= +0.30 (mean    +12.2bp) | matched-bench t= +0.78 (mean    +28.4bp) | n=327
+  h= 20 universe-bench t= -0.81 (mean    -88.6bp) | matched-bench t= -0.09 (mean    -11.1bp) | n=327
+
+== mom_top20
+  h=  1 universe-bench t= +4.57 (mean    +61.6bp) | matched-bench t= +4.70 (mean    +56.0bp) | n=327
+  h=  2 universe-bench t= +1.56 (mean    +43.4bp) | matched-bench t= +1.85 (mean    +45.0bp) | n=327
+  h=  3 universe-bench t= +0.59 (mean    +25.2bp) | matched-bench t= +0.92 (mean    +34.2bp) | n=327
+  h=  5 universe-bench t= +0.03 (mean     +2.2bp) | matched-bench t= +0.35 (mean    +22.0bp) | n=327
+  h= 20 universe-bench t= -0.27 (mean    -73.5bp) | matched-bench t= +0.22 (mean    +46.0bp) | n=327
+
+############ [G2] split-half stability (matched benchmark)
+  mom_bottom20  h=1  1st half mean=    +8.1bp t=+1.28 | 2nd half mean=   +19.3bp t=+1.76
+  mom_bottom20  h=2  1st half mean=   +20.5bp t=+1.59 | 2nd half mean=   +18.3bp t=+0.74
+  mom_bottom20  h=3  1st half mean=   +29.8bp t=+1.52 | 2nd half mean=   +20.4bp t=+0.55
+  mom_top20     h=1  1st half mean=   +65.0bp t=+3.59 | 2nd half mean=   +47.0bp t=+3.04
+  mom_top20     h=2  1st half mean=   +64.0bp t=+1.67 | 2nd half mean=   +26.2bp t=+0.87
+  mom_top20     h=3  1st half mean=   +63.0bp t=+1.08 | 2nd half mean=    +5.6bp t=+0.12
+
+wrote analysis\_diag_match_result.json  elapsed=44.4s

@@ -1,0 +1,1163 @@
+{
+  "seed": 20261109,
+  "results": {
+    "mom_bottom20": {
+      "hold20 (no SL/TP)": {
+        "n_cohorts": 326,
+        "avg_hold_days": 20.0,
+        "exposure_pick": 0.945,
+        "exposure_uni": 0.945,
+        "cohort": {
+          "ce_g1_bp": -31.5,
+          "universe_ce_g1_bp": 73.9,
+          "delta_bp": -105.4,
+          "ci5": -200.8,
+          "ci95": 12.9,
+          "p_gt0": 0.083
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 1.29,
+          "ann_vol_pct": 27.8,
+          "sharpe": 0.19,
+          "maxdd_pct": -30.15,
+          "cvar5_bp": 409.0,
+          "skew_daily": -0.17,
+          "ce_ann_g1": 1.29,
+          "ce_ann_g2": -2.57,
+          "ce_ann_g5": -13.36
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 8.92,
+          "ann_vol_pct": 19.74,
+          "sharpe": 0.53,
+          "maxdd_pct": -21.72,
+          "cvar5_bp": 305.4,
+          "skew_daily": -0.68,
+          "ce_ann_g1": 8.92,
+          "ce_ann_g2": 6.8,
+          "ce_ann_g5": 0.6
+        },
+        "delta_path_g1": {
+          "delta_pct": -7.6,
+          "ci5_pct": -24.6,
+          "ci95_pct": 15.0,
+          "p_gt0": 0.282,
+          "se_pct": 12.5
+        },
+        "delta_path_g5": {
+          "delta_pct": -14.0,
+          "ci5_pct": -26.7,
+          "ci95_pct": 2.9,
+          "p_gt0": 0.072,
+          "se_pct": 9.6
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": -1.13,
+          "ann_vol_pct": 29.09,
+          "sharpe": 0.11,
+          "maxdd_pct": -32.8,
+          "cvar5_bp": 420.9,
+          "skew_daily": -0.13,
+          "ce_ann_g1": -1.13,
+          "ce_ann_g2": -5.24,
+          "ce_ann_g5": -16.66
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": 7.75,
+          "ann_vol_pct": 20.92,
+          "sharpe": 0.46,
+          "maxdd_pct": -23.42,
+          "cvar5_bp": 319.3,
+          "skew_daily": -0.63,
+          "ce_ann_g1": 7.75,
+          "ce_ann_g2": 5.39,
+          "ce_ann_g5": -1.46
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": -8.9,
+          "ci5_pct": -25.1,
+          "ci95_pct": 18.7,
+          "p_gt0": 0.282,
+          "se_pct": 14.3
+        }
+      },
+      "SL5%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 10.1,
+        "exposure_pick": 0.478,
+        "exposure_uni": 0.561,
+        "cohort": {
+          "ce_g1_bp": 2.0,
+          "universe_ce_g1_bp": 75.1,
+          "delta_bp": -73.2,
+          "ci5": -113.5,
+          "ci95": -16.4,
+          "p_gt0": 0.015
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 2.96,
+          "ann_vol_pct": 11.6,
+          "sharpe": 0.31,
+          "maxdd_pct": -10.29,
+          "cvar5_bp": 159.6,
+          "skew_daily": -0.56,
+          "ce_ann_g1": 2.96,
+          "ce_ann_g2": 2.27,
+          "ce_ann_g5": 0.2
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 9.39,
+          "ann_vol_pct": 9.65,
+          "sharpe": 0.98,
+          "maxdd_pct": -8.58,
+          "cvar5_bp": 139.6,
+          "skew_daily": -0.59,
+          "ce_ann_g1": 9.39,
+          "ce_ann_g2": 8.88,
+          "ce_ann_g5": 7.35
+        },
+        "delta_path_g1": {
+          "delta_pct": -6.4,
+          "ci5_pct": -14.1,
+          "ci95_pct": 0.6,
+          "p_gt0": 0.065,
+          "se_pct": 4.5
+        },
+        "delta_path_g5": {
+          "delta_pct": -7.2,
+          "ci5_pct": -13.9,
+          "ci95_pct": 0.7,
+          "p_gt0": 0.07,
+          "se_pct": 4.6
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": -22.41,
+          "ann_vol_pct": 25.75,
+          "sharpe": -0.85,
+          "maxdd_pct": -36.39,
+          "cvar5_bp": 405.2,
+          "skew_daily": -0.73,
+          "ce_ann_g1": -22.41,
+          "ce_ann_g2": -24.99,
+          "ce_ann_g5": -32.37
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": -2.64,
+          "ann_vol_pct": 17.23,
+          "sharpe": -0.07,
+          "maxdd_pct": -24.34,
+          "cvar5_bp": 273.2,
+          "skew_daily": -0.75,
+          "ce_ann_g1": -2.64,
+          "ce_ann_g2": -4.09,
+          "ce_ann_g5": -8.36
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": -19.8,
+          "ci5_pct": -29.8,
+          "ci95_pct": -0.5,
+          "p_gt0": 0.045,
+          "se_pct": 8.8
+        }
+      },
+      "TP10%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 13.5,
+        "exposure_pick": 0.637,
+        "exposure_uni": 0.724,
+        "cohort": {
+          "ce_g1_bp": 102.6,
+          "universe_ce_g1_bp": 75.8,
+          "delta_bp": 26.9,
+          "ci5": -19.9,
+          "ci95": 78.0,
+          "p_gt0": 0.853
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 15.23,
+          "ann_vol_pct": 18.26,
+          "sharpe": 0.87,
+          "maxdd_pct": -18.74,
+          "cvar5_bp": 258.8,
+          "skew_daily": 0.08,
+          "ce_ann_g1": 15.23,
+          "ce_ann_g2": 13.33,
+          "ce_ann_g5": 7.81
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 9.42,
+          "ann_vol_pct": 14.73,
+          "sharpe": 0.69,
+          "maxdd_pct": -16.51,
+          "cvar5_bp": 223.9,
+          "skew_daily": -0.6,
+          "ce_ann_g1": 9.42,
+          "ce_ann_g2": 8.23,
+          "ce_ann_g5": 4.71
+        },
+        "delta_path_g1": {
+          "delta_pct": 5.8,
+          "ci5_pct": -5.4,
+          "ci95_pct": 20.4,
+          "p_gt0": 0.823,
+          "se_pct": 7.7
+        },
+        "delta_path_g5": {
+          "delta_pct": 3.1,
+          "ci5_pct": -5.6,
+          "ci95_pct": 16.7,
+          "p_gt0": 0.757,
+          "se_pct": 6.9
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": 32.39,
+          "ann_vol_pct": 29.22,
+          "sharpe": 1.11,
+          "maxdd_pct": -25.99,
+          "cvar5_bp": 392.7,
+          "skew_daily": 0.34,
+          "ce_ann_g1": 32.39,
+          "ce_ann_g2": 26.9,
+          "ce_ann_g5": 11.84
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": 15.36,
+          "ann_vol_pct": 20.12,
+          "sharpe": 0.81,
+          "maxdd_pct": -20.49,
+          "cvar5_bp": 293.9,
+          "skew_daily": -0.5,
+          "ce_ann_g1": 15.36,
+          "ce_ann_g2": 13.03,
+          "ce_ann_g5": 6.26
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": 17.0,
+          "ci5_pct": -4.0,
+          "ci95_pct": 61.5,
+          "p_gt0": 0.892,
+          "se_pct": 21.7
+        }
+      },
+      "SL5%+TP10%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 6.2,
+        "exposure_pick": 0.291,
+        "exposure_uni": 0.405,
+        "cohort": {
+          "ce_g1_bp": 62.0,
+          "universe_ce_g1_bp": 60.5,
+          "delta_bp": 1.6,
+          "ci5": -29.5,
+          "ci95": 43.8,
+          "p_gt0": 0.61
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 8.52,
+          "ann_vol_pct": 6.38,
+          "sharpe": 1.31,
+          "maxdd_pct": -5.06,
+          "cvar5_bp": 86.8,
+          "skew_daily": -0.26,
+          "ce_ann_g1": 8.52,
+          "ce_ann_g2": 8.29,
+          "ce_ann_g5": 7.63
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 7.63,
+          "ann_vol_pct": 6.25,
+          "sharpe": 1.21,
+          "maxdd_pct": -6.61,
+          "cvar5_bp": 89.3,
+          "skew_daily": -0.46,
+          "ce_ann_g1": 7.63,
+          "ce_ann_g2": 7.42,
+          "ce_ann_g5": 6.79
+        },
+        "delta_path_g1": {
+          "delta_pct": 0.9,
+          "ci5_pct": -5.0,
+          "ci95_pct": 6.4,
+          "p_gt0": 0.662,
+          "se_pct": 3.4
+        },
+        "delta_path_g5": {
+          "delta_pct": 0.8,
+          "ci5_pct": -3.8,
+          "ci95_pct": 6.3,
+          "p_gt0": 0.67,
+          "se_pct": 3.1
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": 11.73,
+          "ann_vol_pct": 25.36,
+          "sharpe": 0.56,
+          "maxdd_pct": -27.89,
+          "cvar5_bp": 357.2,
+          "skew_daily": -0.02,
+          "ce_ann_g1": 11.73,
+          "ce_ann_g2": 8.19,
+          "ce_ann_g5": -1.82
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": 2.93,
+          "ann_vol_pct": 16.0,
+          "sharpe": 0.26,
+          "maxdd_pct": -23.53,
+          "cvar5_bp": 249.2,
+          "skew_daily": -0.58,
+          "ce_ann_g1": 2.93,
+          "ce_ann_g2": 1.61,
+          "ce_ann_g5": -2.28
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": 8.8,
+          "ci5_pct": -8.8,
+          "ci95_pct": 42.7,
+          "p_gt0": 0.823,
+          "se_pct": 15.4
+        }
+      },
+      "SL3%+TP30%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 6.5,
+        "exposure_pick": 0.309,
+        "exposure_uni": 0.386,
+        "cohort": {
+          "ce_g1_bp": 51.6,
+          "universe_ce_g1_bp": 66.0,
+          "delta_bp": -14.4,
+          "ci5": -52.2,
+          "ci95": 39.3,
+          "p_gt0": 0.312
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 7.22,
+          "ann_vol_pct": 7.01,
+          "sharpe": 1.03,
+          "maxdd_pct": -4.63,
+          "cvar5_bp": 93.2,
+          "skew_daily": -0.49,
+          "ce_ann_g1": 7.22,
+          "ce_ann_g2": 6.95,
+          "ce_ann_g5": 6.16
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 8.09,
+          "ann_vol_pct": 6.16,
+          "sharpe": 1.29,
+          "maxdd_pct": -5.04,
+          "cvar5_bp": 86.7,
+          "skew_daily": -0.52,
+          "ce_ann_g1": 8.09,
+          "ce_ann_g2": 7.89,
+          "ce_ann_g5": 7.27
+        },
+        "delta_path_g1": {
+          "delta_pct": -0.9,
+          "ci5_pct": -5.7,
+          "ci95_pct": 4.7,
+          "p_gt0": 0.472,
+          "se_pct": 3.2
+        },
+        "delta_path_g5": {
+          "delta_pct": -1.1,
+          "ci5_pct": -6.1,
+          "ci95_pct": 4.6,
+          "p_gt0": 0.4,
+          "se_pct": 3.3
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": -1.51,
+          "ann_vol_pct": 24.06,
+          "sharpe": 0.06,
+          "maxdd_pct": -24.93,
+          "cvar5_bp": 350.1,
+          "skew_daily": -0.56,
+          "ce_ann_g1": -1.51,
+          "ce_ann_g2": -4.36,
+          "ce_ann_g5": -12.55
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": -2.72,
+          "ann_vol_pct": 15.74,
+          "sharpe": -0.1,
+          "maxdd_pct": -21.34,
+          "cvar5_bp": 244.6,
+          "skew_daily": -0.71,
+          "ce_ann_g1": -2.72,
+          "ce_ann_g2": -3.93,
+          "ce_ann_g5": -7.5
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": 1.2,
+          "ci5_pct": -13.9,
+          "ci95_pct": 22.7,
+          "p_gt0": 0.557,
+          "se_pct": 12.0
+        }
+      },
+      "SL10%+TP5%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 6.6,
+        "exposure_pick": 0.311,
+        "exposure_uni": 0.413,
+        "cohort": {
+          "ce_g1_bp": 53.7,
+          "universe_ce_g1_bp": 42.4,
+          "delta_bp": 11.4,
+          "ci5": -26.1,
+          "ci95": 46.3,
+          "p_gt0": 0.708
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 7.46,
+          "ann_vol_pct": 6.99,
+          "sharpe": 1.06,
+          "maxdd_pct": -6.99,
+          "cvar5_bp": 93.9,
+          "skew_daily": -0.05,
+          "ce_ann_g1": 7.46,
+          "ce_ann_g2": 7.2,
+          "ce_ann_g5": 6.42
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 5.39,
+          "ann_vol_pct": 6.88,
+          "sharpe": 0.8,
+          "maxdd_pct": -8.65,
+          "cvar5_bp": 102.1,
+          "skew_daily": -0.59,
+          "ce_ann_g1": 5.39,
+          "ce_ann_g2": 5.14,
+          "ce_ann_g5": 4.39
+        },
+        "delta_path_g1": {
+          "delta_pct": 2.1,
+          "ci5_pct": -2.9,
+          "ci95_pct": 7.1,
+          "p_gt0": 0.77,
+          "se_pct": 3.2
+        },
+        "delta_path_g5": {
+          "delta_pct": 2.0,
+          "ci5_pct": -2.6,
+          "ci95_pct": 7.1,
+          "p_gt0": 0.775,
+          "se_pct": 3.0
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": 13.31,
+          "ann_vol_pct": 25.0,
+          "sharpe": 0.62,
+          "maxdd_pct": -30.81,
+          "cvar5_bp": 350.9,
+          "skew_daily": 0.07,
+          "ce_ann_g1": 13.31,
+          "ce_ann_g2": 9.82,
+          "ce_ann_g5": -0.01
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": 9.73,
+          "ann_vol_pct": 17.12,
+          "sharpe": 0.63,
+          "maxdd_pct": -22.9,
+          "cvar5_bp": 259.9,
+          "skew_daily": -0.55,
+          "ce_ann_g1": 9.73,
+          "ce_ann_g2": 8.12,
+          "ce_ann_g5": 3.4
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": 3.6,
+          "ci5_pct": -13.8,
+          "ci95_pct": 35.1,
+          "p_gt0": 0.75,
+          "se_pct": 15.4
+        }
+      }
+    },
+    "mom_top20": {
+      "hold20 (no SL/TP)": {
+        "n_cohorts": 326,
+        "avg_hold_days": 20.0,
+        "exposure_pick": 0.945,
+        "exposure_uni": 0.945,
+        "cohort": {
+          "ce_g1_bp": -84.7,
+          "universe_ce_g1_bp": 73.9,
+          "delta_bp": -158.6,
+          "ci5": -419.9,
+          "ci95": 247.8,
+          "p_gt0": 0.333
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": -11.69,
+          "ann_vol_pct": 41.42,
+          "sharpe": -0.09,
+          "maxdd_pct": -45.8,
+          "cvar5_bp": 586.6,
+          "skew_daily": -0.11,
+          "ce_ann_g1": -11.69,
+          "ce_ann_g2": -19.0,
+          "ce_ann_g5": -37.61
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 8.92,
+          "ann_vol_pct": 19.74,
+          "sharpe": 0.53,
+          "maxdd_pct": -21.72,
+          "cvar5_bp": 305.4,
+          "skew_daily": -0.68,
+          "ce_ann_g1": 8.92,
+          "ce_ann_g2": 6.8,
+          "ce_ann_g5": 0.6
+        },
+        "delta_path_g1": {
+          "delta_pct": -20.6,
+          "ci5_pct": -51.1,
+          "ci95_pct": 33.1,
+          "p_gt0": 0.258,
+          "se_pct": 27.6
+        },
+        "delta_path_g5": {
+          "delta_pct": -38.2,
+          "ci5_pct": -62.9,
+          "ci95_pct": 6.7,
+          "p_gt0": 0.077,
+          "se_pct": 22.8
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": -15.54,
+          "ann_vol_pct": 44.12,
+          "sharpe": -0.16,
+          "maxdd_pct": -53.44,
+          "cvar5_bp": 604.0,
+          "skew_daily": -0.05,
+          "ce_ann_g1": -15.54,
+          "ce_ann_g2": -23.41,
+          "ce_ann_g5": -42.99
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": 7.75,
+          "ann_vol_pct": 20.92,
+          "sharpe": 0.46,
+          "maxdd_pct": -23.42,
+          "cvar5_bp": 319.3,
+          "skew_daily": -0.63,
+          "ce_ann_g1": 7.75,
+          "ce_ann_g2": 5.39,
+          "ce_ann_g5": -1.46
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": -23.3,
+          "ci5_pct": -58.4,
+          "ci95_pct": 29.6,
+          "p_gt0": 0.22,
+          "se_pct": 27.9
+        }
+      },
+      "SL5%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 5.6,
+        "exposure_pick": 0.262,
+        "exposure_uni": 0.561,
+        "cohort": {
+          "ce_g1_bp": 67.1,
+          "universe_ce_g1_bp": 75.1,
+          "delta_bp": -8.0,
+          "ci5": -96.7,
+          "ci95": 105.3,
+          "p_gt0": 0.507
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 6.38,
+          "ann_vol_pct": 11.49,
+          "sharpe": 0.6,
+          "maxdd_pct": -11.41,
+          "cvar5_bp": 161.8,
+          "skew_daily": 0.05,
+          "ce_ann_g1": 6.38,
+          "ce_ann_g2": 5.68,
+          "ce_ann_g5": 3.61
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 9.39,
+          "ann_vol_pct": 9.65,
+          "sharpe": 0.98,
+          "maxdd_pct": -8.58,
+          "cvar5_bp": 139.6,
+          "skew_daily": -0.59,
+          "ce_ann_g1": 9.39,
+          "ce_ann_g2": 8.88,
+          "ce_ann_g5": 7.35
+        },
+        "delta_path_g1": {
+          "delta_pct": -3.0,
+          "ci5_pct": -17.6,
+          "ci95_pct": 13.4,
+          "p_gt0": 0.393,
+          "se_pct": 9.3
+        },
+        "delta_path_g5": {
+          "delta_pct": -3.7,
+          "ci5_pct": -16.8,
+          "ci95_pct": 11.2,
+          "p_gt0": 0.357,
+          "se_pct": 8.5
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": -21.49,
+          "ann_vol_pct": 41.08,
+          "sharpe": -0.38,
+          "maxdd_pct": -50.86,
+          "cvar5_bp": 609.9,
+          "skew_daily": -0.28,
+          "ce_ann_g1": -21.49,
+          "ce_ann_g2": -27.93,
+          "ce_ann_g5": -44.45
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": -2.64,
+          "ann_vol_pct": 17.23,
+          "sharpe": -0.07,
+          "maxdd_pct": -24.34,
+          "cvar5_bp": 273.2,
+          "skew_daily": -0.75,
+          "ce_ann_g1": -2.64,
+          "ce_ann_g2": -4.09,
+          "ce_ann_g5": -8.36
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": -18.8,
+          "ci5_pct": -44.2,
+          "ci95_pct": 43.9,
+          "p_gt0": 0.37,
+          "se_pct": 27.5
+        }
+      },
+      "TP10%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 9.3,
+        "exposure_pick": 0.438,
+        "exposure_uni": 0.724,
+        "cohort": {
+          "ce_g1_bp": 0.3,
+          "universe_ce_g1_bp": 75.8,
+          "delta_bp": -75.5,
+          "ci5": -221.9,
+          "ci95": 97.4,
+          "p_gt0": 0.28
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": -0.74,
+          "ann_vol_pct": 17.46,
+          "sharpe": 0.04,
+          "maxdd_pct": -20.43,
+          "cvar5_bp": 261.3,
+          "skew_daily": -0.26,
+          "ce_ann_g1": -0.74,
+          "ce_ann_g2": -2.25,
+          "ce_ann_g5": -6.66
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 9.42,
+          "ann_vol_pct": 14.73,
+          "sharpe": 0.69,
+          "maxdd_pct": -16.51,
+          "cvar5_bp": 223.9,
+          "skew_daily": -0.6,
+          "ce_ann_g1": 9.42,
+          "ce_ann_g2": 8.23,
+          "ce_ann_g5": 4.71
+        },
+        "delta_path_g1": {
+          "delta_pct": -10.2,
+          "ci5_pct": -29.1,
+          "ci95_pct": 17.2,
+          "p_gt0": 0.263,
+          "se_pct": 13.8
+        },
+        "delta_path_g5": {
+          "delta_pct": -11.4,
+          "ci5_pct": -30.2,
+          "ci95_pct": 11.7,
+          "p_gt0": 0.247,
+          "se_pct": 13.3
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": 3.11,
+          "ann_vol_pct": 38.76,
+          "sharpe": 0.27,
+          "maxdd_pct": -42.63,
+          "cvar5_bp": 527.7,
+          "skew_daily": -0.03,
+          "ce_ann_g1": 3.11,
+          "ce_ann_g2": -4.37,
+          "ce_ann_g5": -23.78
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": 15.36,
+          "ann_vol_pct": 20.12,
+          "sharpe": 0.81,
+          "maxdd_pct": -20.49,
+          "cvar5_bp": 293.9,
+          "skew_daily": -0.5,
+          "ce_ann_g1": 15.36,
+          "ce_ann_g2": 13.03,
+          "ce_ann_g5": 6.26
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": -12.2,
+          "ci5_pct": -42.9,
+          "ci95_pct": 67.3,
+          "p_gt0": 0.465,
+          "se_pct": 33.8
+        }
+      },
+      "SL5%+TP10%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 1.9,
+        "exposure_pick": 0.09,
+        "exposure_uni": 0.405,
+        "cohort": {
+          "ce_g1_bp": 42.0,
+          "universe_ce_g1_bp": 60.5,
+          "delta_bp": -18.4,
+          "ci5": -92.8,
+          "ci95": 47.3,
+          "p_gt0": 0.297
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 5.46,
+          "ann_vol_pct": 2.68,
+          "sharpe": 2.0,
+          "maxdd_pct": -1.76,
+          "cvar5_bp": 33.6,
+          "skew_daily": 0.06,
+          "ce_ann_g1": 5.46,
+          "ce_ann_g2": 5.42,
+          "ce_ann_g5": 5.3
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 7.63,
+          "ann_vol_pct": 6.25,
+          "sharpe": 1.21,
+          "maxdd_pct": -6.61,
+          "cvar5_bp": 89.3,
+          "skew_daily": -0.46,
+          "ce_ann_g1": 7.63,
+          "ce_ann_g2": 7.42,
+          "ce_ann_g5": 6.79
+        },
+        "delta_path_g1": {
+          "delta_pct": -2.2,
+          "ci5_pct": -12.8,
+          "ci95_pct": 7.0,
+          "p_gt0": 0.33,
+          "se_pct": 6.3
+        },
+        "delta_path_g5": {
+          "delta_pct": -1.5,
+          "ci5_pct": -11.6,
+          "ci95_pct": 7.4,
+          "p_gt0": 0.347,
+          "se_pct": 5.8
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": 50.13,
+          "ann_vol_pct": 28.2,
+          "sharpe": 1.58,
+          "maxdd_pct": -21.47,
+          "cvar5_bp": 369.7,
+          "skew_daily": 0.04,
+          "ce_ann_g1": 50.13,
+          "ce_ann_g2": 44.3,
+          "ce_ann_g5": 28.11
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": 2.93,
+          "ann_vol_pct": 16.0,
+          "sharpe": 0.26,
+          "maxdd_pct": -23.53,
+          "cvar5_bp": 249.2,
+          "skew_daily": -0.58,
+          "ce_ann_g1": 2.93,
+          "ce_ann_g2": 1.61,
+          "ce_ann_g5": -2.28
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": 47.2,
+          "ci5_pct": -0.1,
+          "ci95_pct": 116.4,
+          "p_gt0": 0.948,
+          "se_pct": 37.8
+        }
+      },
+      "SL3%+TP30%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 2.7,
+        "exposure_pick": 0.125,
+        "exposure_uni": 0.386,
+        "cohort": {
+          "ce_g1_bp": 41.6,
+          "universe_ce_g1_bp": 66.0,
+          "delta_bp": -24.4,
+          "ci5": -93.1,
+          "ci95": 51.3,
+          "p_gt0": 0.32
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 4.91,
+          "ann_vol_pct": 4.34,
+          "sharpe": 1.13,
+          "maxdd_pct": -3.02,
+          "cvar5_bp": 55.3,
+          "skew_daily": 0.24,
+          "ce_ann_g1": 4.91,
+          "ce_ann_g2": 4.81,
+          "ce_ann_g5": 4.52
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 8.09,
+          "ann_vol_pct": 6.16,
+          "sharpe": 1.29,
+          "maxdd_pct": -5.04,
+          "cvar5_bp": 86.7,
+          "skew_daily": -0.52,
+          "ce_ann_g1": 8.09,
+          "ce_ann_g2": 7.89,
+          "ce_ann_g5": 7.27
+        },
+        "delta_path_g1": {
+          "delta_pct": -3.2,
+          "ci5_pct": -12.7,
+          "ci95_pct": 5.4,
+          "p_gt0": 0.26,
+          "se_pct": 5.6
+        },
+        "delta_path_g5": {
+          "delta_pct": -2.8,
+          "ci5_pct": -12.8,
+          "ci95_pct": 4.9,
+          "p_gt0": 0.28,
+          "se_pct": 5.6
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": 18.65,
+          "ann_vol_pct": 32.17,
+          "sharpe": 0.69,
+          "maxdd_pct": -26.26,
+          "cvar5_bp": 437.5,
+          "skew_daily": 0.02,
+          "ce_ann_g1": 18.65,
+          "ce_ann_g2": 12.67,
+          "ce_ann_g5": -3.56
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": -2.72,
+          "ann_vol_pct": 15.74,
+          "sharpe": -0.1,
+          "maxdd_pct": -21.34,
+          "cvar5_bp": 244.6,
+          "skew_daily": -0.71,
+          "ce_ann_g1": -2.72,
+          "ce_ann_g2": -3.93,
+          "ce_ann_g5": -7.5
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": 21.4,
+          "ci5_pct": -17.5,
+          "ci95_pct": 73.4,
+          "p_gt0": 0.782,
+          "se_pct": 29.3
+        }
+      },
+      "SL10%+TP5%": {
+        "n_cohorts": 326,
+        "avg_hold_days": 2.1,
+        "exposure_pick": 0.097,
+        "exposure_uni": 0.413,
+        "cohort": {
+          "ce_g1_bp": 32.5,
+          "universe_ce_g1_bp": 42.4,
+          "delta_bp": -9.9,
+          "ci5": -76.8,
+          "ci95": 67.0,
+          "p_gt0": 0.43
+        },
+        "path_pick": {
+          "n": 345,
+          "ann_ret_pct": 4.24,
+          "ann_vol_pct": 2.72,
+          "sharpe": 1.54,
+          "maxdd_pct": -1.54,
+          "cvar5_bp": 35.5,
+          "skew_daily": -0.17,
+          "ce_ann_g1": 4.24,
+          "ce_ann_g2": 4.2,
+          "ce_ann_g5": 4.08
+        },
+        "path_uni": {
+          "n": 345,
+          "ann_ret_pct": 5.39,
+          "ann_vol_pct": 6.88,
+          "sharpe": 0.8,
+          "maxdd_pct": -8.65,
+          "cvar5_bp": 102.1,
+          "skew_daily": -0.59,
+          "ce_ann_g1": 5.39,
+          "ce_ann_g2": 5.14,
+          "ce_ann_g5": 4.39
+        },
+        "delta_path_g1": {
+          "delta_pct": -1.2,
+          "ci5_pct": -12.1,
+          "ci95_pct": 8.4,
+          "p_gt0": 0.39,
+          "se_pct": 6.4
+        },
+        "delta_path_g5": {
+          "delta_pct": -0.3,
+          "ci5_pct": -11.6,
+          "ci95_pct": 8.7,
+          "p_gt0": 0.468,
+          "se_pct": 6.1
+        },
+        "fullinvest_pick": {
+          "n": 345,
+          "ann_ret_pct": 46.18,
+          "ann_vol_pct": 27.44,
+          "sharpe": 1.52,
+          "maxdd_pct": -16.59,
+          "cvar5_bp": 369.4,
+          "skew_daily": -0.17,
+          "ce_ann_g1": 46.18,
+          "ce_ann_g2": 40.77,
+          "ce_ann_g5": 25.63
+        },
+        "fullinvest_uni": {
+          "n": 345,
+          "ann_ret_pct": 9.73,
+          "ann_vol_pct": 17.12,
+          "sharpe": 0.63,
+          "maxdd_pct": -22.9,
+          "cvar5_bp": 259.9,
+          "skew_daily": -0.55,
+          "ce_ann_g1": 9.73,
+          "ce_ann_g2": 8.12,
+          "ce_ann_g5": 3.4
+        },
+        "delta_fullinvest_g1": {
+          "delta_pct": 36.4,
+          "ci5_pct": -7.1,
+          "ci95_pct": 102.3,
+          "p_gt0": 0.905,
+          "se_pct": 34.4
+        }
+      }
+    }
+  },
+  "size_check": {
+    "hold20": {
+      "draws": 200,
+      "false_positive_rate": 0.025,
+      "delta_bp_mean": -5.3,
+      "delta_bp_sd": 17.0,
+      "delta_bp_p5": -36.8,
+      "delta_bp_p95": 21.6
+    },
+    "SL5%": {
+      "draws": 200,
+      "false_positive_rate": 0.045,
+      "delta_bp_mean": -1.7,
+      "delta_bp_sd": 13.5,
+      "delta_bp_p5": -21.9,
+      "delta_bp_p95": 23.0
+    }
+  },
+  "power": {
+    "hold20": {
+      "n": 326,
+      "n_indep": 16.3,
+      "sd_bp": 439.7,
+      "se_bp": 108.9,
+      "mde80_bp": 305.2,
+      "blocks_for_30bp": 1686.6
+    },
+    "SL5%": {
+      "n": 326,
+      "n_indep": 16.3,
+      "sd_bp": 294.5,
+      "se_bp": 72.9,
+      "mde80_bp": 204.4,
+      "blocks_for_30bp": 756.6
+    }
+  },
+  "breadth": {
+    "20": {
+      "n": 327,
+      "n_indep": 16.4,
+      "sd_bp": 458.1,
+      "se_bp": 113.3,
+      "mde80_bp": 317.5,
+      "mean_active_bp": -119.7,
+      "t_stat": -1.06,
+      "blocks_for_30bp": 1830.7,
+      "years_for_30bp": 145.3
+    },
+    "50": {
+      "n": 327,
+      "n_indep": 16.4,
+      "sd_bp": 434.0,
+      "se_bp": 107.3,
+      "mde80_bp": 300.7,
+      "mean_active_bp": -81.4,
+      "t_stat": -0.76,
+      "blocks_for_30bp": 1643.1,
+      "years_for_30bp": 130.4
+    },
+    "100": {
+      "n": 327,
+      "n_indep": 16.4,
+      "sd_bp": 408.4,
+      "se_bp": 101.0,
+      "mde80_bp": 283.0,
+      "mean_active_bp": -50.8,
+      "t_stat": -0.5,
+      "blocks_for_30bp": 1455.0,
+      "years_for_30bp": 115.5
+    },
+    "200": {
+      "n": 327,
+      "n_indep": 16.4,
+      "sd_bp": 367.3,
+      "se_bp": 90.8,
+      "mde80_bp": 254.6,
+      "mean_active_bp": -36.6,
+      "t_stat": -0.4,
+      "blocks_for_30bp": 1176.9,
+      "years_for_30bp": 93.4
+    },
+    "400": {
+      "n": 327,
+      "n_indep": 16.4,
+      "sd_bp": 322.6,
+      "se_bp": 79.8,
+      "mde80_bp": 223.5,
+      "mean_active_bp": -22.9,
+      "t_stat": -0.29,
+      "blocks_for_30bp": 907.9,
+      "years_for_30bp": 72.1
+    }
+  },
+  "parity": {
+    "exit_max_abs_diff": 0.0,
+    "per_cohort_ce_check": {
+      "mom_bottom20|hold20 (no SL/TP)": {
+        "ce_g1_bp": -31.5,
+        "delta_bp": -105.4,
+        "parity_vs_control": true
+      },
+      "mom_bottom20|SL5%": {
+        "ce_g1_bp": 2.0,
+        "delta_bp": -73.2,
+        "parity_vs_control": true
+      },
+      "mom_bottom20|TP10%": {
+        "ce_g1_bp": 102.6,
+        "delta_bp": 26.9,
+        "parity_vs_control": true
+      },
+      "mom_bottom20|SL5%+TP10%": {
+        "ce_g1_bp": 62.0,
+        "delta_bp": 1.6,
+        "parity_vs_control": true
+      },
+      "mom_bottom20|SL3%+TP30%": {
+        "ce_g1_bp": 51.6,
+        "delta_bp": -14.4,
+        "parity_vs_control": true
+      },
+      "mom_bottom20|SL10%+TP5%": {
+        "ce_g1_bp": 53.7,
+        "delta_bp": 11.4,
+        "parity_vs_control": true
+      },
+      "mom_top20|hold20 (no SL/TP)": {
+        "ce_g1_bp": -84.7,
+        "delta_bp": -158.6,
+        "parity_vs_control": true
+      },
+      "mom_top20|SL5%": {
+        "ce_g1_bp": 67.1,
+        "delta_bp": -8.0,
+        "parity_vs_control": true
+      },
+      "mom_top20|TP10%": {
+        "ce_g1_bp": 0.3,
+        "delta_bp": -75.5,
+        "parity_vs_control": true
+      },
+      "mom_top20|SL5%+TP10%": {
+        "ce_g1_bp": 42.0,
+        "delta_bp": -18.4,
+        "parity_vs_control": true
+      },
+      "mom_top20|SL3%+TP30%": {
+        "ce_g1_bp": 41.6,
+        "delta_bp": -24.4,
+        "parity_vs_control": true
+      },
+      "mom_top20|SL10%+TP5%": {
+        "ce_g1_bp": 32.5,
+        "delta_bp": -9.9,
+        "parity_vs_control": true
+      }
+    }
+  }
+}

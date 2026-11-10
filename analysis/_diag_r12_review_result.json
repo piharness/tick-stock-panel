@@ -1,0 +1,164 @@
+{
+  "panel": {
+    "dates": 367,
+    "symbols": 5581,
+    "date_min": "2025-05-07",
+    "date_max": "2026-11-06",
+    "span_years": 1.456,
+    "seed": 20261114
+  },
+  "parity": {
+    "n_open": 57,
+    "n_locked": 41,
+    "n_fill": 16,
+    "raw_open": 59,
+    "raw_locked": 42,
+    "raw_fill": 17,
+    "mean_locked_bp": 6621.8,
+    "mean_fill_bp": 212.3,
+    "locked_per_year": 28.15,
+    "open_per_year": 39.14,
+    "fill_per_year": 10.99,
+    "r12_expected": {
+      "n_open": 57,
+      "n_locked": 41,
+      "n_fill": 16,
+      "mean_locked_bp": 6621.8,
+      "mean_fill_bp": 212.3
+    },
+    "match": true
+  },
+  "x_is_bounded_by_p_open": {
+    "p_open_point": 0.2807,
+    "p_open_cp95": [
+      0.1697,
+      0.4154
+    ],
+    "why": "a queue joined at 0930 sits behind bid1_vol; it fills only if the queue is drained, which means the limit price was abandoned, which is exactly the h != l (opened) class.  So P(fill) <= P(open) and x = P(V>Q_0930) inherits it.",
+    "r12_claimed_range": [
+      0.005,
+      0.07
+    ],
+    "r16_claimed_range": [
+      0.07,
+      0.5
+    ],
+    "implication": "if x is read as a fill probability, it is not 'unmeasured': it is 16/57 with 95% CI [17.0%, 41.5%], and 7% sits outside that interval. If x is read as P(V > Q_0930), it is a mechanistic proxy bounded above by the fill rate.  Either reading makes 42/322 registrations unnecessary.",
+    "r16_upper_end_excluded": "the 50% endpoint of R16's [7%, 50%] is above the 41.5% upper confidence limit of the measured fill rate"
+  },
+  "x_branch_is_empty": {
+    "formula_in_r15": "EV = p_break * r_break + (1 - p_break) * x * r_locked",
+    "second_term_requires": "fill WHILE the board stays locked (h == l all day)",
+    "but_fill_requires": "the 0930 queue to be drained -> h != l -> classified in the 16",
+    "so_second_term": 0.0,
+    "ev_per_open_cell_bp": 59.6,
+    "annualised_pct": 20.3,
+    "note": "matches sec 12.16 C's EV(x=0) = 0.2807 * 212.3 = 59.6bp, i.e. the x-term was never separable from the 16; measuring x cannot move it."
+  },
+  "tradable_branch_cost": {
+    "fill_mean_bp": 212.3,
+    "fill_sd_bp": 1960.3,
+    "fill_mean_ci95_bp": [
+      -832.2,
+      1256.9
+    ],
+    "fill_t": 0.43,
+    "fill_cells_needed_80pct": 670,
+    "years_at_observed_fill_rate": 61.0,
+    "per_open_cell_mean_bp": 59.6,
+    "per_open_cell_sd_bp": 1019.1,
+    "open_cells_needed_80pct": 2295,
+    "years_at_observed_open_rate": 58.6,
+    "note": "this is the branch a fill actually lands in; x's experiments (42/322) never shorten these numbers because they multiply an empty term."
+  },
+  "density_band": {
+    "registrations": 41,
+    "span_years": 1.456,
+    "per_year_point": 28.15,
+    "per_year_poisson95": [
+      20.2,
+      38.19
+    ],
+    "years_for_42_by_density": [
+      1.1,
+      2.08
+    ],
+    "panel_total_vs_42": "the panel contains 41 locked registrations in 367 sessions: the 42-registration experiment cannot be validated inside it",
+    "first_passage_note": "max locked cells in any 60-session window is 19, so 42 needs >=3 such windows even at the historical maximum",
+    "window60_max": 19,
+    "window60_median": 6
+  },
+  "design_comparison": {
+    "fixed_n": {
+      "n": 42,
+      "k_star": 0,
+      "p_zero_under_p1": 0.0475,
+      "years": 1.49
+    },
+    "sprt": {
+      "alpha": 0.05,
+      "beta": 0.2,
+      "expected_n_under_h0": 28.5,
+      "expected_n_under_h1": 24.6,
+      "reject_rate_under_h0": 0.0153,
+      "reject_rate_under_h1": 0.8036,
+      "bounds": {
+        "A": 2.7726,
+        "B": -1.5581
+      },
+      "years_under_h0": 1.01,
+      "years_under_h1": 0.87
+    },
+    "note": "fixed-n needs 42 registrations regardless of the truth; SPRT stops at ~29 if x is really 0.5% and ~25 if it is really 7%.  It fixes the stopping rule only, not the object the registrations measure."
+  },
+  "depth_path_code_facts": {
+    "default_finalize_time_lines": [
+      730
+    ],
+    "finalize_time_clamp_lines": [
+      739,
+      741
+    ],
+    "cron_job_lines": [
+      1449
+    ],
+    "persist_called_with_enriched_date": [
+      301
+    ],
+    "persist_partition_key": [
+      398
+    ],
+    "universe_from_enriched": [
+      230,
+      584
+    ],
+    "intraday_poll_persist_false": [
+      530
+    ],
+    "poll_window_lines": [
+      681
+    ],
+    "persist_key_is_enriched_date": true,
+    "note": "an intraday finalize would (a) select symbols from the last finalized session's enriched cache and (b) write date={enriched_date}, overwriting that session's post-close snapshot; the 15:01-18:00 clamp makes 09:30 unreachable through preferences at all"
+  },
+  "one_price_composition": {
+    "total_per_window60_median": 477,
+    "limit_up_median": 241,
+    "limit_down_median": 78,
+    "other_median": 206,
+    "note": "the 477-per-60-sessions figure counts h == l of any kind; only the limit_up slice is the long-side analogue of the strategy's registrations."
+  },
+  "market_wide_fill_branch": {
+    "cells": 1004,
+    "cells_per_year": 689.4,
+    "mean_bp": 22.5,
+    "sd_bp": 1638.4,
+    "ci95_bp": [
+      -78.9,
+      124.0
+    ],
+    "pool_fill_mean_bp": 212.3,
+    "welch_t_pool_vs_market": 0.39,
+    "reading": "the pooled fillable branch is estimable at market scale in weeks; the pool's 16 differ from it only by this t, so the pool's 'edge' on the branch that can actually be filled is a 16-cell claim, not a sample-size problem that 1.5 years of x would fix."
+  }
+}

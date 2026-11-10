@@ -1,0 +1,76 @@
+panel dates=367 symbols=5581
+[G2] cross-section of mom20: d60 p99.9=+110.3% #>90%=12 | d150 p99.9=+106.4% #>90%=11 | d250 p99.9=+117.1% #>90%=28 | d330 p99.9=+80.3% #>90%=5
+
+############ mom_top20  cohorts=327
+  [A] cohort-level intraday~gap (matched): slope -0.024 (t -0.25) R2 0.000 intercept +55.2bp n=327
+  [B] cross-sectional intraday~gap inside each cohort: slope -0.161 (t -6.16) intercept +63.6bp frac_neg 0.642 cohorts=327
+  [C] intraday active by entry-gap quintile (matched):
+      Q1 gap   -201.9bp  intraday    +84.6bp (t +3.04) n=66
+      Q2 gap    -76.2bp  intraday    +62.1bp (t +2.29) n=65
+      Q3 gap    -25.6bp  intraday    +26.8bp (t +1.15) n=65
+      Q4 gap    +25.1bp  intraday    +41.3bp (t +1.38) n=65
+      Q5 gap   +134.0bp  intraday    +64.0bp (t +2.75) n=66
+  [D] the daily cycle, gap and intraday, sessions k=-10..+10 (matched):
+      k=-10 gap    +97.0(t+15.73) | intraday   +252.6(t+24.57) n=327
+      k= -9 gap   +103.9(t+16.28) | intraday   +256.1(t+24.93) n=327
+      k= -8 gap    +97.8(t+15.04) | intraday   +261.4(t+25.58) n=327
+      k= -7 gap    +95.1(t+15.18) | intraday   +269.5(t+26.66) n=327
+      k= -6 gap    +97.0(t+14.49) | intraday   +273.6(t+25.94) n=327
+      k= -5 gap   +100.6(t+14.63) | intraday   +287.8(t+27.18) n=327
+      k= -4 gap   +101.9(t+15.06) | intraday   +293.9(t+26.88) n=327
+      k= -3 gap    +98.9(t+13.97) | intraday   +293.8(t+26.58) n=327
+      k= -2 gap    +96.5(t+13.02) | intraday   +294.4(t+25.98) n=327
+      k= -1 gap    +85.3(t+11.22) | intraday   +293.0(t+25.16) n=327
+      k=  0 gap    +55.8(t +7.66) | intraday   +286.6(t+24.14) n=327  <- signal date
+      k=  1 gap    -28.9(t -4.13) | intraday    +55.9(t +4.71) n=327
+      k=  2 gap    -57.0(t -8.51) | intraday    +47.9(t +4.02) n=327
+      k=  3 gap    -56.7(t -8.89) | intraday    +48.5(t +4.18) n=327
+      k=  4 gap    -50.6(t -8.71) | intraday    +47.1(t +4.19) n=327
+      k=  5 gap    -45.0(t -8.35) | intraday    +47.9(t +4.26) n=327
+      k=  6 gap    -36.9(t -7.62) | intraday    +37.6(t +3.34) n=327
+      k=  7 gap    -35.3(t -7.45) | intraday    +37.5(t +3.34) n=327
+      k=  8 gap    -33.4(t -7.14) | intraday    +41.8(t +3.87) n=327
+      k=  9 gap    -32.1(t -7.05) | intraday    +29.7(t +2.87) n=327
+      k= 10 gap    -30.5(t -6.60) | intraday    +22.6(t +2.13) n=327
+  [G] compounded 20d legs = +96.81% vs mom20 = +96.81% (ratio 1.000000) | median mom20 +95.8% | matched basket mom20 +8.17% -> excess +88.64%
+  [H] post(1) ~ pre(-5..-1): intraday slope -0.126 (t -0.97) R2 0.003 intercept +92.9bp | gap slope -0.029 (t -0.30) R2 0.000
+  [F] pick median daily amount: 14.63e8 CNY (cohort p10 8.54e8)
+  [E] drop adjustment-moved pick-days: clean S0 +54.2bp (all +55.9, dropped 22 cohorts +79.5bp)
+
+############ mom_bottom20  cohorts=327
+  [A] cohort-level intraday~gap (matched): slope -0.123 (t -1.44) R2 0.006 intercept +11.8bp n=327
+  [B] cross-sectional intraday~gap inside each cohort: slope -0.080 (t -1.56) intercept +26.0bp frac_neg 0.563 cohorts=327
+  [C] intraday active by entry-gap quintile (matched):
+      Q1 gap   -113.7bp  intraday    +33.4bp (t +2.08) n=66
+      Q2 gap    -21.1bp  intraday    +12.1bp (t +1.13) n=65
+      Q3 gap     -1.0bp  intraday    +31.3bp (t +2.06) n=65
+      Q4 gap    +17.0bp  intraday     -3.7bp (t -0.25) n=65
+      Q5 gap    +60.3bp  intraday     -6.8bp (t -0.55) n=66
+  [D] the daily cycle, gap and intraday, sessions k=-10..+10 (matched):
+      k=-10 gap    -74.5(t-12.93) | intraday   -128.7(t-19.11) n=327
+      k= -9 gap    -71.7(t-12.24) | intraday   -125.0(t-18.87) n=327
+      k= -8 gap    -63.3(t-10.86) | intraday   -118.5(t-18.58) n=327
+      k= -7 gap    -60.0(t-10.56) | intraday   -113.0(t-18.63) n=327
+      k= -6 gap    -55.1(t -9.96) | intraday   -109.6(t-17.44) n=327
+      k= -5 gap    -55.1(t-10.01) | intraday   -101.6(t-17.38) n=327
+      k= -4 gap    -54.6(t -9.60) | intraday    -99.8(t-16.08) n=327
+      k= -3 gap    -51.4(t -9.52) | intraday    -94.7(t-15.57) n=327
+      k= -2 gap    -49.0(t -9.07) | intraday    -92.2(t-15.71) n=327
+      k= -1 gap    -49.3(t -9.54) | intraday    -90.3(t-14.95) n=327
+      k=  0 gap    -42.7(t -8.99) | intraday    -85.0(t-13.68) n=327  <- signal date
+      k=  1 gap    -11.8(t -2.89) | intraday    +13.3(t +2.10) n=327
+      k=  2 gap     -1.9(t -0.57) | intraday     +8.6(t +1.35) n=327
+      k=  3 gap     +1.1(t +0.33) | intraday     +3.7(t +0.60) n=327
+      k=  4 gap     -2.7(t -0.90) | intraday     +6.5(t +1.01) n=327
+      k=  5 gap     -2.3(t -0.78) | intraday     +3.3(t +0.50) n=327
+      k=  6 gap     -2.2(t -0.78) | intraday    +10.4(t +1.55) n=327
+      k=  7 gap     -3.5(t -1.31) | intraday    +14.7(t +2.13) n=327
+      k=  8 gap     -8.9(t -3.38) | intraday    +11.0(t +1.60) n=327
+      k=  9 gap     -8.3(t -2.94) | intraday     +8.0(t +1.15) n=327
+      k= 10 gap     -6.1(t -2.26) | intraday     +4.9(t +0.74) n=327
+  [G] compounded 20d legs = -30.23% vs mom20 = -30.23% (ratio 1.000000) | median mom20 -28.7% | matched basket mom20 +4.62% -> excess -34.86%
+  [H] post(1) ~ pre(-5..-1): intraday slope -0.006 (t -0.05) R2 0.000 intercept +12.7bp | gap slope +0.557 (t +13.19) R2 0.348
+  [F] pick median daily amount: 2.03e8 CNY (cohort p10 1.25e8)
+  [E] drop adjustment-moved pick-days: clean S0 +14.3bp (all +13.3, dropped 14 cohorts +nanbp)
+
+wrote analysis\_diag_gaprev_result.json  elapsed=27.1s

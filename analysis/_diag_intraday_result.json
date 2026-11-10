@@ -1,0 +1,140 @@
+{
+  "seed": 20261109,
+  "segments": {
+    "mom_bottom20": {
+      "intraday": {
+        "universe": {
+          "n": 327,
+          "mean_bp": 14.9,
+          "sd_bp": 130.2,
+          "se_bp": 7.2,
+          "t": 2.07
+        },
+        "matched": {
+          "n": 327,
+          "mean_bp": 13.3,
+          "sd_bp": 114.1,
+          "se_bp": 6.3,
+          "t": 2.11
+        }
+      },
+      "overnight": {
+        "universe": {
+          "n": 327,
+          "mean_bp": -8.4,
+          "sd_bp": 66.5,
+          "se_bp": 3.7,
+          "t": -2.29
+        },
+        "matched": {
+          "n": 327,
+          "mean_bp": -1.9,
+          "sd_bp": 60.5,
+          "se_bp": 3.3,
+          "t": -0.57
+        }
+      },
+      "open2open": {
+        "universe": {
+          "n": 327,
+          "mean_bp": 6.0,
+          "sd_bp": 140.4,
+          "se_bp": 7.8,
+          "t": 0.78
+        },
+        "matched": {
+          "n": 327,
+          "mean_bp": 11.0,
+          "sd_bp": 129.0,
+          "se_bp": 7.1,
+          "t": 1.55
+        }
+      },
+      "identity_gap_bp": -0.5
+    },
+    "mom_top20": {
+      "intraday": {
+        "universe": {
+          "n": 327,
+          "mean_bp": 61.6,
+          "sd_bp": 243.7,
+          "se_bp": 13.5,
+          "t": 4.57
+        },
+        "matched": {
+          "n": 327,
+          "mean_bp": 55.9,
+          "sd_bp": 214.4,
+          "se_bp": 11.9,
+          "t": 4.71
+        }
+      },
+      "overnight": {
+        "universe": {
+          "n": 327,
+          "mean_bp": -68.6,
+          "sd_bp": 129.7,
+          "se_bp": 7.2,
+          "t": -9.57
+        },
+        "matched": {
+          "n": 327,
+          "mean_bp": -56.9,
+          "sd_bp": 121.0,
+          "se_bp": 6.7,
+          "t": -8.5
+        }
+      },
+      "open2open": {
+        "universe": {
+          "n": 327,
+          "mean_bp": -7.6,
+          "sd_bp": 287.7,
+          "se_bp": 15.9,
+          "t": -0.48
+        },
+        "matched": {
+          "n": 327,
+          "mean_bp": -1.5,
+          "sd_bp": 248.7,
+          "se_bp": 13.8,
+          "t": -0.11
+        }
+      },
+      "identity_gap_bp": -0.6
+    }
+  },
+  "placebo": {
+    "intraday": {
+      "draws": 200,
+      "null_mean_bp": -0.2,
+      "null_sd_bp": 3.1,
+      "null_t_mean": -0.07,
+      "null_t_sd": 0.95
+    },
+    "overnight": {
+      "draws": 200,
+      "null_mean_bp": 0.0,
+      "null_sd_bp": 1.6,
+      "null_t_mean": -0.0,
+      "null_t_sd": 1.06
+    },
+    "open2open": {
+      "draws": 200,
+      "null_mean_bp": -0.1,
+      "null_sd_bp": 3.7,
+      "null_t_mean": -0.04,
+      "null_t_sd": 1.03
+    }
+  },
+  "dq": {
+    "cells_checked": 2000524,
+    "open_outside_high_low": 0,
+    "open_outside_frac": 0.0,
+    "open_equals_prev_close_frac": 0.13466,
+    "mom_bottom20_open_gap_bp": -23.7,
+    "mom_bottom20_open_gap_t": -4.53,
+    "mom_top20_open_gap_bp": -46.4,
+    "mom_top20_open_gap_t": -5.51
+  }
+}

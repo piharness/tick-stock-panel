@@ -1,0 +1,869 @@
+{
+  "seed": 20261109,
+  "results": {
+    "mom_bottom20 (probe: 'momentum20_high')|hold20 (no SL/TP)": {
+      "raw_trade": {
+        "n": 6489,
+        "mean_bp": 6.1,
+        "skew": 0.6,
+        "win": 0.457,
+        "tail": 1.2,
+        "ex_best5_bp": -210.2
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": -86.5,
+        "skew": 0.3,
+        "win": 0.38,
+        "tail": 0.92,
+        "ex_best5_bp": -138.6
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 91.4,
+        "skew": -0.27,
+        "win": 0.598,
+        "tail": 1.03,
+        "ex_best5_bp": 38.6
+      },
+      "null_skew_p50": 0.52,
+      "null_skew_p95": 1.22,
+      "null_skew_p5": 0.23,
+      "active_skew_pctile": 0.113,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": -31.5,
+          "ci5": -249.0,
+          "ci95": 256.7
+        },
+        "g2": {
+          "ce_bp": -68.2,
+          "ci5": -255.1,
+          "ci95": 256.9
+        },
+        "g5": {
+          "ce_bp": -179.9,
+          "ci5": -373.0,
+          "ci95": 149.9
+        }
+      },
+      "ce_universe": {
+        "g1": 73.9,
+        "g2": 56.1,
+        "g5": 1.6
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -105.4,
+          "ci5": -194.5,
+          "ci95": 14.2,
+          "p_gt0": 0.085
+        },
+        "g2": {
+          "delta_bp": -124.3,
+          "ci5": -207.9,
+          "ci95": 0.1,
+          "p_gt0": 0.052
+        },
+        "g5": {
+          "delta_bp": -181.5,
+          "ci5": -256.8,
+          "ci95": -41.4,
+          "p_gt0": 0.007
+        }
+      }
+    },
+    "mom_bottom20 (probe: 'momentum20_high')|SL5%": {
+      "raw_trade": {
+        "n": 6501,
+        "mean_bp": 13.7,
+        "skew": 3.0,
+        "win": 0.262,
+        "tail": 4.69,
+        "ex_best5_bp": -180.3
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": -68.3,
+        "skew": 1.24,
+        "win": 0.307,
+        "tail": 0.99,
+        "ex_best5_bp": -110.1
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 82.0,
+        "skew": 0.65,
+        "win": 0.515,
+        "tail": 1.95,
+        "ex_best5_bp": 39.6
+      },
+      "null_skew_p50": 0.89,
+      "null_skew_p95": 1.76,
+      "null_skew_p5": 0.49,
+      "active_skew_pctile": 0.81,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 2.0,
+          "ci5": -90.8,
+          "ci95": 126.4
+        },
+        "g2": {
+          "ce_bp": -9.3,
+          "ci5": -110.7,
+          "ci95": 124.1
+        },
+        "g5": {
+          "ce_bp": -40.4,
+          "ci5": -112.6,
+          "ci95": 77.0
+        }
+      },
+      "ce_universe": {
+        "g1": 75.1,
+        "g2": 68.4,
+        "g5": 48.7
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -73.2,
+          "ci5": -118.0,
+          "ci95": -16.3,
+          "p_gt0": 0.018
+        },
+        "g2": {
+          "delta_bp": -77.6,
+          "ci5": -115.6,
+          "ci95": -24.7,
+          "p_gt0": 0.003
+        },
+        "g5": {
+          "delta_bp": -89.1,
+          "ci5": -125.8,
+          "ci95": -45.7,
+          "p_gt0": 0.0
+        }
+      }
+    },
+    "mom_bottom20 (probe: 'momentum20_high')|TP10%": {
+      "raw_trade": {
+        "n": 6494,
+        "mean_bp": 119.4,
+        "skew": -1.43,
+        "win": 0.613,
+        "tail": 0.46,
+        "ex_best5_bp": 70.5
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": 34.3,
+        "skew": -0.02,
+        "win": 0.598,
+        "tail": 1.02,
+        "ex_best5_bp": -1.8
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 84.5,
+        "skew": -0.52,
+        "win": 0.617,
+        "tail": 0.97,
+        "ex_best5_bp": 51.3
+      },
+      "null_skew_p50": -0.13,
+      "null_skew_p95": 0.25,
+      "null_skew_p5": -0.58,
+      "active_skew_pctile": 0.687,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 102.6,
+          "ci5": -36.2,
+          "ci95": 262.1
+        },
+        "g2": {
+          "ce_bp": 85.9,
+          "ci5": -37.2,
+          "ci95": 245.1
+        },
+        "g5": {
+          "ce_bp": 31.7,
+          "ci5": -120.2,
+          "ci95": 210.6
+        }
+      },
+      "ce_universe": {
+        "g1": 75.8,
+        "g2": 67.0,
+        "g5": 39.7
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": 26.9,
+          "ci5": -10.9,
+          "ci95": 76.5,
+          "p_gt0": 0.895
+        },
+        "g2": {
+          "delta_bp": 19.0,
+          "ci5": -25.5,
+          "ci95": 68.1,
+          "p_gt0": 0.767
+        },
+        "g5": {
+          "delta_bp": -8.0,
+          "ci5": -56.1,
+          "ci95": 49.1,
+          "p_gt0": 0.492
+        }
+      }
+    },
+    "mom_bottom20 (probe: 'momentum20_high')|SL5%+TP10%": {
+      "raw_trade": {
+        "n": 6502,
+        "mean_bp": 67.7,
+        "skew": 0.51,
+        "win": 0.392,
+        "tail": 2.0,
+        "ex_best5_bp": 18.1
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": 3.7,
+        "skew": 0.37,
+        "win": 0.482,
+        "tail": 1.0,
+        "ex_best5_bp": -25.9
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 63.9,
+        "skew": 0.33,
+        "win": 0.546,
+        "tail": 1.62,
+        "ex_best5_bp": 36.3
+      },
+      "null_skew_p50": 0.12,
+      "null_skew_p95": 0.34,
+      "null_skew_p5": -0.12,
+      "active_skew_pctile": 0.963,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 62.0,
+          "ci5": 1.3,
+          "ci95": 137.2
+        },
+        "g2": {
+          "ce_bp": 56.5,
+          "ci5": 1.0,
+          "ci95": 126.4
+        },
+        "g5": {
+          "ce_bp": 40.2,
+          "ci5": -13.9,
+          "ci95": 112.3
+        }
+      },
+      "ce_universe": {
+        "g1": 60.5,
+        "g2": 57.0,
+        "g5": 46.8
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": 1.6,
+          "ci5": -33.0,
+          "ci95": 41.9,
+          "p_gt0": 0.632
+        },
+        "g2": {
+          "delta_bp": -0.5,
+          "ci5": -33.4,
+          "ci95": 43.2,
+          "p_gt0": 0.57
+        },
+        "g5": {
+          "delta_bp": -6.7,
+          "ci5": -37.9,
+          "ci95": 37.2,
+          "p_gt0": 0.475
+        }
+      }
+    },
+    "mom_bottom20 (probe: 'momentum20_high')|SL3%+TP30%": {
+      "raw_trade": {
+        "n": 6502,
+        "mean_bp": 58.3,
+        "skew": 2.58,
+        "win": 0.181,
+        "tail": 10.0,
+        "ex_best5_bp": -97.0
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": -11.0,
+        "skew": 1.34,
+        "win": 0.411,
+        "tail": 1.18,
+        "ex_best5_bp": -45.7
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 69.6,
+        "skew": 1.03,
+        "win": 0.497,
+        "tail": 2.54,
+        "ex_best5_bp": 34.3
+      },
+      "null_skew_p50": 0.56,
+      "null_skew_p95": 0.88,
+      "null_skew_p5": 0.21,
+      "active_skew_pctile": 1.0,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 51.6,
+          "ci5": -22.0,
+          "ci95": 140.2
+        },
+        "g2": {
+          "ce_bp": 44.9,
+          "ci5": -12.8,
+          "ci95": 139.8
+        },
+        "g5": {
+          "ce_bp": 26.3,
+          "ci5": -28.1,
+          "ci95": 105.8
+        }
+      },
+      "ce_universe": {
+        "g1": 66.0,
+        "g2": 62.5,
+        "g5": 52.5
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -14.4,
+          "ci5": -48.8,
+          "ci95": 29.2,
+          "p_gt0": 0.333
+        },
+        "g2": {
+          "delta_bp": -17.6,
+          "ci5": -51.9,
+          "ci95": 26.5,
+          "p_gt0": 0.297
+        },
+        "g5": {
+          "delta_bp": -26.1,
+          "ci5": -63.7,
+          "ci95": 14.7,
+          "p_gt0": 0.2
+        }
+      }
+    },
+    "mom_bottom20 (probe: 'momentum20_high')|SL10%+TP5%": {
+      "raw_trade": {
+        "n": 6501,
+        "mean_bp": 58.8,
+        "skew": -0.89,
+        "win": 0.686,
+        "tail": 0.5,
+        "ex_best5_bp": 35.2
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": 13.3,
+        "skew": -0.32,
+        "win": 0.586,
+        "tail": 0.88,
+        "ex_best5_bp": -10.7
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 45.6,
+        "skew": -0.58,
+        "win": 0.607,
+        "tail": 0.87,
+        "ex_best5_bp": 27.3
+      },
+      "null_skew_p50": -0.12,
+      "null_skew_p95": 0.15,
+      "null_skew_p5": -0.43,
+      "active_skew_pctile": 0.147,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 53.7,
+          "ci5": -16.3,
+          "ci95": 129.0
+        },
+        "g2": {
+          "ce_bp": 48.4,
+          "ci5": -28.1,
+          "ci95": 115.2
+        },
+        "g5": {
+          "ce_bp": 32.1,
+          "ci5": -42.3,
+          "ci95": 106.5
+        }
+      },
+      "ce_universe": {
+        "g1": 42.4,
+        "g2": 39.1,
+        "g5": 28.9
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": 11.4,
+          "ci5": -27.7,
+          "ci95": 42.6,
+          "p_gt0": 0.67
+        },
+        "g2": {
+          "delta_bp": 9.4,
+          "ci5": -28.9,
+          "ci95": 44.2,
+          "p_gt0": 0.677
+        },
+        "g5": {
+          "delta_bp": 3.1,
+          "ci5": -37.1,
+          "ci95": 40.4,
+          "p_gt0": 0.552
+        }
+      }
+    },
+    "mom_top20 (probe: 'momentum20_low(reversal)')|hold20 (no SL/TP)": {
+      "raw_trade": {
+        "n": 6441,
+        "mean_bp": 17.8,
+        "skew": 2.05,
+        "win": 0.385,
+        "tail": 1.69,
+        "ex_best5_bp": -452.0
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": -70.1,
+        "skew": -0.14,
+        "win": 0.475,
+        "tail": 0.98,
+        "ex_best5_bp": -196.9
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 91.4,
+        "skew": -0.27,
+        "win": 0.598,
+        "tail": 1.03,
+        "ex_best5_bp": 38.6
+      },
+      "null_skew_p50": 0.57,
+      "null_skew_p95": 1.31,
+      "null_skew_p5": 0.22,
+      "active_skew_pctile": 0.0,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": -84.7,
+          "ci5": -413.5,
+          "ci95": 430.2
+        },
+        "g2": {
+          "ce_bp": -202.3,
+          "ci5": -596.0,
+          "ci95": 329.8
+        },
+        "g5": {
+          "ce_bp": -642.5,
+          "ci5": -1113.9,
+          "ci95": 203.3
+        }
+      },
+      "ce_universe": {
+        "g1": 73.9,
+        "g2": 56.1,
+        "g5": 1.6
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -158.6,
+          "ci5": -433.7,
+          "ci95": 293.7,
+          "p_gt0": 0.415
+        },
+        "g2": {
+          "delta_bp": -258.4,
+          "ci5": -542.9,
+          "ci95": 244.4,
+          "p_gt0": 0.24
+        },
+        "g5": {
+          "delta_bp": -644.1,
+          "ci5": -1129.3,
+          "ci95": 68.4,
+          "p_gt0": 0.077
+        }
+      }
+    },
+    "mom_top20 (probe: 'momentum20_low(reversal)')|SL5%": {
+      "raw_trade": {
+        "n": 6467,
+        "mean_bp": 82.9,
+        "skew": 6.1,
+        "win": 0.128,
+        "tail": 8.34,
+        "ex_best5_bp": -301.9
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": 1.4,
+        "skew": 1.02,
+        "win": 0.423,
+        "tail": 1.28,
+        "ex_best5_bp": -71.5
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 82.0,
+        "skew": 0.65,
+        "win": 0.515,
+        "tail": 1.95,
+        "ex_best5_bp": 39.6
+      },
+      "null_skew_p50": 0.94,
+      "null_skew_p95": 1.67,
+      "null_skew_p5": 0.56,
+      "active_skew_pctile": 0.593,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 67.1,
+          "ci5": -22.8,
+          "ci95": 209.6
+        },
+        "g2": {
+          "ce_bp": 51.8,
+          "ci5": -45.6,
+          "ci95": 201.5
+        },
+        "g5": {
+          "ce_bp": 10.5,
+          "ci5": -71.3,
+          "ci95": 137.4
+        }
+      },
+      "ce_universe": {
+        "g1": 75.1,
+        "g2": 68.4,
+        "g5": 48.7
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -8.0,
+          "ci5": -93.1,
+          "ci95": 104.1,
+          "p_gt0": 0.52
+        },
+        "g2": {
+          "delta_bp": -16.6,
+          "ci5": -96.1,
+          "ci95": 100.9,
+          "p_gt0": 0.497
+        },
+        "g5": {
+          "delta_bp": -38.2,
+          "ci5": -120.5,
+          "ci95": 66.5,
+          "p_gt0": 0.323
+        }
+      }
+    },
+    "mom_top20 (probe: 'momentum20_low(reversal)')|TP10%": {
+      "raw_trade": {
+        "n": 6483,
+        "mean_bp": 22.3,
+        "skew": -1.36,
+        "win": 0.698,
+        "tail": 0.31,
+        "ex_best5_bp": -30.7
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": -63.1,
+        "skew": -0.35,
+        "win": 0.469,
+        "tail": 0.81,
+        "ex_best5_bp": -121.7
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 84.5,
+        "skew": -0.52,
+        "win": 0.617,
+        "tail": 0.97,
+        "ex_best5_bp": 51.3
+      },
+      "null_skew_p50": -0.1,
+      "null_skew_p95": 0.21,
+      "null_skew_p5": -0.55,
+      "active_skew_pctile": 0.153,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 0.3,
+          "ci5": -124.1,
+          "ci95": 169.4
+        },
+        "g2": {
+          "ce_bp": -22.4,
+          "ci5": -140.7,
+          "ci95": 167.9
+        },
+        "g5": {
+          "ce_bp": -102.6,
+          "ci5": -251.6,
+          "ci95": 126.9
+        }
+      },
+      "ce_universe": {
+        "g1": 75.8,
+        "g2": 67.0,
+        "g5": 39.7
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -75.5,
+          "ci5": -178.7,
+          "ci95": 91.8,
+          "p_gt0": 0.282
+        },
+        "g2": {
+          "delta_bp": -89.4,
+          "ci5": -209.7,
+          "ci95": 96.3,
+          "p_gt0": 0.253
+        },
+        "g5": {
+          "delta_bp": -142.3,
+          "ci5": -307.9,
+          "ci95": 74.0,
+          "p_gt0": 0.15
+        }
+      }
+    },
+    "mom_top20 (probe: 'momentum20_low(reversal)')|SL5%+TP10%": {
+      "raw_trade": {
+        "n": 6489,
+        "mean_bp": 45.5,
+        "skew": 0.57,
+        "win": 0.364,
+        "tail": 2.0,
+        "ex_best5_bp": -4.6
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": -18.8,
+        "skew": -0.04,
+        "win": 0.472,
+        "tail": 0.9,
+        "ex_best5_bp": -51.8
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 63.9,
+        "skew": 0.33,
+        "win": 0.546,
+        "tail": 1.62,
+        "ex_best5_bp": 36.3
+      },
+      "null_skew_p50": 0.1,
+      "null_skew_p95": 0.34,
+      "null_skew_p5": -0.13,
+      "active_skew_pctile": 0.143,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 42.0,
+          "ci5": 12.4,
+          "ci95": 71.3
+        },
+        "g2": {
+          "ce_bp": 39.0,
+          "ci5": 12.3,
+          "ci95": 70.9
+        },
+        "g5": {
+          "ce_bp": 29.9,
+          "ci5": 4.0,
+          "ci95": 62.8
+        }
+      },
+      "ce_universe": {
+        "g1": 60.5,
+        "g2": 57.0,
+        "g5": 46.8
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -18.4,
+          "ci5": -92.7,
+          "ci95": 44.5,
+          "p_gt0": 0.292
+        },
+        "g2": {
+          "delta_bp": -18.0,
+          "ci5": -86.9,
+          "ci95": 55.1,
+          "p_gt0": 0.29
+        },
+        "g5": {
+          "delta_bp": -16.9,
+          "ci5": -85.3,
+          "ci95": 45.7,
+          "p_gt0": 0.3
+        }
+      }
+    },
+    "mom_top20 (probe: 'momentum20_low(reversal)')|SL3%+TP30%": {
+      "raw_trade": {
+        "n": 6488,
+        "mean_bp": 46.1,
+        "skew": 2.58,
+        "win": 0.109,
+        "tail": 10.0,
+        "ex_best5_bp": -109.2
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": -23.5,
+        "skew": -0.14,
+        "win": 0.463,
+        "tail": 0.85,
+        "ex_best5_bp": -60.1
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 69.6,
+        "skew": 1.03,
+        "win": 0.497,
+        "tail": 2.54,
+        "ex_best5_bp": 34.3
+      },
+      "null_skew_p50": 0.56,
+      "null_skew_p95": 0.94,
+      "null_skew_p5": 0.28,
+      "active_skew_pctile": 0.0,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 41.6,
+          "ci5": -5.6,
+          "ci95": 101.9
+        },
+        "g2": {
+          "ce_bp": 37.2,
+          "ci5": -0.9,
+          "ci95": 93.0
+        },
+        "g5": {
+          "ce_bp": 24.8,
+          "ci5": -11.4,
+          "ci95": 87.3
+        }
+      },
+      "ce_universe": {
+        "g1": 66.0,
+        "g2": 62.5,
+        "g5": 52.5
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -24.4,
+          "ci5": -99.2,
+          "ci95": 40.8,
+          "p_gt0": 0.29
+        },
+        "g2": {
+          "delta_bp": -25.3,
+          "ci5": -96.5,
+          "ci95": 45.7,
+          "p_gt0": 0.275
+        },
+        "g5": {
+          "delta_bp": -27.7,
+          "ci5": -101.3,
+          "ci95": 41.6,
+          "p_gt0": 0.253
+        }
+      }
+    },
+    "mom_top20 (probe: 'momentum20_low(reversal)')|SL10%+TP5%": {
+      "raw_trade": {
+        "n": 6489,
+        "mean_bp": 35.7,
+        "skew": -0.82,
+        "win": 0.69,
+        "tail": 0.5,
+        "ex_best5_bp": 11.3
+      },
+      "active": {
+        "n": 326,
+        "mean_bp": -10.5,
+        "skew": 0.07,
+        "win": 0.466,
+        "tail": 1.03,
+        "ex_best5_bp": -42.6
+      },
+      "universe": {
+        "n": 326,
+        "mean_bp": 45.6,
+        "skew": -0.58,
+        "win": 0.607,
+        "tail": 0.87,
+        "ex_best5_bp": 27.3
+      },
+      "null_skew_p50": -0.11,
+      "null_skew_p95": 0.15,
+      "null_skew_p5": -0.4,
+      "active_skew_pctile": 0.877,
+      "ce_crra": {
+        "g1": {
+          "ce_bp": 32.5,
+          "ci5": 11.9,
+          "ci95": 67.9
+        },
+        "g2": {
+          "ce_bp": 29.8,
+          "ci5": 7.1,
+          "ci95": 61.7
+        },
+        "g5": {
+          "ce_bp": 21.6,
+          "ci5": -2.1,
+          "ci95": 53.3
+        }
+      },
+      "ce_universe": {
+        "g1": 42.4,
+        "g2": 39.1,
+        "g5": 28.9
+      },
+      "ce_delta_vs_universe": {
+        "g1": {
+          "delta_bp": -9.9,
+          "ci5": -74.6,
+          "ci95": 66.6,
+          "p_gt0": 0.407
+        },
+        "g2": {
+          "delta_bp": -9.3,
+          "ci5": -79.7,
+          "ci95": 66.9,
+          "p_gt0": 0.395
+        },
+        "g5": {
+          "delta_bp": -7.3,
+          "ci5": -73.4,
+          "ci95": 62.3,
+          "p_gt0": 0.405
+        }
+      }
+    }
+  }
+}

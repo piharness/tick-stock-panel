@@ -1,0 +1,26 @@
+D:\DSH\tick-stock-panel\backend\.venv\Lib\site-packages\numpy\lib\_nanfunctions_impl.py:1396: RuntimeWarning: All-NaN slice encountered
+  return _nanquantile_unchecked(
+panel T=367 S=5581 ok=1,775,309 sub=3,325 events=62  2025-05-07..2026-11-06
+cohorts=326
+  hold20 (no SL/TP) L1 net= -112.5 [ -691.4, +402.9] P(<=0)=0.65  | L0-L1=  +60.2 [   +5.5, +143.6] P(>0)=0.990
+  SL5%             L1 net=  -38.0 [ -174.3, +106.1] P(<=0)=0.70  | L0-L1=  +64.3 [   +9.7, +148.0] P(>0)=0.997
+  TP10%            L1 net=  +33.5 [ -198.1, +221.8] P(<=0)=0.34  | L0-L1=   +2.4 [   -7.7,  +13.5] P(>0)=0.675
+  SL5%+TP10%       L1 net=  +19.9 [  -20.0,  +60.4] P(<=0)=0.17  | L0-L1=   +8.0 [   +0.2,  +16.8] P(>0)=0.978
+  SL3%+TP30%       L1 net=  -38.0 [  -89.2,  +10.2] P(<=0)=0.94  | L0-L1=  +24.4 [   +6.1,  +46.6] P(>0)=0.997
+  SL10%+TP5%       L1 net=  +20.2 [  -19.5,  +59.5] P(<=0)=0.16  | L0-L1=   +6.0 [   -0.4,  +13.3] P(>0)=0.966
+L1 lift: P=1.5375% CI [0.684, 2.5401] lift_vs_vol10=2.78x CI [1.75, 4.08] P(<=1)=0.0005
+events=62 one-price=12 (limit-up 12, limit-down 0)  raw one-price=12 adj/raw mismatch=0
+  SL5% cell returns: one-price mean +19319bp median +16212bp; other events mean +5901bp median +9146bp
+  events: 62 cells, 21 symbols, 32 day-runs; one-price: 12 cells, 5 symbols, 5 runs (max 6 from one symbol); fillable: 50 cells, 18 symbols, 28 runs
+L2: gap-up events 13, of which NOT actually limit-up: 0
+L2 mask: events audit=22 correct=13  cells audit=720 correct=90
+  L2corr hold20 (no SL/TP) net= -115.0 [ -663.2, +425.6] P(<=0)=0.65
+  L2corr SL5%             net=  -44.0 [ -184.9,  +95.8] P(<=0)=0.73
+  L2corr TP10%            net=  +27.7 [ -187.2, +212.6] P(<=0)=0.39
+  L2corr SL5%+TP10%       net=  +16.4 [  -20.5,  +55.8] P(<=0)=0.20
+  L2corr SL3%+TP30%       net=  -41.2 [  -91.1,   +8.5] P(<=0)=0.95
+  L2corr SL10%+TP5%       net=  +16.1 [  -22.5,  +56.3] P(<=0)=0.21
+symbols with p99.9 |raw c2c| > 11.5%: 2285 / 5581
+delay d+2: n=11 d2 one-price=9 mean +15619bp median +14076bp
+
+wrote analysis\_diag_ce_tail_verify_result.json  elapsed=20.9s

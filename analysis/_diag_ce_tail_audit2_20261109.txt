@@ -1,0 +1,54 @@
+D:\DSH\tick-stock-panel\backend\.venv\Lib\site-packages\numpy\lib\_nanfunctions_impl.py:1396: RuntimeWarning: All-NaN slice encountered
+  return _nanquantile_unchecked(
+panel dates=367 symbols=5581
+sub-group cells=3,325 events=62
+  L0_none          sub n=3,325 ev= 62  P= 1.8647%  lift 9.36x/3.26x  dropped cells   0.0%  events   0.0%
+  L1_not_oneprice  sub n=3,263 ev= 50  P= 1.5323%  lift 7.9x/2.78x  dropped cells   1.9%  events  19.4%
+  L2_not_gapup     sub n=2,605 ev= 40  P= 1.5355%  lift 8.39x/3.03x  dropped cells  21.6%  events  35.5%
+  L3_not_limitup   sub n=3,028 ev= 43  P= 1.4201%  lift 8.01x/2.88x  dropped cells   8.9%  events  30.6%
+
+  events whose entry day was a locked board: 12/62 (19.4%)
+  events with a gap-up entry (open >= prev close*1.098): 22/62
+  events with limit-up close on entry day: 19/62
+
+[CE/L0_none] cohorts=326  (gap-aware engine v2, net of 20bp)
+  hold20 (no SL/TP) mean=  +103.2  net g1=  -52.3 [  -628.6,  +484.4] P=0.561  d_v10= +43.4 [ -196.6] P=0.643
+  SL5%             mean=   +75.1  net g1=  +26.2 [  -148.1,  +216.2] P=0.411  d_v10= +52.9 [  -62.0] P=0.81
+  TP10%            mean=   +87.8  net g1=  +36.0 [  -191.4,  +216.4] P=0.361  d_v10= +29.1 [  -57.5] P=0.739
+  SL5%+TP10%       mean=   +52.9  net g1=  +27.9 [   -13.8,   +70.1] P=0.101  d_v10= +23.8 [  -21.3] P=0.863
+  SL3%+TP30%       mean=   +12.5  net g1=  -13.6 [   -71.1,   +45.0] P=0.691  d_v10= -10.6 [  -64.9] P=0.36
+  SL10%+TP5%       mean=   +50.9  net g1=  +26.2 [   -14.4,   +67.3] P=0.114  d_v10= +20.2 [  -33.9] P=0.767
+  max-over-6 g1: obs   +36.0 [   -8.0, +520.2] P(<=0)=0.058
+  max-over-6 g5: obs    +8.4 [  -26.1, +160.0] P(<=0)=0.223
+
+[CE/L1_not_oneprice] cohorts=326  (gap-aware engine v2, net of 20bp)
+  hold20 (no SL/TP) mean=   +33.3  net g1= -112.5 [  -665.5,  +423.8] P=0.62  d_v10= -14.1 [ -231.4] P=0.465
+  SL5%             mean=    +1.7  net g1=  -38.0 [  -178.9,  +107.6] P=0.696  d_v10=  -7.6 [  -94.7] P=0.427
+  TP10%            mean=   +85.7  net g1=  +33.5 [  -188.9,  +223.8] P=0.344  d_v10= +27.2 [  -56.7] P=0.744
+  SL5%+TP10%       mean=   +44.8  net g1=  +19.9 [   -20.0,   +60.5] P=0.157  d_v10= +16.8 [  -28.5] P=0.78
+  SL3%+TP30%       mean=   -12.2  net g1=  -38.0 [   -87.1,   +13.4] P=0.925  d_v10= -33.1 [  -91.4] P=0.111
+  SL10%+TP5%       mean=   +44.9  net g1=  +20.2 [   -18.7,   +59.4] P=0.146  d_v10= +15.1 [  -38.4] P=0.714
+  max-over-6 g1: obs   +33.5 [  -14.5, +412.4] P(<=0)=0.092
+  max-over-6 g5: obs    +1.0 [  -29.5, +143.3] P(<=0)=0.349
+
+[CE/L2_not_gapup] cohorts=326  (gap-aware engine v2, net of 20bp)
+  hold20 (no SL/TP) mean=   +28.4  net g1= -127.7 [  -695.1,  +390.0] P=0.667  d_v10= -37.6 [ -257.6] P=0.366
+  SL5%             mean=    +5.3  net g1=  -38.3 [  -171.5,  +107.2] P=0.711  d_v10=  -9.7 [  -94.0] P=0.416
+  TP10%            mean=   +68.7  net g1=  +10.7 [  -211.0,  +200.8] P=0.427  d_v10=  +4.4 [  -90.4] P=0.529
+  SL5%+TP10%       mean=   +49.6  net g1=  +23.5 [   -24.8,   +80.8] P=0.175  d_v10= +21.5 [  -25.2] P=0.828
+  SL3%+TP30%       mean=   -10.2  net g1=  -37.4 [   -97.4,   +22.6] P=0.895  d_v10= -32.0 [  -91.5] P=0.138
+  SL10%+TP5%       mean=   +33.5  net g1=   +7.6 [   -35.2,   +51.4] P=0.367  d_v10=  +3.6 [  -55.5] P=0.557
+  max-over-6 g1: obs   +23.5 [  -23.8, +408.3] P(<=0)=0.134
+  max-over-6 g5: obs    -0.4 [  -44.8, +114.2] P(<=0)=0.463
+
+[CE/L3_not_limitup] cohorts=326  (gap-aware engine v2, net of 20bp)
+  hold20 (no SL/TP) mean=   -49.7  net g1= -200.1 [  -783.7,  +330.5] P=0.756  d_v10= -76.5 [ -305.8] P=0.266
+  SL5%             mean=   -71.0  net g1= -108.8 [  -246.4,   +36.9] P=0.926  d_v10= -53.1 [ -139.2] P=0.113
+  TP10%            mean=   +10.9  net g1=  -43.3 [  -259.8,  +144.4] P=0.649  d_v10= -22.0 [ -106.7] P=0.308
+  SL5%+TP10%       mean=   -14.5  net g1=  -38.9 [   -80.9,    +0.2] P=0.974  d_v10= -17.1 [  -58.6] P=0.222
+  SL3%+TP30%       mean=   -69.7  net g1=  -94.8 [  -147.8,   -42.3] P=1.0  d_v10= -62.4 [ -122.2] P=0.018
+  SL10%+TP5%       mean=    +8.1  net g1=  -16.9 [   -55.8,   +24.4] P=0.787  d_v10=  -7.7 [  -60.5] P=0.378
+  max-over-6 g1: obs   -16.9 [  -55.1, +327.0] P(<=0)=0.548
+  max-over-6 g5: obs   -37.4 [  -79.5,  +49.8] P(<=0)=0.909
+
+wrote analysis\_diag_ce_tail_audit2_result.json  elapsed=27.3s

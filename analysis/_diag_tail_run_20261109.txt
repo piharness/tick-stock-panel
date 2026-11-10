@@ -1,0 +1,38 @@
+D:\DSH\tick-stock-panel\backend\.venv\Lib\site-packages\numpy\lib\_nanfunctions_impl.py:1396: RuntimeWarning: All-NaN slice encountered
+  return _nanquantile_unchecked(
+panel dates=367 symbols=5581  cells with fwd20&mom20 = 1,775,309
+[a] BASE RATE P(fwd20 >= +90%) = 0.1991%  (n=1,775,309)
+    half [0:200) base = 0.2126%  (n=969,168)
+    half [200:367) base = 0.1830%  (n=806,141)
+[b] lift by mom20 rank (same-day cross-section):
+    top 0.2%     P=  1.790%  n= 3,631  lift= 8.99x
+    top 1%       P=  1.540%  n=17,853  lift= 7.74x
+    top 5%       P=  0.911%  n=88,782  lift= 4.58x
+    bottom 50%   P=  0.294%  n=887,486  lift= 1.47x
+[c] lift by consecutive_limit_ups and by decile:
+    consec_limit_ups>=1  P=  1.044%  n=24,323  lift= 5.24x
+    consec_limit_ups>=2  P=  1.802%  n= 5,160  lift= 9.05x
+    consec_limit_ups>=3  P=  2.448%  n= 1,961  lift=12.29x
+    to20   decile  1  P=  0.055%  n=177,812  lift= 0.27x
+    to20   decile 10  P=  0.440%  n=177,448  lift= 2.21x
+    vol20  decile  1  P=  0.033%  n=177,834  lift= 0.17x
+    vol20  decile 10  P=  0.571%  n=177,528  lift= 2.87x
+    amount decile  1  P=  0.152%  n=177,973  lift= 0.76x
+    amount decile 10  P=  0.445%  n=177,038  lift= 2.24x
+[c2] incremental lift inside vol20 decile 10 (base there vs signal there):
+    vol decile 10 base = 0.571%  (n=177,528)
+    mom top 0.2%             P=  1.865%  n= 3,325  lift vs vol-dec10 base= 3.26x
+    mom top 1%               P=  1.651%  n=15,079  lift vs vol-dec10 base= 2.89x
+    clu>=3                   P=  3.047%  n= 1,083  lift vs vol-dec10 base= 5.33x
+    mom top 0.2% AND clu>=3  P=  7.065%  n=   184  lift vs vol-dec10 base=12.37x
+[e] R7-C stability of the lifts (two calendar halves):
+    mom top 0.2%   h1 lift  9.61x  h2 lift  8.17x  ratio 0.85
+    mom top 1%     h1 lift  7.98x  h2 lift  7.40x  ratio 0.93
+    clu>=1         h1 lift  5.89x  h2 lift  4.50x  ratio 0.76
+    clu>=3         h1 lift 17.03x  h2 lift  4.09x  ratio 0.24
+[d] forward 20d active return of the extreme mom20 baskets (matched):
+    top 0.2%             forward active   +131.4bp  t(n_eff)  +0.48  net  +111.4bp
+    top 1%               forward active    +36.5bp  t(n_eff)  +0.20  net   +16.5bp
+    top 0.36% (top20)    forward active    +39.1bp  t(n_eff)  +0.25  net   +19.1bp
+
+wrote analysis\_diag_tail_result.json  elapsed=25.1s

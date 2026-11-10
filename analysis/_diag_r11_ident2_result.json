@@ -1,0 +1,132 @@
+{
+  "seed": 20261114,
+  "panel": {
+    "dates": 367,
+    "date_min": "2025-05-07",
+    "date_max": "2026-11-06"
+  },
+  "parity": {
+    "sel_open_finite": 57,
+    "sel_locked_finite": 41,
+    "sel_fill_finite": 16,
+    "raw_open": 59,
+    "mean_sl5_locked_bp": 6621.8,
+    "mean_sl5_fill_bp": 212.3
+  },
+  "P1_test_choice": {
+    "locked_registrations_per_year": 28.15,
+    "r10_need_l": 20,
+    "r10_need_l_meaning": "n for a return t-test: 80% power, mean 6621.8bp, sd 10325.8bp",
+    "rows": [
+      {
+        "x": 0.001,
+        "binom_registrations": 1609,
+        "binom_years": 57.2,
+        "r10_years": 710.4,
+        "ratio_r10_over_binom": 12.4
+      },
+      {
+        "x": 0.002,
+        "binom_registrations": 804,
+        "binom_years": 28.6,
+        "r10_years": 355.2,
+        "ratio_r10_over_binom": 12.4
+      },
+      {
+        "x": 0.005,
+        "binom_registrations": 322,
+        "binom_years": 11.4,
+        "r10_years": 142.1,
+        "ratio_r10_over_binom": 12.5
+      },
+      {
+        "x": 0.01,
+        "binom_registrations": 161,
+        "binom_years": 5.7,
+        "r10_years": 71.0,
+        "ratio_r10_over_binom": 12.5
+      },
+      {
+        "x": 0.02,
+        "binom_registrations": 80,
+        "binom_years": 2.8,
+        "r10_years": 35.5,
+        "ratio_r10_over_binom": 12.7
+      },
+      {
+        "x": 0.05,
+        "binom_registrations": 32,
+        "binom_years": 1.1,
+        "r10_years": 14.2,
+        "ratio_r10_over_binom": 12.9
+      },
+      {
+        "x": 0.1,
+        "binom_registrations": 16,
+        "binom_years": 0.6,
+        "r10_years": 7.1,
+        "ratio_r10_over_binom": 11.8
+      },
+      {
+        "x": 0.25,
+        "binom_registrations": 6,
+        "binom_years": 0.2,
+        "r10_years": 2.8,
+        "ratio_r10_over_binom": 14.2
+      },
+      {
+        "x": 0.5,
+        "binom_registrations": 3,
+        "binom_years": 0.1,
+        "r10_years": 1.4,
+        "ratio_r10_over_binom": 14.2
+      },
+      {
+        "x": 1.0,
+        "binom_registrations": 1,
+        "binom_years": 0.04,
+        "r10_years": 0.7,
+        "ratio_r10_over_binom": 17.8
+      }
+    ],
+    "ratio_median": 12.6
+  },
+  "P2_no_threshold": {
+    "ev_per_attempt_at_x0_bp": 59.6,
+    "arith_annual_at_x0_pct": 20.3,
+    "x_star_breakeven_in_r10_json": 0.0,
+    "fill16_abs_ci95_bp": [
+      -832.0,
+      1256.7
+    ],
+    "fill16_t": 0.43,
+    "fill16_positives": 3,
+    "reading": "x=0 already pays; the only economic object is the 16 break cells, whose absolute CI covers 0 and whose mean is a function of 3 wins."
+  },
+  "P3_volume": {
+    "locked": {
+      "n": 42,
+      "median_shares": 3623480.0,
+      "median_cny": 81152500.0,
+      "p10_cny": 19583970.0,
+      "p90_cny": 446013430.0
+    },
+    "break": {
+      "n": 17,
+      "median_shares": 38665330.0,
+      "median_cny": 1021107000.0,
+      "p10_cny": 414850740.0,
+      "p90_cny": 2761368440.0
+    },
+    "break_over_locked_median": 12.58,
+    "mw_u_z": -5.19,
+    "spearman_amount_vs_sl5_locked": -0.296,
+    "spearman_amount_vs_sl5_open_all": -0.46
+  },
+  "P4_forward_estimator": {
+    "definition": "x = P(V_day > Q_seal_at_0930); depth_service already computes bid1_vol intraday, so 60 forward sessions give a 60-observation point estimate and a Clopper-Pearson CI",
+    "sessions": 60,
+    "cost": "one depth5 write per day, already implemented, 0 files so far",
+    "fixes": "replaces both the 142-year event-count estimator and the tick purchase; it measures V/Q rather than waiting for fills"
+  }
+}

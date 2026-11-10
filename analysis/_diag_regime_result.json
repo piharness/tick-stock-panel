@@ -1,0 +1,224 @@
+{
+  "seed": 20261109,
+  "regime_days": {
+    "strong": 186,
+    "range": 39,
+    "weak": 139
+  },
+  "arms": {
+    "mom_top20": {
+      "strong": {
+        "n": 170,
+        "in_window_excess_pct": 95.1,
+        "in_window_excess_t": 71.02,
+        "s0_day1_intraday": {
+          "n": 170,
+          "mean_bp": 64.4,
+          "se_bp": 16.0,
+          "t": 4.03
+        },
+        "s1_day1_c2c": {
+          "n": 170,
+          "mean_bp": 37.7,
+          "se_bp": 18.1,
+          "t": 2.08
+        },
+        "s3_day1_gap": {
+          "n": 170,
+          "mean_bp": -24.9,
+          "se_bp": 9.3,
+          "t": -2.66
+        },
+        "fwd_days2_10_daily": {
+          "n": 170,
+          "mean_bp": 2.7,
+          "se_bp": 5.0,
+          "t": 0.54
+        },
+        "s8_fwd20": {
+          "n": 170,
+          "mean_bp": -2.2,
+          "se_bp": 60.6,
+          "t": -0.04
+        }
+      },
+      "range": {
+        "n": 38,
+        "in_window_excess_pct": 93.63,
+        "in_window_excess_t": 33.52,
+        "s0_day1_intraday": {
+          "n": 38,
+          "mean_bp": 73.1,
+          "se_bp": 31.6,
+          "t": 2.31
+        },
+        "s1_day1_c2c": {
+          "n": 38,
+          "mean_bp": 55.0,
+          "se_bp": 34.9,
+          "t": 1.58
+        },
+        "s3_day1_gap": {
+          "n": 38,
+          "mean_bp": -16.7,
+          "se_bp": 16.5,
+          "t": -1.01
+        },
+        "fwd_days2_10_daily": {
+          "n": 38,
+          "mean_bp": -14.6,
+          "se_bp": 9.2,
+          "t": -1.58
+        },
+        "s8_fwd20": {
+          "n": 38,
+          "mean_bp": 33.3,
+          "se_bp": 127.7,
+          "t": 0.26
+        }
+      },
+      "weak": {
+        "n": 119,
+        "in_window_excess_pct": 93.45,
+        "in_window_excess_t": 66.99,
+        "s0_day1_intraday": {
+          "n": 119,
+          "mean_bp": 38.2,
+          "se_bp": 20.9,
+          "t": 1.83
+        },
+        "s1_day1_c2c": {
+          "n": 119,
+          "mean_bp": -3.0,
+          "se_bp": 24.6,
+          "t": -0.12
+        },
+        "s3_day1_gap": {
+          "n": 119,
+          "mean_bp": -38.7,
+          "se_bp": 12.8,
+          "t": -3.02
+        },
+        "fwd_days2_10_daily": {
+          "n": 119,
+          "mean_bp": -9.3,
+          "se_bp": 6.7,
+          "t": -1.38
+        },
+        "s8_fwd20": {
+          "n": 119,
+          "mean_bp": -3.3,
+          "se_bp": 81.0,
+          "t": -0.04
+        }
+      }
+    },
+    "mom_bottom20": {
+      "strong": {
+        "n": 170,
+        "in_window_excess_pct": -36.09,
+        "in_window_excess_t": -74.63,
+        "s0_day1_intraday": {
+          "n": 170,
+          "mean_bp": 6.1,
+          "se_bp": 8.2,
+          "t": 0.74
+        },
+        "s1_day1_c2c": {
+          "n": 170,
+          "mean_bp": -4.4,
+          "se_bp": 9.8,
+          "t": -0.45
+        },
+        "s3_day1_gap": {
+          "n": 170,
+          "mean_bp": -10.4,
+          "se_bp": 6.0,
+          "t": -1.72
+        },
+        "fwd_days2_10_daily": {
+          "n": 170,
+          "mean_bp": 2.3,
+          "se_bp": 3.2,
+          "t": 0.74
+        },
+        "s8_fwd20": {
+          "n": 170,
+          "mean_bp": -9.8,
+          "se_bp": 44.0,
+          "t": -0.22
+        }
+      },
+      "range": {
+        "n": 38,
+        "in_window_excess_pct": -35.79,
+        "in_window_excess_t": -32.43,
+        "s0_day1_intraday": {
+          "n": 38,
+          "mean_bp": 7.7,
+          "se_bp": 15.1,
+          "t": 0.51
+        },
+        "s1_day1_c2c": {
+          "n": 38,
+          "mean_bp": 0.4,
+          "se_bp": 14.3,
+          "t": 0.03
+        },
+        "s3_day1_gap": {
+          "n": 38,
+          "mean_bp": -6.9,
+          "se_bp": 7.9,
+          "t": -0.86
+        },
+        "fwd_days2_10_daily": {
+          "n": 38,
+          "mean_bp": 3.2,
+          "se_bp": 5.4,
+          "t": 0.59
+        },
+        "s8_fwd20": {
+          "n": 38,
+          "mean_bp": -27.0,
+          "se_bp": 75.0,
+          "t": -0.36
+        }
+      },
+      "weak": {
+        "n": 119,
+        "in_window_excess_pct": -36.66,
+        "in_window_excess_t": -57.67,
+        "s0_day1_intraday": {
+          "n": 119,
+          "mean_bp": 25.3,
+          "se_bp": 11.7,
+          "t": 2.16
+        },
+        "s1_day1_c2c": {
+          "n": 119,
+          "mean_bp": 9.9,
+          "se_bp": 13.3,
+          "t": 0.74
+        },
+        "s3_day1_gap": {
+          "n": 119,
+          "mean_bp": -15.4,
+          "se_bp": 6.7,
+          "t": -2.29
+        },
+        "fwd_days2_10_daily": {
+          "n": 119,
+          "mean_bp": 6.5,
+          "se_bp": 4.0,
+          "t": 1.64
+        },
+        "s8_fwd20": {
+          "n": 119,
+          "mean_bp": 19.1,
+          "se_bp": 55.0,
+          "t": 0.35
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+panel dates=367 symbols=5581 hold=20
+
+############ mom_bottom20 (probe: 'momentum20_high')  cohorts=327
+  [parity] exit engine max|diff| vs probe = 0 n=6489
+  hold20 (no SL/TP) raw mean=    +6.1 skew= +0.60 win=0.457 | active mean=   -86.5 skew= +0.30 | null skew p50=+0.52 pctile=0.11
+                   CE g1=  -31.5 [ -249.0, +256.7] g5= -179.9 | universe CE g1=  +73.9 g5=   +1.6
+                   DELTA vs universe: g1= -105.4bp [ -194.5,  +14.2] P(>0)=0.09 | g5= -181.5bp [ -256.8,  -41.4] P(>0)=0.01
+  SL5%             raw mean=   +13.7 skew= +3.00 win=0.262 | active mean=   -68.3 skew= +1.24 | null skew p50=+0.89 pctile=0.81
+                   CE g1=   +2.0 [  -90.8, +126.4] g5=  -40.4 | universe CE g1=  +75.1 g5=  +48.7
+                   DELTA vs universe: g1=  -73.2bp [ -118.0,  -16.3] P(>0)=0.02 | g5=  -89.1bp [ -125.8,  -45.7] P(>0)=0.00
+  TP10%            raw mean=  +119.4 skew= -1.43 win=0.613 | active mean=   +34.3 skew= -0.02 | null skew p50=-0.13 pctile=0.69
+                   CE g1= +102.6 [  -36.2, +262.1] g5=  +31.7 | universe CE g1=  +75.8 g5=  +39.7
+                   DELTA vs universe: g1=  +26.9bp [  -10.9,  +76.5] P(>0)=0.90 | g5=   -8.0bp [  -56.1,  +49.1] P(>0)=0.49
+  SL5%+TP10%       raw mean=   +67.7 skew= +0.51 win=0.392 | active mean=    +3.7 skew= +0.37 | null skew p50=+0.12 pctile=0.96
+                   CE g1=  +62.0 [   +1.3, +137.2] g5=  +40.2 | universe CE g1=  +60.5 g5=  +46.8
+                   DELTA vs universe: g1=   +1.6bp [  -33.0,  +41.9] P(>0)=0.63 | g5=   -6.7bp [  -37.9,  +37.2] P(>0)=0.47
+  SL3%+TP30%       raw mean=   +58.3 skew= +2.58 win=0.181 | active mean=   -11.0 skew= +1.34 | null skew p50=+0.56 pctile=1.00
+                   CE g1=  +51.6 [  -22.0, +140.2] g5=  +26.3 | universe CE g1=  +66.0 g5=  +52.5
+                   DELTA vs universe: g1=  -14.4bp [  -48.8,  +29.2] P(>0)=0.33 | g5=  -26.1bp [  -63.7,  +14.7] P(>0)=0.20
+  SL10%+TP5%       raw mean=   +58.8 skew= -0.89 win=0.686 | active mean=   +13.3 skew= -0.32 | null skew p50=-0.12 pctile=0.15
+                   CE g1=  +53.7 [  -16.3, +129.0] g5=  +32.1 | universe CE g1=  +42.4 g5=  +28.9
+                   DELTA vs universe: g1=  +11.4bp [  -27.7,  +42.6] P(>0)=0.67 | g5=   +3.1bp [  -37.1,  +40.4] P(>0)=0.55
+
+############ mom_top20 (probe: 'momentum20_low(reversal)')  cohorts=327
+  hold20 (no SL/TP) raw mean=   +17.8 skew= +2.05 win=0.385 | active mean=   -70.1 skew= -0.14 | null skew p50=+0.57 pctile=0.00
+                   CE g1=  -84.7 [ -413.5, +430.2] g5= -642.5 | universe CE g1=  +73.9 g5=   +1.6
+                   DELTA vs universe: g1= -158.6bp [ -433.7, +293.7] P(>0)=0.41 | g5= -644.1bp [-1129.3,  +68.4] P(>0)=0.08
+  SL5%             raw mean=   +82.9 skew= +6.10 win=0.128 | active mean=    +1.4 skew= +1.02 | null skew p50=+0.94 pctile=0.59
+                   CE g1=  +67.1 [  -22.8, +209.6] g5=  +10.5 | universe CE g1=  +75.1 g5=  +48.7
+                   DELTA vs universe: g1=   -8.0bp [  -93.1, +104.1] P(>0)=0.52 | g5=  -38.2bp [ -120.5,  +66.5] P(>0)=0.32
+  TP10%            raw mean=   +22.3 skew= -1.36 win=0.698 | active mean=   -63.1 skew= -0.35 | null skew p50=-0.10 pctile=0.15
+                   CE g1=   +0.3 [ -124.1, +169.4] g5= -102.6 | universe CE g1=  +75.8 g5=  +39.7
+                   DELTA vs universe: g1=  -75.5bp [ -178.7,  +91.8] P(>0)=0.28 | g5= -142.3bp [ -307.9,  +74.0] P(>0)=0.15
+  SL5%+TP10%       raw mean=   +45.5 skew= +0.57 win=0.364 | active mean=   -18.8 skew= -0.04 | null skew p50=+0.10 pctile=0.14
+                   CE g1=  +42.0 [  +12.4,  +71.3] g5=  +29.9 | universe CE g1=  +60.5 g5=  +46.8
+                   DELTA vs universe: g1=  -18.4bp [  -92.7,  +44.5] P(>0)=0.29 | g5=  -16.9bp [  -85.3,  +45.7] P(>0)=0.30
+  SL3%+TP30%       raw mean=   +46.1 skew= +2.58 win=0.109 | active mean=   -23.5 skew= -0.14 | null skew p50=+0.56 pctile=0.00
+                   CE g1=  +41.6 [   -5.6, +101.9] g5=  +24.8 | universe CE g1=  +66.0 g5=  +52.5
+                   DELTA vs universe: g1=  -24.4bp [  -99.2,  +40.8] P(>0)=0.29 | g5=  -27.7bp [ -101.3,  +41.6] P(>0)=0.25
+  SL10%+TP5%       raw mean=   +35.7 skew= -0.82 win=0.690 | active mean=   -10.5 skew= +0.07 | null skew p50=-0.11 pctile=0.88
+                   CE g1=  +32.5 [  +11.9,  +67.9] g5=  +21.6 | universe CE g1=  +42.4 g5=  +28.9
+                   DELTA vs universe: g1=   -9.9bp [  -74.6,  +66.6] P(>0)=0.41 | g5=   -7.3bp [  -73.4,  +62.3] P(>0)=0.41
+
+wrote analysis\asymmetry_control_result.json

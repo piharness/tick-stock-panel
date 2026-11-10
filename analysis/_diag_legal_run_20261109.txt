@@ -1,0 +1,42 @@
+panel dates=367 symbols=5581
+[identity] c2c1-(gap+intra) == -gap*intra ; max|numerical error|=3.345e-16 over 1994208 cells (max|gap*intra|=0.795)
+[dq] |adjusted-raw c2c| mean=1.5bp p99=0.0bp frac>5bp=0.4550%
+[dq] |gap|>10.5% = 0.0731% of 1994208 cells
+
+############ mom_top20
+  structure                     n          act-uni        act-match     med     net   trim5%
+  S0 open[d+1]->close[d+1]    327    +61.6(t+4.57)    +55.9(t+4.71)   +51.7   +35.9    +31.9
+  S1 close[d]->close[d+1]     327    +17.5(t+1.13)    +25.0(t+1.83)   +17.1    +5.0     -2.2
+  S1L close[d+1]->close[d+2]  327    -17.7(t-1.17)    -10.9(t-0.83)   -14.2   -30.9    -34.5
+  S3 close[d]->open[d+1]      327    -41.8(t-5.59)    -28.9(t-4.12)   -25.5   -48.9    -42.4
+  S2 open[d+1]->open[d+2]     327     -7.6(t-0.48)     -1.5(t-0.11)   -11.5   -21.5    -28.1
+  S5 open[d+1]->close[d+2]    327    +43.4(t+1.56)    +44.5(t+1.83)   +57.3   +24.5     +9.1
+  S6 close[d]->close[d+2]     327     +0.7(t+0.02)    +14.8(t+0.56)   +35.2    -5.2    -22.0
+  S7 close[d]->close[d+5]     327    -41.7(t-0.54)     -8.7(t-0.13)   -35.9   -28.7    -65.4
+  S8 close[d]->close[d+20]    327   -106.8(t-0.38)    +26.3(t+0.12)   -21.0    +6.3    -85.7
+
+############ mom_bottom20
+  structure                     n          act-uni        act-match     med     net   trim5%
+  S0 open[d+1]->close[d+1]    327    +14.9(t+2.07)    +13.3(t+2.11)    +9.3    -6.7     -1.3
+  S1 close[d]->close[d+1]     327     -4.5(t-0.56)     +1.4(t+0.19)    +2.9   -18.6    -13.0
+  S1L close[d+1]->close[d+2]  327     +2.1(t+0.28)     +6.5(t+0.96)    +3.5   -13.5     -7.7
+  S3 close[d]->open[d+1]      327    -19.1(t-4.51)    -11.8(t-2.89)    +0.0   -31.8    -18.6
+  S2 open[d+1]->open[d+2]     327     +6.0(t+0.78)    +11.0(t+1.55)    +6.6    -9.0     -4.7
+  S5 open[d+1]->close[d+2]    327    +16.9(t+1.09)    +19.8(t+1.43)   +15.8    -0.2     -2.2
+  S6 close[d]->close[d+2]     327     -2.5(t-0.15)     +7.8(t+0.52)   +20.7   -12.2    -14.8
+  S7 close[d]->close[d+5]     327     -7.2(t-0.16)    +15.3(t+0.39)   +11.5    -4.7    -23.7
+  S8 close[d]->close[d+20]    327   -104.6(t-0.93)    -20.3(t-0.16)   -59.1   -40.3    -82.8
+
+[parity] S0 matched: top20 +55.9bp (t4.71)  <- round 3 reports +55.9bp (t+4.71)
+
+############ [R4-B] zero-lag (S1) vs one-day-delayed (S1L), same cohort
+  mom_top20     S1    +25.0bp (t+1.83) | S1L    -10.9bp (t-0.83) | ratio -0.44 -> FAIL
+  mom_bottom20  S1     +1.4bp (t+0.19) | S1L     +6.5bp (t+0.96) | ratio +4.64 -> PASS
+
+############ [R4-C] tail concentration and split-half (matched)
+  mom_top20     S0 open[d+1]->close[d+1]   n=327 tot=  +18273bp mean=  +55.9 med=  +51.7 hit=0.609 top5%share=+0.46 | 1st   +65.9(t+3.63) 2nd   +45.9(t+3.01)
+  mom_top20     S1 close[d]->close[d+1]    n=327 tot=   +8173bp mean=  +25.0 med=  +17.1 hit=0.541 top5%share=+1.08 | 1st   +44.2(t+2.04) 2nd    +5.9(t+0.36)
+  mom_bottom20  S0 open[d+1]->close[d+1]   n=327 tot=   +4345bp mean=  +13.3 med=   +9.3 hit=0.535 top5%share=+1.10 | 1st    +8.0(t+1.29) 2nd   +18.5(t+1.69)
+  mom_bottom20  S1 close[d]->close[d+1]    n=327 tot=    +442bp mean=   +1.4 med=   +2.9 hit=0.511 top5%share=+10.14 | 1st    +4.4(t+0.65) 2nd    -1.6(t-0.13)
+
+wrote analysis\_diag_legal_result.json  elapsed=19.5s

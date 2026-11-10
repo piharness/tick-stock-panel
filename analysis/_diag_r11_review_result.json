@@ -1,0 +1,168 @@
+{
+  "panel": {
+    "dates": 367,
+    "date_min": "2025-05-07",
+    "date_max": "2026-11-06"
+  },
+  "parity": {
+    "n_open": 57,
+    "n_locked": 41,
+    "n_fill": 16,
+    "mean_locked_bp": 6621.8,
+    "mean_fill_bp": 212.3,
+    "locked_per_year": 28.15
+  },
+  "window_60": {
+    "window_sessions": 60,
+    "windows": 308,
+    "locked_cells": {
+      "min": 1,
+      "p25": 4,
+      "median": 6,
+      "mean": 7.35,
+      "p75": 9,
+      "max": 19
+    },
+    "open_cells": {
+      "min": 3,
+      "median": 7,
+      "max": 26
+    },
+    "all_market_one_price_cells": {
+      "min": 323,
+      "median": 477,
+      "max": 821
+    },
+    "locked_per_year_x_60_252": 6.7
+  },
+  "cp_interval_at_window_size": {
+    "n": 6,
+    "rows": [
+      {
+        "k": 0,
+        "cp_lo": 0.0,
+        "cp_hi": 0.4593
+      },
+      {
+        "k": 1,
+        "cp_lo": 0.0042,
+        "cp_hi": 0.6412
+      },
+      {
+        "k": 2,
+        "cp_lo": 0.0433,
+        "cp_hi": 0.7772
+      },
+      {
+        "k": 3,
+        "cp_lo": 0.1181,
+        "cp_hi": 0.8819
+      },
+      {
+        "k": 4,
+        "cp_lo": 0.2228,
+        "cp_hi": 0.9567
+      },
+      {
+        "k": 5,
+        "cp_lo": 0.3588,
+        "cp_hi": 0.9958
+      },
+      {
+        "k": 6,
+        "cp_lo": 0.5407,
+        "cp_hi": 1.0
+      },
+      {
+        "k": 7,
+        "cp_lo": 1.0,
+        "cp_hi": 1.0
+      },
+      {
+        "k": 8,
+        "cp_lo": 1.0,
+        "cp_hi": 1.0
+      }
+    ],
+    "zero_fill_upper_bound": 0.4593
+  },
+  "power_at_window": {
+    "n": 6,
+    "rows": [
+      {
+        "x": 0.005,
+        "p_at_least_1_n_median": 0.0296,
+        "p_at_least_1_n_6p7": 0.033,
+        "n_60pct_power": 183
+      },
+      {
+        "x": 0.01,
+        "p_at_least_1_n_median": 0.0585,
+        "p_at_least_1_n_6p7": 0.0651,
+        "n_60pct_power": 92
+      },
+      {
+        "x": 0.02,
+        "p_at_least_1_n_median": 0.1142,
+        "p_at_least_1_n_6p7": 0.1266,
+        "n_60pct_power": 46
+      },
+      {
+        "x": 0.07,
+        "p_at_least_1_n_median": 0.353,
+        "p_at_least_1_n_6p7": 0.3851,
+        "n_60pct_power": 13
+      },
+      {
+        "x": 0.1,
+        "p_at_least_1_n_median": 0.4686,
+        "p_at_least_1_n_6p7": 0.5063,
+        "n_60pct_power": 9
+      },
+      {
+        "x": 0.25,
+        "p_at_least_1_n_median": 0.822,
+        "p_at_least_1_n_6p7": 0.8545,
+        "n_60pct_power": 4
+      },
+      {
+        "x": 0.5,
+        "p_at_least_1_n_median": 0.9844,
+        "p_at_least_1_n_6p7": 0.9904,
+        "n_60pct_power": 2
+      }
+    ]
+  },
+  "separate_0p5_vs_7": {
+    "one_sample_80pct": {
+      "n": 42,
+      "k_star": 0,
+      "years": 1.5
+    },
+    "two_prop_80pct_per_group": 135,
+    "two_prop_years": 4.8,
+    "note": "60 sessions buys ~6.7 registrations (median window 6); separating x=7% from x=0.5% by observing zero fills needs ~42 registrations (~1.5y); proving x!=0 at x=0.5% still needs 322 registrations (~11.4y, R11's own row)."
+  },
+  "lock_clusters": {
+    "cells": 41,
+    "symbols": 18,
+    "clusters_gap5": 19,
+    "largest": [
+      6,
+      6,
+      5,
+      4,
+      3,
+      3,
+      2,
+      1
+    ],
+    "effective_n_note": "B=0.5% n=322 registrations assumes independence; cells cluster into ~this many runs."
+  },
+  "interpretation": {
+    "locked_cells_per_60_sessions_median": 6,
+    "so_60_sessions_is_not_60_observations": true,
+    "all_market_60_sessions_median": 477,
+    "difference": "collecting all-market one-price boards gives a large sample of a *different* parameter (not the strategy pool's x)."
+  }
+}

@@ -1,0 +1,20 @@
+panel dates=367 symbols=5581  regime days mapped=364
+regime composition of mapped days: {'strong': 186, 'range': 39, 'weak': 139}
+
+############ mom_top20  (cohorts skipped=0)
+  strong n=170 in-window excess  +95.10% (t +71.02) | day1 S1 c2c   +37.7 (t +2.08) | day1 S0 intraday   +64.4 (t +4.03) | days2-10 daily   +2.7 (t +0.54)
+         day1 gap S3   -24.9 (t -2.66) | fwd20 S8    -2.2 (t -0.04) n_eff=8.5  <-- R3-C: n_eff<10, NOT evidence
+  range  n= 38 in-window excess  +93.63% (t +33.52) | day1 S1 c2c   +55.0 (t +1.58) | day1 S0 intraday   +73.1 (t +2.31) | days2-10 daily  -14.6 (t -1.58)
+         day1 gap S3   -16.7 (t -1.01) | fwd20 S8   +33.3 (t +0.26) n_eff=1.9  <-- R3-C: n_eff<10, NOT evidence
+  weak   n=119 in-window excess  +93.45% (t +66.99) | day1 S1 c2c    -3.0 (t -0.12) | day1 S0 intraday   +38.2 (t +1.83) | days2-10 daily   -9.3 (t -1.38)
+         day1 gap S3   -38.7 (t -3.02) | fwd20 S8    -3.3 (t -0.04) n_eff=6.0  <-- R3-C: n_eff<10, NOT evidence
+
+############ mom_bottom20  (cohorts skipped=0)
+  strong n=170 in-window excess  -36.09% (t -74.63) | day1 S1 c2c    -4.4 (t -0.45) | day1 S0 intraday    +6.1 (t +0.74) | days2-10 daily   +2.3 (t +0.74)
+         day1 gap S3   -10.4 (t -1.72) | fwd20 S8    -9.8 (t -0.22) n_eff=8.5  <-- R3-C: n_eff<10, NOT evidence
+  range  n= 38 in-window excess  -35.79% (t -32.43) | day1 S1 c2c    +0.4 (t +0.03) | day1 S0 intraday    +7.7 (t +0.51) | days2-10 daily   +3.2 (t +0.59)
+         day1 gap S3    -6.9 (t -0.86) | fwd20 S8   -27.0 (t -0.36) n_eff=1.9  <-- R3-C: n_eff<10, NOT evidence
+  weak   n=119 in-window excess  -36.66% (t -57.67) | day1 S1 c2c    +9.9 (t +0.74) | day1 S0 intraday   +25.3 (t +2.16) | days2-10 daily   +6.5 (t +1.64)
+         day1 gap S3   -15.4 (t -2.29) | fwd20 S8   +19.1 (t +0.35) n_eff=6.0  <-- R3-C: n_eff<10, NOT evidence
+
+wrote analysis\_diag_regime_result.json  elapsed=18.3s

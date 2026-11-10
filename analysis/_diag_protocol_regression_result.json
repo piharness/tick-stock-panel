@@ -1,0 +1,1040 @@
+{
+  "generated_by": "analysis/_diag_protocol_regression.py",
+  "protocol": "analysis/eval_protocol.py",
+  "all_pass": true,
+  "end_to_end": [
+    {
+      "case": "weak_board_absorption(+48.4%,Sharpe 0.97)",
+      "want": "REJECT",
+      "got": "REJECT",
+      "want_reasons": [
+        "non_executable_window",
+        "selection_dependent"
+      ],
+      "got_reasons": [
+        "declared_holding_mismatch",
+        "effect_missing",
+        "non_executable_window",
+        "selection_dependent",
+        "t_missing",
+        "unmatched_benchmark"
+      ],
+      "pass": true
+    },
+    {
+      "case": "炸板低吸(+117.5bp,t=7.19)",
+      "want": "REJECT",
+      "got": "REJECT",
+      "want_reasons": [
+        "per_trade_aggregation"
+      ],
+      "got_reasons": [
+        "economy_unassessed",
+        "mde_missing",
+        "per_trade_aggregation",
+        "sign_flip_under_aggregation",
+        "unmatched_benchmark"
+      ],
+      "pass": true
+    },
+    {
+      "case": "龙虎榜平盘上榜(-291.1bp,t=-5.08)",
+      "want": "REJECT",
+      "got": "REJECT",
+      "want_reasons": [
+        "uncontrolled_confound"
+      ],
+      "got_reasons": [
+        "confound_explains_effect",
+        "economy_unassessed",
+        "mde_missing",
+        "uncontrolled_confound"
+      ],
+      "pass": true
+    },
+    {
+      "case": "主板换手≥25%(H5 -160.0bp,t=-2.55)",
+      "want": "REJECT",
+      "got": "REJECT",
+      "want_reasons": [
+        "below_hurdle",
+        "multiplicity_fail",
+        "universe_mismatch"
+      ],
+      "got_reasons": [
+        "below_hurdle",
+        "multiplicity_fail",
+        "selection_unassessed",
+        "universe_mismatch"
+      ],
+      "pass": true
+    },
+    {
+      "case": "正对照(合成，口径齐全)",
+      "want": "PASS",
+      "got": "PASS",
+      "want_reasons": [],
+      "got_reasons": [],
+      "pass": true
+    }
+  ],
+  "unit": [
+    {
+      "gate": "G1",
+      "probe": "open_t1 → close_t1（当日买卖）",
+      "want": "non_executable_window",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "declared_holding_mismatch",
+        "non_executable_window"
+      ],
+      "pass": true
+    },
+    {
+      "gate": "G2",
+      "probe": "agg_unit=per_trade",
+      "want": "per_trade_aggregation",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "per_trade_aggregation"
+      ],
+      "pass": true
+    },
+    {
+      "gate": "G2",
+      "probe": "capacity 10→100 衰减 93%",
+      "want": "selection_dependent",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "selection_dependent"
+      ],
+      "pass": true
+    },
+    {
+      "gate": "G3",
+      "probe": "事件=上榜，基准只控 board/pct（缺 turnover）",
+      "want": "uncontrolled_confound",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "uncontrolled_confound"
+      ],
+      "pass": true
+    },
+    {
+      "gate": "G4",
+      "probe": "MDE 800bp > 效应 420bp",
+      "want": "below_detection_limit",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "below_detection_limit"
+      ],
+      "pass": true
+    },
+    {
+      "gate": "G5",
+      "probe": "年化净 1.0% < 门槛 3%",
+      "want": "below_hurdle",
+      "got_decision": "REJECT_ECON",
+      "got_reasons": [
+        "below_hurdle"
+      ],
+      "pass": true
+    },
+    {
+      "gate": "G3",
+      "probe": "事件=换手，基准只控 board/pct（不该红）",
+      "want": "(no uncontrolled_confound)",
+      "got_decision": "PASS",
+      "got_reasons": [],
+      "pass": true
+    }
+  ],
+  "mutation": [
+    {
+      "bypass": "事件类型未登记（原：全部混杂当事件定义）",
+      "guard": "unknown_event",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "unknown_event"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "open_t1→close_t1 自报 1 天",
+      "guard": "non_executable_window",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "declared_holding_mismatch",
+        "non_executable_window"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "universe 随便填",
+      "guard": "unknown_universe",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "universe_mismatch",
+        "unknown_universe"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "MDE 借别的宇宙",
+      "guard": "universe_mismatch",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "universe_mismatch"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "exit 未登记",
+      "guard": "unknown_exit",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "unknown_exit",
+        "window_undecidable"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "只填口径不报数",
+      "guard": "effect_missing",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "effect_missing",
+        "t_missing"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "族系阈值 1.96 < Bonferroni 3.66",
+      "guard": "threshold_too_loose",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "multiplicity_fail",
+        "selection_unassessed",
+        "threshold_too_loose",
+        "universe_mismatch"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "完全不传 n_tests 与买不进占比",
+      "guard": "n_tests_missing",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "n_tests_missing",
+        "unfillable_share_missing"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "entry_unfillable_share 缺省",
+      "guard": "unfillable_share_missing",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "unfillable_share_missing"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "报年化但不报容量",
+      "guard": "selection_unassessed",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "selection_unassessed"
+      ],
+      "pass": true
+    },
+    {
+      "bypass": "自报 3 天但配对 2 天",
+      "guard": "declared_holding_mismatch",
+      "want_decision": "REJECT",
+      "got_decision": "REJECT",
+      "got_reasons": [
+        "declared_holding_mismatch"
+      ],
+      "pass": true
+    }
+  ],
+  "structural": [
+    {
+      "check": "Claim 不再接受 event_defining_vars（单调逃逸的载体已移除）",
+      "pass": true
+    },
+    {
+      "check": "n_tests / entry_unfillable_share 的默认值必须是 None（缺省即红）",
+      "got": {
+        "n_tests": null,
+        "entry_unfillable_share": null
+      },
+      "pass": true
+    },
+    {
+      "check": "登记表拒绝 defines=全部混杂 的条目",
+      "pass": true
+    },
+    {
+      "check": "配对推导的交易日数",
+      "got": {
+        "open_t1→close_t1": 0,
+        "open_t1→close_t3": 2,
+        "open_t1→close_t6": 5,
+        "close_t→open_t1": 1,
+        "close_t→close_t1": 1,
+        "open_t1→close_t": -1,
+        "open_t1→bogus": null
+      },
+      "pass": true
+    },
+    {
+      "check": "Bonferroni 阈值随 n_tests 单调上升（1/25/40/68/200）",
+      "got": {
+        "1": 1.96,
+        "25": 3.0902,
+        "40": 3.2272,
+        "68": 3.3761,
+        "200": 3.6623
+      },
+      "pass": true
+    }
+  ],
+  "known_holes": [
+    {
+      "id": "n_tests 显式给 1",
+      "closed": false,
+      "demonstration": {
+        "n_tests=1": "PASS",
+        "n_tests=200": "REJECT",
+        "threshold_1.96": 1.9599639845400536,
+        "threshold_200": 3.6623,
+        "t_stat": 2.2
+      },
+      "closes_with": "第 3 步：只增不改的实验登记表，n_tests 从登记表读数而不是从参数读数"
+    },
+    {
+      "id": "entry_unfillable_share 自报 0.0",
+      "closed": false,
+      "demonstration": "G1 只核对这个数是否给出，无法知道真实的买不进占比",
+      "closes_with": "第 2 步：用 GP14 的开板次数 / GET_ZDT 的 OpenTimesZT 导出，替换自报浮点"
+    },
+    {
+      "id": "matched 结果缺失只记 WARN",
+      "closed": false,
+      "demonstration": "不报 matched_effect_bp 时，G3 无法判断效应是否由混杂解释",
+      "closes_with": "要求每条声明都附 matched 结果（会同时收窄正对照的口径）"
+    },
+    {
+      "id": "登记表可被直接编辑（少报 defines）",
+      "closed": false,
+      "demonstration": "EVENT_REGISTRY 只保证'不可能由全部混杂定义'，不保证'定义写全了'",
+      "closes_with": "登记表进版本控制 + diff 审查；协议层无法自证"
+    }
+  ],
+  "cross_universe_check": {
+    "checked": true,
+    "mainboard_effect_bp": -160.0,
+    "all_a_effect_bp": -120.0,
+    "all_a_t": -2.4,
+    "all_a_mde_bp": 100.0,
+    "same_sign": true,
+    "note": "两个宇宙：主板 -160.0 vs 全市场 -120.0，符号一致、量级不同，禁止互换。"
+  },
+  "verdicts": [
+    {
+      "name": "weak_board_absorption(+48.4%,Sharpe 0.97)",
+      "decision": "REJECT",
+      "reasons": [
+        "non_executable_window",
+        "declared_holding_mismatch",
+        "selection_dependent",
+        "unmatched_benchmark",
+        "effect_missing",
+        "t_missing"
+      ],
+      "stats": {
+        "effect_bp": null,
+        "t_stat": null,
+        "n_obs": null,
+        "n_days": 366,
+        "mde_bp": null,
+        "mde_ratio": null,
+        "n_tests": 1,
+        "bonferroni_threshold": 1.9599639845400536,
+        "single_test_pass": null,
+        "annual_gross_pct": 48.4,
+        "annual_net_pct": null,
+        "hurdle_annual_pct": 3.0,
+        "universe": "all_a",
+        "mde_universe": "",
+        "event_type": "weak_board",
+        "event_definition": [
+          "weak_board"
+        ],
+        "required_dims": [
+          "board",
+          "pct",
+          "turnover"
+        ],
+        "derived_holding_days": 0,
+        "declared_holding_days": 1
+      },
+      "checks": [
+        {
+          "gate": "G1",
+          "code": "non_executable_window",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "open_t1 → close_t1 相隔 0 个交易日（当日买入当日卖出）；A 股 T+1 下不存在这个窗口。",
+          "evidence": {
+            "entry": "open_t1",
+            "exit": "close_t1",
+            "derived_days": 0
+          }
+        },
+        {
+          "gate": "G1",
+          "code": "declared_holding_mismatch",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "自报持有 1 个交易日，但 open_t1 → close_t1 推导为 0 个。自报数不能覆盖成交价口径。",
+          "evidence": {
+            "declared": 1,
+            "derived": 0
+          }
+        },
+        {
+          "gate": "G1",
+          "code": "entry_fillable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 入场，自报全部可成交（该数为自报，未由开板次数导出）。",
+          "evidence": {
+            "unfillable_share": 0.0
+          }
+        },
+        {
+          "gate": "G2",
+          "code": "aggregation_per_day",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "按交易日聚合成组合收益后检验。",
+          "evidence": {}
+        },
+        {
+          "gate": "G2",
+          "code": "selection_dependent",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "容量从 10 放宽到 100，年化从 48.4% 掉到 1.9%（衰减 96%）；超额来自'买了哪几只'，不是来自信号。",
+          "evidence": {
+            "capacity": {
+              "10": 48.4,
+              "100": 1.9
+            },
+            "decay": 0.9607438016528926
+          }
+        },
+        {
+          "gate": "G3",
+          "code": "unmatched_benchmark",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "基准是同日全市场等权。异动股比全市场，等于在比'异动 vs 不动'，测到的是异动本身，不是手法。",
+          "evidence": {
+            "benchmark": "",
+            "dims": []
+          }
+        },
+        {
+          "gate": "G4",
+          "code": "effect_missing",
+          "status": "FAIL",
+          "procedural": true,
+          "detail": "未报效应量。没有效应量的声明不是'跳过检测下限'，是没有任何东西可采纳。",
+          "evidence": {}
+        },
+        {
+          "gate": "G5",
+          "code": "t_missing",
+          "status": "FAIL",
+          "procedural": true,
+          "detail": "未给 t 值：族系校正与经济性都无从判定。",
+          "evidence": {}
+        }
+      ]
+    },
+    {
+      "name": "炸板低吸(+117.5bp,t=7.19)",
+      "decision": "REJECT",
+      "reasons": [
+        "per_trade_aggregation",
+        "sign_flip_under_aggregation",
+        "unmatched_benchmark",
+        "mde_missing",
+        "economy_unassessed"
+      ],
+      "stats": {
+        "effect_bp": 117.5,
+        "t_stat": 7.19,
+        "n_obs": 2950,
+        "n_days": 274,
+        "mde_bp": null,
+        "mde_ratio": null,
+        "n_tests": 40,
+        "bonferroni_threshold": 3.23,
+        "single_test_pass": true,
+        "annual_gross_pct": null,
+        "annual_net_pct": null,
+        "hurdle_annual_pct": 3.0,
+        "universe": "all_a",
+        "mde_universe": "",
+        "event_type": "zha_ban",
+        "event_definition": [
+          "pct"
+        ],
+        "required_dims": [
+          "board",
+          "turnover"
+        ],
+        "derived_holding_days": 2,
+        "declared_holding_days": 2
+      },
+      "checks": [
+        {
+          "gate": "G1",
+          "code": "window_executable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 → close_t3，相隔 2 个交易日。",
+          "evidence": {
+            "derived_days": 2
+          }
+        },
+        {
+          "gate": "G1",
+          "code": "entry_fillable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 入场，自报全部可成交（该数为自报，未由开板次数导出）。",
+          "evidence": {
+            "unfillable_share": 0.0
+          }
+        },
+        {
+          "gate": "G2",
+          "code": "per_trade_aggregation",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "按笔做 t 检验。同日几十只同涨同跌不是独立样本，t 值会虚高一个数量级甚至翻向。同一信号按交易日聚合后 t=-0.30。",
+          "evidence": {
+            "per_trade_t": 7.19,
+            "per_day_t": -0.3
+          }
+        },
+        {
+          "gate": "G2",
+          "code": "sign_flip_under_aggregation",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "按笔 t=7.19 与按日 t=-0.30 符号相反，结论由聚合方式决定，不是由市场决定。",
+          "evidence": {
+            "per_trade_t": 7.19,
+            "per_day_t": -0.3
+          }
+        },
+        {
+          "gate": "G3",
+          "code": "unmatched_benchmark",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "基准是同日全市场等权。异动股比全市场，等于在比'异动 vs 不动'，测到的是异动本身，不是手法。",
+          "evidence": {
+            "benchmark": "market_equal",
+            "dims": []
+          }
+        },
+        {
+          "gate": "G4",
+          "code": "mde_missing",
+          "status": "FAIL",
+          "procedural": true,
+          "detail": "未报检测下限。样本能测出的最小效应是结论的前置条件，不报下限就报方向，等于不知道这个数是信号还是噪声。",
+          "evidence": {}
+        },
+        {
+          "gate": "G5",
+          "code": "multiplicity_pass",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "|t|=7.19 ≥ 族系阈值 3.23（40 次检验）。",
+          "evidence": {
+            "t": 7.19,
+            "threshold": 3.23,
+            "n_tests": 40
+          }
+        },
+        {
+          "gate": "G5",
+          "code": "economy_unassessed",
+          "status": "FAIL",
+          "procedural": true,
+          "detail": "未给年化净贡献。触发率 × 单次效应 × 242 − 成本是决定'要不要建'的那个数，不报它就只剩显著性。",
+          "evidence": {}
+        },
+        {
+          "gate": "G5",
+          "code": "self_reported_inputs",
+          "status": "WARN",
+          "procedural": true,
+          "detail": "以下判据输入由调用方自报，协议无法核对：n_tests, entry_unfillable_share。n_tests 应改为从只增不改的实验登记表读数，买不进占比应由开板次数导出。",
+          "evidence": {
+            "fields": [
+              "n_tests",
+              "entry_unfillable_share"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "龙虎榜平盘上榜(-291.1bp,t=-5.08)",
+      "decision": "REJECT",
+      "reasons": [
+        "uncontrolled_confound",
+        "confound_explains_effect",
+        "mde_missing",
+        "economy_unassessed"
+      ],
+      "stats": {
+        "effect_bp": -291.1,
+        "t_stat": -5.08,
+        "n_obs": 1009,
+        "n_days": 239,
+        "mde_bp": null,
+        "mde_ratio": null,
+        "n_tests": 68,
+        "bonferroni_threshold": 3.3760692415397497,
+        "single_test_pass": true,
+        "annual_gross_pct": null,
+        "annual_net_pct": null,
+        "hurdle_annual_pct": 3.0,
+        "universe": "all_a",
+        "mde_universe": "",
+        "event_type": "dragon_tiger",
+        "event_definition": [],
+        "required_dims": [
+          "board",
+          "pct",
+          "turnover"
+        ],
+        "derived_holding_days": 5,
+        "declared_holding_days": 5
+      },
+      "checks": [
+        {
+          "gate": "G1",
+          "code": "window_executable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 → close_t6，相隔 5 个交易日。",
+          "evidence": {
+            "derived_days": 5
+          }
+        },
+        {
+          "gate": "G1",
+          "code": "entry_fillable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 入场，自报全部可成交（该数为自报，未由开板次数导出）。",
+          "evidence": {
+            "unfillable_share": 0.0
+          }
+        },
+        {
+          "gate": "G2",
+          "code": "aggregation_per_day",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "按交易日聚合成组合收益后检验。",
+          "evidence": {}
+        },
+        {
+          "gate": "G3",
+          "code": "uncontrolled_confound",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "事件 'dragon_tiger' 的定义变量为 无，因此基准必须控制 ['board', 'pct', 'turnover']；实际只控制了 ['board', 'pct']，缺 ['turnover']。",
+          "evidence": {
+            "required": [
+              "board",
+              "pct",
+              "turnover"
+            ],
+            "controlled": [
+              "board",
+              "pct"
+            ],
+            "missing": [
+              "turnover"
+            ]
+          }
+        },
+        {
+          "gate": "G3",
+          "code": "confound_explains_effect",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "补齐混杂后效应从 -291.1bp 缩到 -85.6bp（t=-0.97），原效应基本可由该混杂解释。",
+          "evidence": {
+            "raw_bp": -291.1,
+            "matched_bp": -85.6,
+            "matched_t": -0.97,
+            "shrink": 0.294057025077293
+          }
+        },
+        {
+          "gate": "G4",
+          "code": "mde_missing",
+          "status": "FAIL",
+          "procedural": true,
+          "detail": "未报检测下限。样本能测出的最小效应是结论的前置条件，不报下限就报方向，等于不知道这个数是信号还是噪声。",
+          "evidence": {}
+        },
+        {
+          "gate": "G5",
+          "code": "multiplicity_pass",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "|t|=5.08 ≥ 族系阈值 3.38（68 次检验）。",
+          "evidence": {
+            "t": -5.08,
+            "threshold": 3.3760692415397497,
+            "n_tests": 68
+          }
+        },
+        {
+          "gate": "G5",
+          "code": "economy_unassessed",
+          "status": "FAIL",
+          "procedural": true,
+          "detail": "未给年化净贡献。触发率 × 单次效应 × 242 − 成本是决定'要不要建'的那个数，不报它就只剩显著性。",
+          "evidence": {}
+        },
+        {
+          "gate": "G5",
+          "code": "self_reported_inputs",
+          "status": "WARN",
+          "procedural": true,
+          "detail": "以下判据输入由调用方自报，协议无法核对：n_tests, entry_unfillable_share。n_tests 应改为从只增不改的实验登记表读数，买不进占比应由开板次数导出。",
+          "evidence": {
+            "fields": [
+              "n_tests",
+              "entry_unfillable_share"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "主板换手≥25%(H5 -160.0bp,t=-2.55)",
+      "decision": "REJECT",
+      "reasons": [
+        "selection_unassessed",
+        "universe_mismatch",
+        "multiplicity_fail",
+        "below_hurdle"
+      ],
+      "stats": {
+        "effect_bp": -160.0,
+        "t_stat": -2.55,
+        "n_obs": 4783,
+        "n_days": 365,
+        "mde_bp": 100.0,
+        "mde_ratio": 1.6,
+        "n_tests": 200,
+        "bonferroni_threshold": 3.662259930887615,
+        "single_test_pass": true,
+        "annual_gross_pct": 1.63,
+        "annual_net_pct": 1.22,
+        "hurdle_annual_pct": 3.0,
+        "universe": "mainboard",
+        "mde_universe": "all_a",
+        "event_type": "turnover_shock",
+        "event_definition": [
+          "turnover"
+        ],
+        "required_dims": [
+          "board",
+          "pct"
+        ],
+        "derived_holding_days": 5,
+        "declared_holding_days": 5
+      },
+      "checks": [
+        {
+          "gate": "G1",
+          "code": "window_executable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 → close_t6，相隔 5 个交易日。",
+          "evidence": {
+            "derived_days": 5
+          }
+        },
+        {
+          "gate": "G1",
+          "code": "entry_fillable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 入场，自报全部可成交（该数为自报，未由开板次数导出）。",
+          "evidence": {
+            "unfillable_share": 0.0
+          }
+        },
+        {
+          "gate": "G2",
+          "code": "aggregation_per_day",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "按交易日聚合成组合收益后检验。",
+          "evidence": {}
+        },
+        {
+          "gate": "G2",
+          "code": "selection_unassessed",
+          "status": "FAIL",
+          "procedural": true,
+          "detail": "报了年化净贡献却未给容量曲线（max_positions → 年化）。不报曲线就无法排除'超额只是买了哪几只'。",
+          "evidence": {}
+        },
+        {
+          "gate": "G3",
+          "code": "benchmark_matched",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "基准控制了 ['board', 'pct']，覆盖 ['board', 'pct']。",
+          "evidence": {
+            "required": [
+              "board",
+              "pct"
+            ]
+          }
+        },
+        {
+          "gate": "G3",
+          "code": "matched_result_missing",
+          "status": "WARN",
+          "procedural": true,
+          "detail": "未报补齐混杂后的效应，无法排除'效应只是混杂的另一种写法'。",
+          "evidence": {}
+        },
+        {
+          "gate": "G4",
+          "code": "universe_mismatch",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "效应取自 'mainboard'，检测下限取自 'all_a'。两个宇宙不能共用一个下限：样本更少的那个宇宙，MDE 只会更大。",
+          "evidence": {
+            "universe": "mainboard",
+            "mde_universe": "all_a"
+          }
+        },
+        {
+          "gate": "G4",
+          "code": "mde_cleared",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "|效应| / 检测下限 = 1.60（mainboard 口径）。",
+          "evidence": {
+            "ratio": 1.6
+          }
+        },
+        {
+          "gate": "G5",
+          "code": "multiplicity_fail",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "|t|=2.55 < 族系阈值 3.66（200 次检验）；单次检验过线=True。没做过族系校正的显著性不算显著性。",
+          "evidence": {
+            "t": -2.55,
+            "threshold": 3.662259930887615,
+            "n_tests": 200,
+            "single_test_pass": true
+          }
+        },
+        {
+          "gate": "G5",
+          "code": "below_hurdle",
+          "status": "FAIL",
+          "procedural": false,
+          "detail": "年化净贡献 1.22% < 门槛 3.0%。毛 1.63% 扣成本后所剩无几。",
+          "evidence": {
+            "annual_net_pct": 1.22,
+            "annual_gross_pct": 1.63,
+            "hurdle": 3.0
+          }
+        },
+        {
+          "gate": "G5",
+          "code": "self_reported_inputs",
+          "status": "WARN",
+          "procedural": true,
+          "detail": "以下判据输入由调用方自报，协议无法核对：n_tests, entry_unfillable_share, mde_bp。n_tests 应改为从只增不改的实验登记表读数，买不进占比应由开板次数导出。",
+          "evidence": {
+            "fields": [
+              "n_tests",
+              "entry_unfillable_share",
+              "mde_bp"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "正对照(合成，口径齐全)",
+      "decision": "PASS",
+      "reasons": [],
+      "stats": {
+        "effect_bp": 420.0,
+        "t_stat": 4.6,
+        "n_obs": 6000,
+        "n_days": 365,
+        "mde_bp": 120.0,
+        "mde_ratio": 3.5,
+        "n_tests": 25,
+        "bonferroni_threshold": 3.090232306167813,
+        "single_test_pass": true,
+        "annual_gross_pct": 10.2,
+        "annual_net_pct": 8.0,
+        "hurdle_annual_pct": 3.0,
+        "universe": "mainboard",
+        "mde_universe": "mainboard",
+        "event_type": "volume_shock",
+        "event_definition": [
+          "volume_shock"
+        ],
+        "required_dims": [
+          "board",
+          "pct",
+          "turnover"
+        ],
+        "derived_holding_days": 2,
+        "declared_holding_days": 2
+      },
+      "checks": [
+        {
+          "gate": "G1",
+          "code": "window_executable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 → close_t3，相隔 2 个交易日。",
+          "evidence": {
+            "derived_days": 2
+          }
+        },
+        {
+          "gate": "G1",
+          "code": "entry_fillable",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "open_t1 入场，自报全部可成交（该数为自报，未由开板次数导出）。",
+          "evidence": {
+            "unfillable_share": 0.0
+          }
+        },
+        {
+          "gate": "G2",
+          "code": "aggregation_per_day",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "按交易日聚合成组合收益后检验。",
+          "evidence": {}
+        },
+        {
+          "gate": "G2",
+          "code": "selection_robust",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "容量 10→100，年化衰减 33%。",
+          "evidence": {
+            "decay": 0.3333333333333333
+          }
+        },
+        {
+          "gate": "G3",
+          "code": "benchmark_matched",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "基准控制了 ['board', 'pct', 'turnover']，覆盖 ['board', 'pct', 'turnover']。",
+          "evidence": {
+            "required": [
+              "board",
+              "pct",
+              "turnover"
+            ]
+          }
+        },
+        {
+          "gate": "G4",
+          "code": "mde_cleared",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "|效应| / 检测下限 = 3.50（mainboard 口径）。",
+          "evidence": {
+            "ratio": 3.5
+          }
+        },
+        {
+          "gate": "G5",
+          "code": "multiplicity_pass",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "|t|=4.60 ≥ 族系阈值 3.09（25 次检验）。",
+          "evidence": {
+            "t": 4.6,
+            "threshold": 3.090232306167813,
+            "n_tests": 25
+          }
+        },
+        {
+          "gate": "G5",
+          "code": "economy_cleared",
+          "status": "PASS",
+          "procedural": false,
+          "detail": "年化净贡献 8.00% ≥ 门槛 3.0%。",
+          "evidence": {
+            "annual_net_pct": 8.0
+          }
+        },
+        {
+          "gate": "G5",
+          "code": "self_reported_inputs",
+          "status": "WARN",
+          "procedural": true,
+          "detail": "以下判据输入由调用方自报，协议无法核对：n_tests, entry_unfillable_share, mde_bp。n_tests 应改为从只增不改的实验登记表读数，买不进占比应由开板次数导出。",
+          "evidence": {
+            "fields": [
+              "n_tests",
+              "entry_unfillable_share",
+              "mde_bp"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

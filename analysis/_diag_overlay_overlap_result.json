@@ -1,0 +1,201 @@
+{
+  "seed": 20261110,
+  "defs": {
+    "prev1": {
+      "all": {
+        "n": 344,
+        "mean_bp": 49.8,
+        "sd_bp": 208.7,
+        "t": 4.43,
+        "sharpe_ann": 3.78,
+        "ann_pct": 124.6,
+        "hit": 0.596,
+        "p5_bp": -269.4,
+        "p50_bp": 46.5,
+        "halves": [
+          58.1,
+          41.6
+        ]
+      },
+      "overlap": {
+        "n": 344,
+        "mean_bp": 49.5,
+        "sd_bp": 228.6,
+        "t": 4.02,
+        "sharpe_ann": 3.43,
+        "ann_pct": 123.8,
+        "hit": 0.593,
+        "p5_bp": -334.7,
+        "p50_bp": 46.9,
+        "halves": [
+          62.2,
+          36.9
+        ]
+      },
+      "new": {
+        "n": 319,
+        "mean_bp": 54.1,
+        "sd_bp": 332.7,
+        "t": 2.91,
+        "sharpe_ann": 2.57,
+        "ann_pct": 135.4,
+        "hit": 0.592,
+        "p5_bp": -492.7,
+        "p50_bp": 39.1,
+        "halves": [
+          47.5,
+          60.8
+        ]
+      },
+      "overlap_net": {
+        "n": 344,
+        "mean_bp": 29.5,
+        "sd_bp": 228.4,
+        "t": 2.39,
+        "sharpe_ann": 2.04,
+        "ann_pct": 73.7,
+        "hit": 0.558,
+        "p5_bp": -354.5,
+        "p50_bp": 26.8,
+        "halves": [
+          42.1,
+          16.8
+        ]
+      },
+      "names_per_day": 20.0,
+      "overlap_per_day": 15.3,
+      "overlap_share": 0.767
+    },
+    "prev5": {
+      "all": {
+        "n": 344,
+        "mean_bp": 49.8,
+        "sd_bp": 208.7,
+        "t": 4.43,
+        "sharpe_ann": 3.78,
+        "ann_pct": 124.6,
+        "hit": 0.596,
+        "p5_bp": -269.4,
+        "p50_bp": 46.5,
+        "halves": [
+          58.1,
+          41.6
+        ]
+      },
+      "overlap": {
+        "n": 344,
+        "mean_bp": 49.6,
+        "sd_bp": 224.1,
+        "t": 4.11,
+        "sharpe_ann": 3.5,
+        "ann_pct": 124.0,
+        "hit": 0.587,
+        "p5_bp": -309.2,
+        "p50_bp": 55.1,
+        "halves": [
+          60.7,
+          38.5
+        ]
+      },
+      "new": {
+        "n": 231,
+        "mean_bp": 30.1,
+        "sd_bp": 373.7,
+        "t": 1.22,
+        "sharpe_ann": 1.27,
+        "ann_pct": 75.1,
+        "hit": 0.524,
+        "p5_bp": -571.2,
+        "p50_bp": 28.9,
+        "halves": [
+          32.5,
+          27.6
+        ]
+      },
+      "overlap_net": {
+        "n": 344,
+        "mean_bp": 29.5,
+        "sd_bp": 223.9,
+        "t": 2.45,
+        "sharpe_ann": 2.09,
+        "ann_pct": 73.8,
+        "hit": 0.561,
+        "p5_bp": -328.9,
+        "p50_bp": 34.9,
+        "halves": [
+          40.6,
+          18.5
+        ]
+      },
+      "names_per_day": 20.0,
+      "overlap_per_day": 16.8,
+      "overlap_share": 0.838
+    },
+    "prev20": {
+      "all": {
+        "n": 344,
+        "mean_bp": 49.8,
+        "sd_bp": 208.7,
+        "t": 4.43,
+        "sharpe_ann": 3.78,
+        "ann_pct": 124.6,
+        "hit": 0.596,
+        "p5_bp": -269.4,
+        "p50_bp": 46.5,
+        "halves": [
+          58.1,
+          41.6
+        ]
+      },
+      "overlap": {
+        "n": 344,
+        "mean_bp": 50.3,
+        "sd_bp": 223.5,
+        "t": 4.18,
+        "sharpe_ann": 3.56,
+        "ann_pct": 125.8,
+        "hit": 0.593,
+        "p5_bp": -309.2,
+        "p50_bp": 57.2,
+        "halves": [
+          59.5,
+          41.2
+        ]
+      },
+      "new": {
+        "n": 204,
+        "mean_bp": 33.0,
+        "sd_bp": 383.0,
+        "t": 1.23,
+        "sharpe_ann": 1.36,
+        "ann_pct": 82.5,
+        "hit": 0.525,
+        "p5_bp": -572.2,
+        "p50_bp": 29.5,
+        "halves": [
+          48.4,
+          17.6
+        ]
+      },
+      "overlap_net": {
+        "n": 344,
+        "mean_bp": 30.3,
+        "sd_bp": 223.3,
+        "t": 2.51,
+        "sharpe_ann": 2.14,
+        "ann_pct": 75.6,
+        "hit": 0.564,
+        "p5_bp": -328.9,
+        "p50_bp": 37.3,
+        "halves": [
+          39.4,
+          21.1
+        ]
+      },
+      "names_per_day": 20.0,
+      "overlap_per_day": 17.1,
+      "overlap_share": 0.855
+    }
+  },
+  "cohorts": 347
+}

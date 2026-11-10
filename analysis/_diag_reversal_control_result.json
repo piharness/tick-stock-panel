@@ -1,0 +1,176 @@
+{
+  "legal_window_check": {},
+  "A_pure_momentum": {
+    "mom5_dec1": {
+      "n": 192154,
+      "days": 357,
+      "mean_bp": -18.0,
+      "t": -1.03,
+      "mde_bp": 34.8
+    },
+    "mom5_dec2": {
+      "n": 194104,
+      "days": 357,
+      "mean_bp": -8.5,
+      "t": -0.76,
+      "mde_bp": 22.2
+    },
+    "mom5_dec3": {
+      "n": 194204,
+      "days": 357,
+      "mean_bp": -2.8,
+      "t": -0.42,
+      "mde_bp": 13.3
+    },
+    "mom5_dec4": {
+      "n": 194266,
+      "days": 357,
+      "mean_bp": -0.9,
+      "t": -0.18,
+      "mde_bp": 10.8
+    },
+    "mom5_dec5": {
+      "n": 194340,
+      "days": 357,
+      "mean_bp": 1.1,
+      "t": 0.21,
+      "mde_bp": 10.6
+    },
+    "mom5_dec6": {
+      "n": 194232,
+      "days": 357,
+      "mean_bp": 5.3,
+      "t": 0.84,
+      "mde_bp": 12.5
+    },
+    "mom5_dec7": {
+      "n": 194234,
+      "days": 357,
+      "mean_bp": 7.1,
+      "t": 1.05,
+      "mde_bp": 13.5
+    },
+    "mom5_dec8": {
+      "n": 194076,
+      "days": 357,
+      "mean_bp": 10.6,
+      "t": 1.35,
+      "mde_bp": 15.8
+    },
+    "mom5_dec9": {
+      "n": 193426,
+      "days": 357,
+      "mean_bp": 8.5,
+      "t": 0.84,
+      "mde_bp": 20.3
+    },
+    "mom5_dec10": {
+      "n": 185609,
+      "days": 357,
+      "mean_bp": -1.8,
+      "t": -0.11,
+      "mde_bp": 33.0
+    },
+    "mkt_H5_all": {
+      "n": 1971898,
+      "days": 362,
+      "mean_bp": -0.0,
+      "t": -0.04,
+      "mde_bp": 0.0
+    }
+  },
+  "B_within_mom5": {
+    "mom5_dec8_tr>=25": {
+      "n": 280,
+      "days": 187,
+      "mean_bp": -32.3,
+      "t": -0.17,
+      "mde_bp": 385.6
+    },
+    "mom5_dec8_tr<25": {
+      "n": 193796,
+      "days": 357,
+      "mean_bp": 10.8,
+      "t": 1.37,
+      "mde_bp": 15.7
+    },
+    "mom5_dec9_tr>=25": {
+      "n": 650,
+      "days": 278,
+      "mean_bp": -43.0,
+      "t": -0.35,
+      "mde_bp": 247.1
+    },
+    "mom5_dec9_tr<25": {
+      "n": 192776,
+      "days": 357,
+      "mean_bp": 8.7,
+      "t": 0.86,
+      "mde_bp": 20.3
+    },
+    "mom5_dec10_tr>=25": {
+      "n": 6617,
+      "days": 357,
+      "mean_bp": -118.0,
+      "t": -2.13,
+      "mde_bp": 111.0
+    },
+    "mom5_dec10_tr<25": {
+      "n": 178992,
+      "days": 357,
+      "mean_bp": 2.9,
+      "t": 0.18,
+      "mde_bp": 32.6
+    }
+  },
+  "C_within_turnover": {
+    "tr>=25_mom5_dec1": {
+      "n": 637,
+      "days": 263,
+      "mean_bp": -3.8,
+      "t": -0.03,
+      "mde_bp": 267.8
+    },
+    "tr>=25_mom5_dec5": {
+      "n": 93,
+      "days": 84,
+      "mean_bp": -61.0,
+      "t": -0.21,
+      "mde_bp": 589.4
+    },
+    "tr>=25_mom5_dec7": {
+      "n": 152,
+      "days": 124,
+      "mean_bp": 86.2,
+      "t": 0.31,
+      "mde_bp": 560.6
+    },
+    "tr>=25_mom5_dec9": {
+      "n": 650,
+      "days": 278,
+      "mean_bp": -43.0,
+      "t": -0.35,
+      "mde_bp": 247.1
+    },
+    "tr>=25_mom5_dec10": {
+      "n": 6617,
+      "days": 357,
+      "mean_bp": -118.0,
+      "t": -2.13,
+      "mde_bp": 111.0
+    },
+    "tr>=25_all": {
+      "n": 9305,
+      "days": 361,
+      "mean_bp": -113.5,
+      "t": -2.29,
+      "mde_bp": 99.0
+    }
+  },
+  "D_exact_zero_share": {
+    "share_r1_exact_zero": 0.015,
+    "H1_bin_bp": 62.1,
+    "H1_note": "close[T+1]/open[T+1]：同日买入当日卖出，A股T+1不成立，仅作诊断",
+    "H2_bin_bp": 6.0
+  }
+}

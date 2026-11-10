@@ -1,0 +1,56 @@
+panel dates=367 symbols=5581
+
+############ mom_bottom20
+
+  == hold20 (no SL/TP)  hold=20.0d n=326
+     universe bench: dCE= -105.8bp P=0.083  mean_active=  -86.9bp t=-0.80
+     matched  bench: dCE=  -16.5bp P=0.485  mean_active=  -11.0bp t=-0.09
+
+  == SL5%  hold=10.1d n=326
+     universe bench: dCE=  -73.0bp P=0.015  mean_active=  -68.2bp t=-0.93
+     matched  bench: dCE=  -25.9bp P=0.185  mean_active=  -21.7bp t=-0.34
+
+  == TP10%  hold=13.5d n=326
+     universe bench: dCE=  +26.6bp P=0.850  mean_active=  +34.0bp t=+0.45
+     matched  bench: dCE=  +71.1bp P=0.948  mean_active=  +75.0bp t=+0.86
+
+  == SL5%+TP10%  hold= 6.2d n=326
+     universe bench: dCE=   +1.5bp P=0.610  mean_active=   +3.6bp t=+0.06
+     matched  bench: dCE=  +29.5bp P=0.973  mean_active=  +32.0bp t=+0.63
+
+  == SL3%+TP30%  hold= 6.5d n=326
+     universe bench: dCE=  -14.4bp P=0.312  mean_active=  -11.0bp t=-0.18
+     matched  bench: dCE=  +14.3bp P=0.777  mean_active=  +17.8bp t=+0.32
+
+  == SL10%+TP5%  hold= 6.6d n=326
+     universe bench: dCE=  +11.3bp P=0.708  mean_active=  +13.2bp t=+0.26
+     matched  bench: dCE=  +32.1bp P=0.953  mean_active=  +33.9bp t=+0.72
+
+############ mom_top20
+
+  == hold20 (no SL/TP)  hold=20.0d n=326
+     universe bench: dCE= -159.0bp P=0.333  mean_active=  -70.5bp t=-0.25
+     matched  bench: dCE=  -19.9bp P=0.603  mean_active=  +48.7bp t=+0.23
+
+  == SL5%  hold= 5.6d n=326
+     universe bench: dCE=   -7.9bp P=0.505  mean_active=   +1.5bp t=+0.01
+     matched  bench: dCE=  +56.3bp P=0.940  mean_active=  +65.6bp t=+0.53
+
+  == TP10%  hold= 9.3d n=326
+     universe bench: dCE=  -75.8bp P=0.280  mean_active=  -63.4bp t=-0.45
+     matched  bench: dCE=  -18.5bp P=0.403  mean_active=  -11.0bp t=-0.10
+
+  == SL5%+TP10%  hold= 1.9d n=326
+     universe bench: dCE=  -18.5bp P=0.295  mean_active=  -18.9bp t=-0.25
+     matched  bench: dCE=   +9.6bp P=0.583  mean_active=   +9.7bp t=+0.15
+
+  == SL3%+TP30%  hold= 2.7d n=326
+     universe bench: dCE=  -24.4bp P=0.320  mean_active=  -23.5bp t=-0.29
+     matched  bench: dCE=  +11.7bp P=0.600  mean_active=  +13.0bp t=+0.18
+
+  == SL10%+TP5%  hold= 2.1d n=326
+     universe bench: dCE=   -9.9bp P=0.427  mean_active=  -10.6bp t=-0.14
+     matched  bench: dCE=   +7.2bp P=0.583  mean_active=   +6.9bp t=+0.11
+
+[parity] universe-benchmark dCE reproduces round 2 in 12/12 cells: True
+wrote analysis\_diag_matched_ce_result.json  elapsed=23.2s

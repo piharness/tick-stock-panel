@@ -1,0 +1,323 @@
+{
+  "seed": 20261109,
+  "results": {
+    "mom_bottom20": {
+      "hold20 (no SL/TP)": {
+        "n": 326,
+        "hold_days": 20.0,
+        "ce_g1_pick_bp": -31.5,
+        "universe": {
+          "delta_bp": -105.8,
+          "ci5": -201.5,
+          "ci95": 12.5,
+          "p_gt0": 0.083,
+          "mean_active_bp": -86.9,
+          "t_mean": -0.8
+        },
+        "matched": {
+          "delta_bp": -16.5,
+          "ci5": -137.3,
+          "ci95": 143.6,
+          "p_gt0": 0.485,
+          "mean_active_bp": -11.0,
+          "t_mean": -0.09
+        }
+      },
+      "SL5%": {
+        "n": 326,
+        "hold_days": 10.1,
+        "ce_g1_pick_bp": 2.0,
+        "universe": {
+          "delta_bp": -73.0,
+          "ci5": -113.2,
+          "ci95": -16.2,
+          "p_gt0": 0.015,
+          "mean_active_bp": -68.2,
+          "t_mean": -0.93
+        },
+        "matched": {
+          "delta_bp": -25.9,
+          "ci5": -71.2,
+          "ci95": 22.5,
+          "p_gt0": 0.185,
+          "mean_active_bp": -21.7,
+          "t_mean": -0.34
+        }
+      },
+      "TP10%": {
+        "n": 326,
+        "hold_days": 13.5,
+        "ce_g1_pick_bp": 102.6,
+        "universe": {
+          "delta_bp": 26.6,
+          "ci5": -20.0,
+          "ci95": 77.6,
+          "p_gt0": 0.85,
+          "mean_active_bp": 34.0,
+          "t_mean": 0.45
+        },
+        "matched": {
+          "delta_bp": 71.1,
+          "ci5": -0.8,
+          "ci95": 145.7,
+          "p_gt0": 0.948,
+          "mean_active_bp": 75.0,
+          "t_mean": 0.86
+        }
+      },
+      "SL5%+TP10%": {
+        "n": 326,
+        "hold_days": 6.2,
+        "ce_g1_pick_bp": 62.0,
+        "universe": {
+          "delta_bp": 1.5,
+          "ci5": -29.6,
+          "ci95": 43.7,
+          "p_gt0": 0.61,
+          "mean_active_bp": 3.6,
+          "t_mean": 0.06
+        },
+        "matched": {
+          "delta_bp": 29.5,
+          "ci5": 4.5,
+          "ci95": 61.8,
+          "p_gt0": 0.973,
+          "mean_active_bp": 32.0,
+          "t_mean": 0.63
+        }
+      },
+      "SL3%+TP30%": {
+        "n": 326,
+        "hold_days": 6.5,
+        "ce_g1_pick_bp": 51.6,
+        "universe": {
+          "delta_bp": -14.4,
+          "ci5": -52.1,
+          "ci95": 39.6,
+          "p_gt0": 0.312,
+          "mean_active_bp": -11.0,
+          "t_mean": -0.18
+        },
+        "matched": {
+          "delta_bp": 14.3,
+          "ci5": -19.1,
+          "ci95": 55.9,
+          "p_gt0": 0.777,
+          "mean_active_bp": 17.8,
+          "t_mean": 0.32
+        }
+      },
+      "SL10%+TP5%": {
+        "n": 326,
+        "hold_days": 6.6,
+        "ce_g1_pick_bp": 53.7,
+        "universe": {
+          "delta_bp": 11.3,
+          "ci5": -26.3,
+          "ci95": 46.2,
+          "p_gt0": 0.708,
+          "mean_active_bp": 13.2,
+          "t_mean": 0.26
+        },
+        "matched": {
+          "delta_bp": 32.1,
+          "ci5": 1.5,
+          "ci95": 56.1,
+          "p_gt0": 0.953,
+          "mean_active_bp": 33.9,
+          "t_mean": 0.72
+        }
+      }
+    },
+    "mom_top20": {
+      "hold20 (no SL/TP)": {
+        "n": 326,
+        "hold_days": 20.0,
+        "ce_g1_pick_bp": -84.7,
+        "universe": {
+          "delta_bp": -159.0,
+          "ci5": -420.7,
+          "ci95": 248.3,
+          "p_gt0": 0.333,
+          "mean_active_bp": -70.5,
+          "t_mean": -0.25
+        },
+        "matched": {
+          "delta_bp": -19.9,
+          "ci5": -168.4,
+          "ci95": 254.7,
+          "p_gt0": 0.603,
+          "mean_active_bp": 48.7,
+          "t_mean": 0.23
+        }
+      },
+      "SL5%": {
+        "n": 326,
+        "hold_days": 5.6,
+        "ce_g1_pick_bp": 67.1,
+        "universe": {
+          "delta_bp": -7.9,
+          "ci5": -96.9,
+          "ci95": 106.1,
+          "p_gt0": 0.505,
+          "mean_active_bp": 1.5,
+          "t_mean": 0.01
+        },
+        "matched": {
+          "delta_bp": 56.3,
+          "ci5": -3.2,
+          "ci95": 143.1,
+          "p_gt0": 0.94,
+          "mean_active_bp": 65.6,
+          "t_mean": 0.53
+        }
+      },
+      "TP10%": {
+        "n": 326,
+        "hold_days": 9.3,
+        "ce_g1_pick_bp": 0.3,
+        "universe": {
+          "delta_bp": -75.8,
+          "ci5": -222.3,
+          "ci95": 97.3,
+          "p_gt0": 0.28,
+          "mean_active_bp": -63.4,
+          "t_mean": -0.45
+        },
+        "matched": {
+          "delta_bp": -18.5,
+          "ci5": -90.8,
+          "ci95": 84.5,
+          "p_gt0": 0.403,
+          "mean_active_bp": -11.0,
+          "t_mean": -0.1
+        }
+      },
+      "SL5%+TP10%": {
+        "n": 326,
+        "hold_days": 1.9,
+        "ce_g1_pick_bp": 42.0,
+        "universe": {
+          "delta_bp": -18.5,
+          "ci5": -92.9,
+          "ci95": 47.4,
+          "p_gt0": 0.295,
+          "mean_active_bp": -18.9,
+          "t_mean": -0.25
+        },
+        "matched": {
+          "delta_bp": 9.6,
+          "ci5": -39.2,
+          "ci95": 45.6,
+          "p_gt0": 0.583,
+          "mean_active_bp": 9.7,
+          "t_mean": 0.15
+        }
+      },
+      "SL3%+TP30%": {
+        "n": 326,
+        "hold_days": 2.7,
+        "ce_g1_pick_bp": 41.6,
+        "universe": {
+          "delta_bp": -24.4,
+          "ci5": -93.1,
+          "ci95": 51.3,
+          "p_gt0": 0.32,
+          "mean_active_bp": -23.5,
+          "t_mean": -0.29
+        },
+        "matched": {
+          "delta_bp": 11.7,
+          "ci5": -48.0,
+          "ci95": 56.2,
+          "p_gt0": 0.6,
+          "mean_active_bp": 13.0,
+          "t_mean": 0.18
+        }
+      },
+      "SL10%+TP5%": {
+        "n": 326,
+        "hold_days": 2.1,
+        "ce_g1_pick_bp": 32.5,
+        "universe": {
+          "delta_bp": -9.9,
+          "ci5": -76.9,
+          "ci95": 66.9,
+          "p_gt0": 0.427,
+          "mean_active_bp": -10.6,
+          "t_mean": -0.14
+        },
+        "matched": {
+          "delta_bp": 7.2,
+          "ci5": -41.8,
+          "ci95": 48.8,
+          "p_gt0": 0.583,
+          "mean_active_bp": 6.9,
+          "t_mean": 0.11
+        }
+      }
+    }
+  },
+  "parity": {
+    "mom_bottom20|hold20 (no SL/TP)": {
+      "delta_bp": -105.8,
+      "round2": -105.8,
+      "match": true
+    },
+    "mom_bottom20|SL5%": {
+      "delta_bp": -73.0,
+      "round2": -73.0,
+      "match": true
+    },
+    "mom_bottom20|TP10%": {
+      "delta_bp": 26.6,
+      "round2": 26.6,
+      "match": true
+    },
+    "mom_bottom20|SL5%+TP10%": {
+      "delta_bp": 1.5,
+      "round2": 1.5,
+      "match": true
+    },
+    "mom_bottom20|SL3%+TP30%": {
+      "delta_bp": -14.4,
+      "round2": -14.4,
+      "match": true
+    },
+    "mom_bottom20|SL10%+TP5%": {
+      "delta_bp": 11.3,
+      "round2": 11.3,
+      "match": true
+    },
+    "mom_top20|hold20 (no SL/TP)": {
+      "delta_bp": -159.0,
+      "round2": -159.0,
+      "match": true
+    },
+    "mom_top20|SL5%": {
+      "delta_bp": -7.9,
+      "round2": -7.9,
+      "match": true
+    },
+    "mom_top20|TP10%": {
+      "delta_bp": -75.8,
+      "round2": -75.8,
+      "match": true
+    },
+    "mom_top20|SL5%+TP10%": {
+      "delta_bp": -18.5,
+      "round2": -18.5,
+      "match": true
+    },
+    "mom_top20|SL3%+TP30%": {
+      "delta_bp": -24.4,
+      "round2": -24.4,
+      "match": true
+    },
+    "mom_top20|SL10%+TP5%": {
+      "delta_bp": -9.9,
+      "round2": -9.9,
+      "match": true
+    }
+  }
+}

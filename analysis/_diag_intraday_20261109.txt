@@ -1,0 +1,28 @@
+panel dates=367 symbols=5581
+
+############ mom_bottom20
+  intraday   universe t= +2.07 (mean    +14.9bp, n=327) | matched t= +2.11 (mean    +13.3bp)
+  overnight  universe t= -2.29 (mean     -8.4bp, n=327) | matched t= -0.57 (mean     -1.9bp)
+  open2open  universe t= +0.78 (mean     +6.0bp, n=327) | matched t= +1.55 (mean    +11.0bp)
+
+############ mom_top20
+  intraday   universe t= +4.57 (mean    +61.6bp, n=327) | matched t= +4.71 (mean    +55.9bp)
+  overnight  universe t= -9.57 (mean    -68.6bp, n=327) | matched t= -8.50 (mean    -56.9bp)
+  open2open  universe t= -0.48 (mean     -7.6bp, n=327) | matched t= -0.11 (mean     -1.5bp)
+
+############ [identity check] open2open vs intraday+overnight (mean active, bp)
+  mom_bottom20  open2open=    +6.0  intraday+overnight=    +6.5  gap=-0.5
+  mom_top20     open2open=    -7.6  intraday+overnight=    -7.0  gap=-0.6
+
+############ [PLACEBO] random 20-name baskets, one-session segments
+  intraday   null active mean=   -0.2bp (sd 3.1) | mean t=-0.07 sd(t)=0.95  n_dates=327
+  overnight  null active mean=   +0.0bp (sd 1.6) | mean t=-0.00 sd(t)=1.06  n_dates=327
+  open2open  null active mean=   -0.1bp (sd 3.7) | mean t=-0.04 sd(t)=1.03  n_dates=327
+
+############ [DQ] is the stored open a real print?
+  open outside [low,high]: 0 / 2000524 = 0.000%
+  open exactly == prev close: 269386 / 2000524 = 13.466%
+  mom_bottom20  entry-day open gap =   -23.7bp (t=-4.53)
+  mom_top20     entry-day open gap =   -46.4bp (t=-5.51)
+
+wrote analysis\_diag_intraday_result.json  elapsed=17.8s

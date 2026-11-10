@@ -1,0 +1,39 @@
+D:\DSH\tick-stock-panel\backend\.venv\Lib\site-packages\numpy\lib\_nanfunctions_impl.py:1396: RuntimeWarning: All-NaN slice encountered
+  return _nanquantile_unchecked(
+panel dates=367 symbols=5581
+cells ok=1,775,309  events=3,535  base rate=0.1991%
+vol10 pool: cells=177,528  base=0.5712%
+sub-group vol10 & mom top0.2%: cells=3,325  events=62  P=1.8647%  lift_vs_base=9.36x  lift_vs_vol10=3.26x
+cohorts with a non-empty sub-group before expiry: 326
+
+[CE] per-cohort mean payoff of the sub-group, CRRA CE (bp) [circular block CI, B=2000, block=20 cohorts]
+     gross = raw payoff; net = payoff - 20bp
+rule                n  mean_bp   win  g1 gross/net [ci5,ci95] P(<=0) | g2 gross/net [ci5,ci95] P(<=0) | g5 gross/net [ci5,ci95] P(<=0)
+hold20 (no SL/TP)  326   +103.2 0.552    -32.0/  -52.3 [ -625.2, +510.9] 0.54 |  -177.9/ -198.6 [ -824.8, +386.0] 0.76 |  -698.6/ -720.9 [-1481.2, +132.4] 0.94
+                   pool CE g1 net: v10=  -97.8  uni=  +53.8
+SL5%              326   +108.8 0.414    +80.6/  +60.6 [ -112.0, +254.3] 0.28 |   +55.0/  +34.9 [ -130.4, +217.0] 0.35 |    -9.6/  -29.8 [ -173.9, +126.0] 0.63
+                   pool CE g1 net: v10=  -11.6  uni=  +55.1
+TP10%             326    +62.0 0.613    +30.8/  +10.7 [ -222.9, +196.7] 0.44 |    -4.3/  -24.5 [ -276.9, +170.4] 0.56 |  -143.2/ -163.9 [ -498.4, +111.3] 0.84
+                   pool CE g1 net: v10=   -9.2  uni=  +55.8
+SL5%+TP10%        326    +54.2 0.571    +49.8/  +29.8 [  -11.3,  +71.1] 0.07 |   +45.5/  +25.5 [  -14.7,  +65.4] 0.10 |   +32.7/  +12.6 [  -24.8,  +52.5] 0.26
+                   pool CE g1 net: v10=   +5.0  uni=  +40.4
+SL3%+TP30%        326    +27.9 0.472    +22.4/   +2.4 [  -52.5,  +58.4] 0.47 |   +16.9/   -3.1 [  -57.1,  +53.9] 0.54 |    +1.3/  -18.7 [  -71.2,  +33.1] 0.76
+                   pool CE g1 net: v10=   +3.2  uni=  +46.0
+SL10%+TP5%        326    +47.4 0.613    +43.2/  +23.2 [  -13.9,  +61.0] 0.12 |   +39.1/  +19.1 [  -20.7,  +56.1] 0.18 |   +26.4/   +6.3 [  -33.2,  +44.8] 0.39
+                   pool CE g1 net: v10=   +3.1  uni=  +22.4
+
+[CE, max over 6 rules] net CE, so the best of 6 is not read as if pre-registered:
+  g1: observed max net CE =   +60.6bp  CI [   -5.9, +500.9]  P(<=0)=0.042
+  g5: observed max net CE =   +12.6bp  CI [  -24.3, +157.8]  P(<=0)=0.203
+
+[CE, max over 6 rules] block=40 sensitivity (net):
+  g1: observed max net CE =   +60.6bp  CI [   -4.2, +505.1]  P(<=0)=0.037
+  g5: observed max net CE =   +12.6bp  CI [  -23.8, +150.8]  P(<=0)=0.210
+
+[diag] sub-group composition and overlap:
+  unique stocks in sub-group: 492
+  event cohorts: 51 of 326  events=62  max per cohort=2
+  per-cohort raw n: p50=10 p5=8 max=12
+  per-cohort usable n (hold20): p50=10 p5=8 max=12
+
+wrote analysis\_diag_ce_tail_result.json  elapsed=26.7s

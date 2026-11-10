@@ -1,0 +1,368 @@
+{
+  "seed": 20261110,
+  "n_cohorts": 327,
+  "discounts": {
+    "lim-1%": {
+      "fill_rate": 0.424,
+      "active_matched": {
+        "n": 316,
+        "n_eff": 158.0,
+        "mean_bp": 25.3,
+        "sd_bp": 380.7,
+        "se_bp": 30.3,
+        "t": 0.83,
+        "hit": 0.532,
+        "p5_bp": -550.3,
+        "p50_bp": 20.2,
+        "p95_bp": 682.6
+      },
+      "active_raw": {
+        "n": 316,
+        "n_eff": 158.0,
+        "mean_bp": 46.8,
+        "sd_bp": 490.2,
+        "se_bp": 39.0,
+        "t": 1.2,
+        "hit": 0.516,
+        "p5_bp": -768.3,
+        "p50_bp": 13.4,
+        "p95_bp": 873.7
+      },
+      "placebo": {
+        "n": 31600,
+        "n_eff": 15800.0,
+        "mean_bp": 0.5,
+        "sd_bp": 119.4,
+        "se_bp": 1.0,
+        "t": 0.49,
+        "hit": 0.487,
+        "p5_bp": -186.3,
+        "p50_bp": -3.6,
+        "p95_bp": 202.1
+      },
+      "halves": [
+        {
+          "n": 158,
+          "n_eff": 79.0,
+          "mean_bp": 17.5,
+          "sd_bp": 415.8,
+          "se_bp": 46.8,
+          "t": 0.37,
+          "hit": 0.5,
+          "p5_bp": -642.9,
+          "p50_bp": 2.0,
+          "p95_bp": 763.7
+        },
+        {
+          "n": 158,
+          "n_eff": 79.0,
+          "mean_bp": 33.1,
+          "sd_bp": 341.7,
+          "se_bp": 38.4,
+          "t": 0.86,
+          "hit": 0.563,
+          "p5_bp": -507.7,
+          "p50_bp": 36.6,
+          "p95_bp": 643.4
+        }
+      ],
+      "payoff_shape": {
+        "n_trades": 2752,
+        "mean_bp": 55.3,
+        "sd_bp": 955.5,
+        "hit": 0.477,
+        "p5_bp": -1318.7,
+        "p50_bp": -49.2,
+        "p95_bp": 1828.4,
+        "p99_bp": 2693.4,
+        "unfilled_mean_bp": 67.8,
+        "unfilled_n": 3512
+      },
+      "illegal_close_d1_mean_bp": 121.5,
+      "net_bp": 5.3,
+      "PR2_gate": false,
+      "PR3_selection": true,
+      "PR4_stability": true
+    },
+    "lim-2%": {
+      "fill_rate": 0.305,
+      "active_matched": {
+        "n": 277,
+        "n_eff": 138.5,
+        "mean_bp": 25.6,
+        "sd_bp": 380.0,
+        "se_bp": 32.3,
+        "t": 0.79,
+        "hit": 0.513,
+        "p5_bp": -580.4,
+        "p50_bp": 14.3,
+        "p95_bp": 634.9
+      },
+      "active_raw": {
+        "n": 277,
+        "n_eff": 138.5,
+        "mean_bp": 52.1,
+        "sd_bp": 526.9,
+        "se_bp": 44.8,
+        "t": 1.16,
+        "hit": 0.523,
+        "p5_bp": -744.7,
+        "p50_bp": 28.7,
+        "p95_bp": 896.2
+      },
+      "placebo": {
+        "n": 27700,
+        "n_eff": 13850.0,
+        "mean_bp": 1.0,
+        "sd_bp": 134.7,
+        "se_bp": 1.1,
+        "t": 0.9,
+        "hit": 0.492,
+        "p5_bp": -212.4,
+        "p50_bp": -2.4,
+        "p95_bp": 227.3
+      },
+      "halves": [
+        {
+          "n": 139,
+          "n_eff": 69.5,
+          "mean_bp": 5.3,
+          "sd_bp": 409.9,
+          "se_bp": 49.2,
+          "t": 0.11,
+          "hit": 0.489,
+          "p5_bp": -606.6,
+          "p50_bp": -7.6,
+          "p95_bp": 705.7
+        },
+        {
+          "n": 138,
+          "n_eff": 69.0,
+          "mean_bp": 46.0,
+          "sd_bp": 346.1,
+          "se_bp": 41.7,
+          "t": 1.1,
+          "hit": 0.536,
+          "p5_bp": -444.3,
+          "p50_bp": 27.0,
+          "p95_bp": 604.8
+        }
+      ],
+      "payoff_shape": {
+        "n_trades": 1916,
+        "mean_bp": 49.7,
+        "sd_bp": 976.2,
+        "hit": 0.475,
+        "p5_bp": -1337.3,
+        "p50_bp": -52.0,
+        "p95_bp": 1891.0,
+        "p99_bp": 2713.6,
+        "unfilled_mean_bp": 60.5,
+        "unfilled_n": 3574
+      },
+      "illegal_close_d1_mean_bp": 142.1,
+      "net_bp": 5.6,
+      "PR2_gate": false,
+      "PR3_selection": true,
+      "PR4_stability": false
+    },
+    "lim-3%": {
+      "fill_rate": 0.21,
+      "active_matched": {
+        "n": 222,
+        "n_eff": 111.0,
+        "mean_bp": 26.8,
+        "sd_bp": 428.9,
+        "se_bp": 40.7,
+        "t": 0.66,
+        "hit": 0.509,
+        "p5_bp": -598.1,
+        "p50_bp": 12.9,
+        "p95_bp": 688.9
+      },
+      "active_raw": {
+        "n": 222,
+        "n_eff": 111.0,
+        "mean_bp": 53.7,
+        "sd_bp": 601.1,
+        "se_bp": 57.1,
+        "t": 0.94,
+        "hit": 0.518,
+        "p5_bp": -956.0,
+        "p50_bp": 18.5,
+        "p95_bp": 1034.1
+      },
+      "placebo": {
+        "n": 22200,
+        "n_eff": 11100.0,
+        "mean_bp": 3.2,
+        "sd_bp": 134.0,
+        "se_bp": 1.3,
+        "t": 2.49,
+        "hit": 0.509,
+        "p5_bp": -214.5,
+        "p50_bp": 2.8,
+        "p95_bp": 225.2
+      },
+      "halves": [
+        {
+          "n": 111,
+          "n_eff": 55.5,
+          "mean_bp": -21.2,
+          "sd_bp": 425.9,
+          "se_bp": 57.2,
+          "t": -0.37,
+          "hit": 0.414,
+          "p5_bp": -613.0,
+          "p50_bp": -67.9,
+          "p95_bp": 643.7
+        },
+        {
+          "n": 111,
+          "n_eff": 55.5,
+          "mean_bp": 74.8,
+          "sd_bp": 426.5,
+          "se_bp": 57.3,
+          "t": 1.31,
+          "hit": 0.604,
+          "p5_bp": -565.9,
+          "p50_bp": 93.0,
+          "p95_bp": 697.9
+        }
+      ],
+      "payoff_shape": {
+        "n_trades": 1240,
+        "mean_bp": 57.0,
+        "sd_bp": 985.0,
+        "hit": 0.473,
+        "p5_bp": -1313.3,
+        "p50_bp": -52.0,
+        "p95_bp": 1919.8,
+        "p99_bp": 2753.1,
+        "unfilled_mean_bp": 72.3,
+        "unfilled_n": 3156
+      },
+      "illegal_close_d1_mean_bp": 146.5,
+      "net_bp": 6.8,
+      "PR2_gate": false,
+      "PR3_selection": true,
+      "PR4_stability": false
+    },
+    "lim-5%": {
+      "fill_rate": 0.093,
+      "active_matched": {
+        "n": 81,
+        "n_eff": 40.5,
+        "mean_bp": 37.5,
+        "sd_bp": 424.1,
+        "se_bp": 66.6,
+        "t": 0.56,
+        "hit": 0.543,
+        "p5_bp": -638.3,
+        "p50_bp": 55.9,
+        "p95_bp": 684.2
+      },
+      "active_raw": {
+        "n": 81,
+        "n_eff": 40.5,
+        "mean_bp": 68.4,
+        "sd_bp": 623.8,
+        "se_bp": 98.0,
+        "t": 0.7,
+        "hit": 0.568,
+        "p5_bp": -963.9,
+        "p50_bp": 64.5,
+        "p95_bp": 1071.6
+      },
+      "placebo": {
+        "n": 6100,
+        "n_eff": 3050.0,
+        "mean_bp": 6.5,
+        "sd_bp": 122.3,
+        "se_bp": 2.2,
+        "t": 2.95,
+        "hit": 0.501,
+        "p5_bp": -207.9,
+        "p50_bp": 0.4,
+        "p95_bp": 211.2
+      },
+      "halves": [
+        {
+          "n": 41,
+          "n_eff": 20.5,
+          "mean_bp": 24.3,
+          "sd_bp": 422.5,
+          "se_bp": 93.3,
+          "t": 0.26,
+          "hit": 0.512,
+          "p5_bp": -553.5,
+          "p50_bp": 3.2,
+          "p95_bp": 704.4
+        },
+        {
+          "n": 40,
+          "n_eff": 20.0,
+          "mean_bp": 51.0,
+          "sd_bp": 425.3,
+          "se_bp": 95.1,
+          "t": 0.54,
+          "hit": 0.575,
+          "p5_bp": -648.9,
+          "p50_bp": 88.6,
+          "p95_bp": 656.9
+        }
+      ],
+      "payoff_shape": {
+        "n_trades": 373,
+        "mean_bp": 33.0,
+        "sd_bp": 971.2,
+        "hit": 0.483,
+        "p5_bp": -1215.6,
+        "p50_bp": -37.3,
+        "p95_bp": 1974.4,
+        "p99_bp": 2401.0,
+        "unfilled_mean_bp": 82.4,
+        "unfilled_n": 1226
+      },
+      "illegal_close_d1_mean_bp": 165.9,
+      "net_bp": 17.5,
+      "PR2_gate": false,
+      "PR3_selection": true,
+      "PR4_stability": false
+    }
+  },
+  "prereg": {
+    "PR-1_parity_s5": "+44.5bp / t 1.83",
+    "PR-2_gate": "matched active t >= 2.8 and net > 0",
+    "PR-3_selection": "placebo active < 0.5 x picks active",
+    "PR-4_stability": "halves same sign, ratio in [0.5, 2]",
+    "PR-5_drag": "report fill rate"
+  },
+  "parity_s5": {
+    "matched": {
+      "n": 327,
+      "n_eff": 163.5,
+      "mean_bp": 46.3,
+      "sd_bp": 307.7,
+      "se_bp": 24.1,
+      "t": 1.92,
+      "hit": 0.575,
+      "p5_bp": -466.2,
+      "p50_bp": 73.2,
+      "p95_bp": 522.1
+    },
+    "raw": {
+      "n": 327,
+      "n_eff": 163.5,
+      "mean_bp": 60.4,
+      "sd_bp": 407.6,
+      "se_bp": 31.9,
+      "t": 1.89,
+      "hit": 0.563,
+      "p5_bp": -640.2,
+      "p50_bp": 66.9,
+      "p95_bp": 770.3
+    }
+  },
+  "pr1_pass": true
+}
