@@ -1,0 +1,10 @@
+触及(独立重算, 同 filt) = 45,682  有窗口 = 43,685  回封率(有窗口) = 0.5957
+301486.SZ 2025-08-12 L=0.20 prev_raw=76.64 exT=1.0000 adj_prev=76.6400 lim=91.97 high=91.97 low=74.30 close=91.97 y=1 nxt_open=91.80 ex1=1.0000 r0_lim=-0.18% manual=-0.18% err_ok=True
+603042.SH 2025-06-04 L=0.10 prev_raw=14.03 exT=1.0000 adj_prev=14.0300 lim=15.43 high=15.43 low=14.03 close=15.43 y=1 nxt_open=16.07 ex1=1.0000 r0_lim=4.15% manual=4.15% err_ok=True
+300805.SZ 2026-07-16 L=0.20 prev_raw=7.36 exT=1.0000 adj_prev=7.3600 lim=8.83 high=8.83 low=7.33 close=8.83 y=1 nxt_open=9.12 ex1=1.0000 r0_lim=3.28% manual=3.28% err_ok=True
+000838.SZ 2025-11-24 L=0.10 prev_raw=3.74 exT=1.0000 adj_prev=3.7400 lim=4.11 high=4.11 low=3.52 close=3.80 y=0 nxt_open=3.80 ex1=1.0000 r0_lim=-7.54% manual=-7.54% err_ok=True
+600846.SH 2026-02-09 L=0.05 prev_raw=12.94 exT=1.0000 adj_prev=12.9400 lim=13.59 high=13.59 low=12.95 close=13.55 y=0 nxt_open=13.55 ex1=1.0000 r0_lim=-0.29% manual=-0.29% err_ok=True
+002485.SZ 2025-06-25 L=0.05 prev_raw=4.13 exT=1.0000 adj_prev=4.1300 lim=4.34 high=4.34 low=4.10 close=4.16 y=0 nxt_open=4.14 ex1=1.0000 r0_lim=-4.61% manual=-4.61% err_ok=True
+主脚本 universe: n=43,063 hit=0.5958 days=351
+主脚本 G_touch 参照: 触及全部 45,682 / 有窗口 43,685 / 回封率 0.5957
+差额来源: 主脚本 dropna(open_gap/ret_5/vol20/prev_break_rate) 再减 622 条特征不足样本

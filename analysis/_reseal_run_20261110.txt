@@ -1,0 +1,49 @@
+可成交触及 n=43,063 days=351 回封率=0.5958 10s
+
+== walk-forward (PIT) ==
+  2025Q2  跳过 train=0 test=3580
+  2025Q3  跳过 train=3580 test=7131
+  2025Q4  train= 10711 test= 6634 auc=0.6516  基准=0.587  选中命中=0.6829 (n=246)  EV=-68.2bp  train上限=0.754
+  2026Q1  train= 17345 test= 6773 auc=0.6615  基准=0.610  选中命中=0.7269 (n=227)  EV=-38.42bp  train上限=0.7483
+  2026Q2  train= 24118 test= 8540 auc=0.669  基准=0.631  选中命中=0.7942 (n=243)  EV=80.02bp  train上限=0.7482
+  2026Q3  train= 32658 test= 8182 auc=0.6971  基准=0.572  选中命中=0.7064 (n=344)  EV=-150.14bp  train上限=0.7634
+  2026Q4  train= 40840 test= 2223 auc=0.7181  基准=0.529  选中命中=0.6547 (n=139)  EV=-238.15bp  train上限=0.7485
+
+pooled: {"label": "walk-forward 选中（PIT）", "n": 1199, "n_days": 243, "hit": 0.7173, "ev_bp": -75.73, "nw_t": -2.84, "seal_bp": 178.23, "break_bp": -720.01, "breakeven_hit": 0.8016, "gap_pp": -8.43, "auc_pooled": 0.668, "share_selected": 0.0371, "fold_hit_sel": [0.6829, 0.7269, 0.7942, 0.7064, 0.6547]}
+
+== 十分位（pooled OOS）：命中率 vs 该档自己的盈亏平衡命中率 ==
+  D1   n= 3236 hit=0.2138 平衡点=0.7499 gap=-53.61pp EV= -211.01bp (t=-19.27) 封=98.45bp 炸=-295.19bp
+  D2   n= 3235 hit=0.3512 平衡点=0.7194 gap=-36.82pp EV= -155.42bp (t=-11.46) 封=118.46bp 炸=-303.65bp
+  D3   n= 3235 hit=0.5462 平衡点=0.6915 gap=-14.53pp EV=  -72.01bp (t=-6.23) 封=152.85bp 炸=-342.66bp
+  D4   n= 3235 hit=0.6482 平衡点=0.7303 gap= -8.21pp EV=  -46.76bp (t=-5.5) 封=153.75bp 炸=-416.24bp
+  D5   n= 3235 hit=0.6739 平衡点=0.7661 gap= -9.22pp EV=  -56.98bp (t=-5.25) 封=144.62bp 炸=-473.58bp
+  D6   n= 3235 hit=0.6896 平衡点=0.7798 gap= -9.02pp EV=  -59.52bp (t=-7.06) 封=145.36bp 炸=-514.78bp
+  D7   n= 3235 hit=0.6915 平衡点=0.7977 gap=-10.62pp EV=  -76.23bp (t=-5.99) 封=145.19bp 炸=-572.56bp
+  D8   n= 3235 hit=0.7162 平衡点=0.7921 gap= -7.59pp EV=  -56.22bp (t=-5.4) 封=153.97bp 炸=-586.72bp
+  D9   n= 3235 hit=0.7292 平衡点=0.7967 gap= -6.75pp EV=  -51.65bp (t=-3.59) 封=155.54bp 炸=-609.6bp
+  D10  n= 3236 hit=0.6956 平衡点=0.7838 gap= -8.82pp EV=  -70.24bp (t=-6.05) 封=172.09bp 炸=-624.04bp
+
+== 固定分位规则 ==
+  q10  选中占比=0.100 n= 3240 hit=0.6948 EV=  -71.26bp (t=-6.07) 平衡点=0.7837
+  q20  选中占比=0.245 n= 7940 hit=0.7125 EV=  -60.16bp (t=-7.01) 平衡点=0.7909
+  q30  选中占比=0.358 n=11588 hit=0.7112 EV=  -59.91bp (t=-6.92) 平衡点=0.79
+
+== 收盘买入口径 ==
+  {"窗口|封住": {"n": 26022, "n_days": 356, "r0_close_bp": 162.83, "nw_t": 24.04}, "窗口|炸板": {"n": 17663, "n_days": 356, "r0_close_bp": -87.09, "nw_t": -19.93}, "窗口|全部": {"n": 43685, "n_days": 356, "r0_close_bp": 61.78, "nw_t": 10.96}}
+
+== 机制：按 T 日开盘涨幅六分位 ==
+  {"corr_opengap_loss_break": -0.3634, "corr_opengap_payoff_seal": 0.1253, "sd_bp_break": 385.26, "sd_bp_seal": 378.57, "by_open_gap": {"b1": {"n": 7178, "open_gap_med_pct": -1.19, "hit": 0.5882, "seal_bp": 116.58, "break_bp": -430.42, "ev_bp": -108.68, "breakeven_hit": 0.7869}, "b2": {"n": 8383, "open_gap_med_pct": -0.08, "hit": 0.5462, "seal_bp": 138.69, "break_bp": -351.19, "ev_bp": -83.61, "breakeven_hit": 0.7169}, "b3": {"n": 5972, "open_gap_med_pct": 0.29, "hit": 0.5593, "seal_bp": 140.98, "break_bp": -338.96, "ev_bp": -70.54, "breakeven_hit": 0.7062}, "b4": {"n": 7176, "open_gap_med_pct": 1.09, "hit": 0.5839, "seal_bp": 149.57, "break_bp": -369.45, "ev_bp": -66.4, "breakeven_hit": 0.7118}, "b5": {"n": 7177, "open_gap_med_pct": 2.66, "hit": 0.6352, "seal_bp": 166.83, "break_bp": -452.78, "ev_bp": -59.19, "breakeven_hit": 0.7308}, "b6": {"n": 7177, "open_gap_med_pct": 6.92, "hit": 0.6642, "seal_bp": 246.23, "break_bp": -802.29, "ev_bp": -105.85, "breakeven_hit": 0.7652}}}
+
+== 机械规则 EV 按季 ==
+  {"2025Q2": {"n": 3580, "days": 32, "ev_bp": -82.28, "nw_t": -6.71, "hit": 0.5972, "seal_bp": 196.15, "break_bp": -495.09}, "2025Q3": {"n": 7131, "days": 64, "ev_bp": -69.99, "nw_t": -6.87, "hit": 0.5963, "seal_bp": 204.43, "break_bp": -475.29}, "2025Q4": {"n": 6634, "days": 60, "ev_bp": -83.17, "nw_t": -7.27, "hit": 0.5871, "seal_bp": 180.79, "break_bp": -458.54}, "2026Q1": {"n": 6773, "days": 54, "ev_bp": -59.21, "nw_t": -4.19, "hit": 0.6095, "seal_bp": 157.32, "break_bp": -397.14}, "2026Q2": {"n": 8540, "days": 58, "ev_bp": -47.77, "nw_t": -4.14, "hit": 0.6315, "seal_bp": 153.17, "break_bp": -392.12}, "2026Q3": {"n": 8182, "days": 63, "ev_bp": -122.64, "nw_t": -8.63, "hit": 0.5715, "seal_bp": 112.1, "break_bp": -435.71}, "2026Q4": {"n": 2223, "days": 20, "ev_bp": -182.36, "nw_t": null, "hit": 0.5286, "seal_bp": 141.98, "break_bp": -546.0}}
+
+== 机械规则 EV × 情绪分位 ==
+  {"log_prev_touch": {"q1": {"n": 8670, "days": 77, "lo": 4.0073, "hi": 4.5951, "ev_bp": -84.59, "nw_t": -6.63, "hit": 0.5926}, "q2": {"n": 9127, "days": 82, "lo": 4.6052, "hi": 4.7449, "ev_bp": -79.83, "nw_t": -4.8, "hit": 0.5955}, "q3": {"n": 8588, "days": 73, "lo": 4.7536, "hi": 4.8978, "ev_bp": -78.62, "nw_t": -5.47, "hit": 0.5869}, "q4": {"n": 8124, "days": 63, "lo": 4.9053, "hi": 5.1059, "ev_bp": -104.26, "nw_t": -7.58, "hit": 0.6025}, "q5": {"n": 8554, "days": 56, "lo": 5.118, "hi": 6.0776, "ev_bp": -67.7, "nw_t": -4.25, "hit": 0.6019}}, "prev_break_rate": {"q1": {"n": 8739, "days": 69, "lo": 0.195, "hi": 0.3138, "ev_bp": -105.7, "nw_t": -5.03, "hit": 0.5838}, "q2": {"n": 8504, "days": 68, "lo": 0.3145, "hi": 0.3568, "ev_bp": -71.37, "nw_t": -7.85, "hit": 0.6187}, "q3": {"n": 8780, "days": 74, "lo": 0.3571, "hi": 0.4053, "ev_bp": -119.19, "nw_t": -9.45, "hit": 0.5655}, "q4": {"n": 8617, "days": 70, "lo": 0.4057, "hi": 0.4587, "ev_bp": -60.16, "nw_t": -6.18, "hit": 0.5964}, "q5": {"n": 8423, "days": 70, "lo": 0.4603, "hi": 0.7132, "ev_bp": -55.54, "nw_t": -3.9, "hit": 0.6162}}}
+
+== 网格 EV 前 8 ==
+  {"k0|低开|高开|L=0.10": {"label": "k0|0|0.10", "n": 22194, "n_days": 351, "hit": 0.7001, "ev_bp": -26.11, "nw_t": -6.23, "seal_bp": 153.16, "break_bp": -444.6, "breakeven_hit": 0.7438, "gap_pp": -4.37}, "k0|低开|高开|L=0.20": {"label": "k0|0|0.20", "n": 3363, "n_days": 351, "hit": 0.6994, "ev_bp": -50.81, "nw_t": -5.81, "seal_bp": 183.31, "break_bp": -595.45, "breakeven_hit": 0.7646, "gap_pp": -6.52}, "k1|低开|高开|L=0.10": {"label": "k1|0|0.10", "n": 3100, "n_days": 350, "hit": 0.6803, "ev_bp": -88.05, "nw_t": -5.61, "seal_bp": 196.52, "break_bp": -693.65, "breakeven_hit": 0.7792, "gap_pp": -9.89}, "k1|低开|高开|L=0.05": {"label": "k1|0|0.05", "n": 943, "n_days": 286, "hit": 0.4613, "ev_bp": -124.37, "nw_t": -7.05, "seal_bp": 207.69, "break_bp": -408.71, "breakeven_hit": 0.6631, "gap_pp": -20.18}, "k2|低开|高开|L=0.10": {"label": "k2|0|0.10", "n": 762, "n_days": 319, "hit": 0.664, "ev_bp": -131.93, "nw_t": -5.75, "seal_bp": 239.99, "break_bp": -867.06, "breakeven_hit": 0.7832, "gap_pp": -11.92}, "k3+|低开|高开|L=0.10": {"label": "k3+|0|0.10", "n": 580, "n_days": 289, "hit": 0.6707, "ev_bp": -157.72, "nw_t": -3.86, "seal_bp": 236.93, "break_bp": -961.49, "breakeven_hit": 0.8023, "gap_pp": -13.16}, "k0|低开|高开|L=0.05": {"label": "k0|0|0.05", "n": 9117, "n_days": 351, "hit": 0.2822, "ev_bp": -171.13, "nw_t": -19.79, "seal_bp": 87.64, "break_bp": -272.87, "breakeven_hit": 0.7569, "gap_pp": -47.47}, "k0|一字开|L=0.10": {"label": "k0|1|0.10", "n": 489, "n_days": 239, "hit": 0.589, "ev_bp": -220.23, "nw_t": -7.29, "seal_bp": 234.51, "break_bp": -871.8, "breakeven_hit": 0.788, "gap_pp": -19.9}}
+controls: {"P1_eod_noncincular": {"name": "EOD 路径特征（break_depth/振幅/成交额）", "n": 32352, "auc_oos": 0.5873, "auc_pit_ref": 0.668}, "P2_label_identity": {"name": "close==涨停价 单特征", "n": 32352, "auc_oos": 1.0, "auc_pit_ref": 0.668}}
+
+筛选: {"hurdle_hit": 0.7318, "hurdle_hit_net20": 0.7648, "base_hit_in_sample": 0.5958, "oos_hit": 0.7173, "oos_ev_bp": -75.73, "oos_nw_t": -2.84, "oos_n": 1199, "auc_pooled": 0.668, "pass_hit": false, "pass_ev": false, "verdict": "REJECT"}
+
+elapsed 11s -> D:\DSH\tick-stock-panel\analysis\_audit_reseal_result.json
