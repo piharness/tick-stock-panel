@@ -114,6 +114,11 @@ docs/zhihu/
 data/strategies/custom/
 
 # ===== 临时 / 调试产物 =====
+# git worktree 基线检出（用于「逐条比失败 id」）。每个是一份完整工作副本，
+# 38 MB 量级；不挡住的话 `git add -A` 会把整份检出当成新增文件提交。
+.worktrees/
+# pytest junitxml 报告（人工指定的落点，跑完即弃）
+.junit*.xml
 backend._recheck*.py
 backend/_verify*.py
 backend/_desktop_run.log
