@@ -1,0 +1,118 @@
+{
+  "prereg_sha256": "1aba83f7d61665044100125ee00fd2d7aab0e01a0720d9e65c261c83e9e78881",
+  "prereg_git_blob": null,
+  "git_head": "d428b1e4a90b27dd7c3152a3b15fccb6d4ff9f5a",
+  "run_at": "2026-11-10T18:58:25",
+  "attempt": 1,
+  "evaluated_at": "2026-11-10T19:01:06",
+  "P1_literal": {
+    "pass": false,
+    "criterion": "§3 原文：4 只票都返回非空"
+  },
+  "P1_substantive": {
+    "pass": true,
+    "pos": [
+      true,
+      true
+    ],
+    "neg": [
+      true,
+      true
+    ],
+    "criterion": "正控 GP15 状态∈{2,1}；负控无行或状态∉{2,1} 或封单为 0"
+  },
+  "P2": {
+    "pass": true,
+    "hits": 2,
+    "n": 2,
+    "detail": [
+      {
+        "symbol": "300497.SZ",
+        "封单万": 30270.45,
+        "封成比原文": 32.85,
+        "封流比": 4.26,
+        "量纲": "percent",
+        "反算": 0.32994984444518566,
+        "相对误差": 0.0044135295135027215,
+        "过": true
+      },
+      {
+        "symbol": "688602.SH",
+        "封单万": 5659.16,
+        "封成比原文": 9.29,
+        "封流比": 1.9,
+        "量纲": "percent",
+        "反算": 0.1002285230728959,
+        "相对误差": 0.07888614717864265,
+        "过": true
+      }
+    ]
+  },
+  "P3": {
+    "pass": true,
+    "n": 2
+  },
+  "fail_class": "C1",
+  "per_symbol": {
+    "300497.SZ": {
+      "role": "pos",
+      "ok": true,
+      "fields": [
+        "GP14",
+        "GP15",
+        "GP22",
+        "GP24"
+      ],
+      "GP15_status": 2.0,
+      "GP15_seal_wan": 30270.45,
+      "P2": {
+        "封单万": 30270.45,
+        "封成比原文": 32.85,
+        "封流比": 4.26,
+        "量纲": "percent",
+        "反算": 0.32994984444518566,
+        "相对误差": 0.0044135295135027215,
+        "过": true
+      },
+      "P3_date_hit": true
+    },
+    "688602.SH": {
+      "role": "pos",
+      "ok": true,
+      "fields": [
+        "GP14",
+        "GP15",
+        "GP22",
+        "GP24"
+      ],
+      "GP15_status": 2.0,
+      "GP15_seal_wan": 5659.16,
+      "P2": {
+        "封单万": 5659.16,
+        "封成比原文": 9.29,
+        "封流比": 1.9,
+        "量纲": "percent",
+        "反算": 0.1002285230728959,
+        "相对误差": 0.07888614717864265,
+        "过": true
+      },
+      "P3_date_hit": true
+    },
+    "600506.SH": {
+      "role": "neg",
+      "ok": true,
+      "fields": [],
+      "GP15_status": null,
+      "GP15_seal_wan": null,
+      "P3_date_hit": null
+    },
+    "001298.SZ": {
+      "role": "neg",
+      "ok": true,
+      "fields": [],
+      "GP15_status": null,
+      "GP15_seal_wan": null,
+      "P3_date_hit": null
+    }
+  }
+}

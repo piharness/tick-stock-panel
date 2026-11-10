@@ -169,6 +169,11 @@ def _prereg_guard() -> dict[str, Any]:
         )
     guard["dirty_check"] = "clean"
     guard["git_head"] = _git("rev-parse", "HEAD").stdout.strip()
+    # 回执的可复核标识必须是 blob 号：sha256 取的是工作区字节，core.autocrlf 下
+    # 干净 clone 出来是 LF、本机是 CRLF，同一份判据会算出两个哈希（实测 c5c8eac3 vs 1aba83f7）。
+    rel = PREREG_PATH.relative_to(repo).as_posix()
+    guard["git_blob"] = _git("rev-parse", f"HEAD:{rel}").stdout.strip()
+    guard["sha256_note"] = "sha256 为工作区字节（受行尾影响）；对账请用 git_blob"
     return guard
 
 
@@ -258,40 +263,37 @@ def _gp_probe(native: Any, tqs_mod: Any, symbols: list[str], fields: list[str],
 
 # ---------------------------------------------------------------- evaluate
 
-def _flatten(value: Any, prefix: str = "") -> dict[str, list[Any]]:
-    """把任意嵌套返回值摊平成 {列名: 值列表}，供按关键词找列。"""
-    out: dict[str, list[Any]] = {}
-    if isinstance(value, dict):
-        for k, v in value.items():
-            name = f"{prefix}{k}"
-            if isinstance(v, dict):
-                out.update(_flatten(v, prefix=f"{name}."))
-            elif isinstance(v, list):
-                out[name] = v
-            else:
-                out[name] = [v]
-    elif isinstance(value, list):
-        for row in value:
-            if isinstance(row, dict):
-                for k, v in row.items():
-                    out.setdefault(str(k), []).append(v)
+#: 子列顺序由厂商文档 tdxaidata使用文档.md:2022-2030 定义（不是从数据里猜列名再拟合）。
+#: 实测回执形状：{"GP15": [{"Date": "20251113", "Value": ["2.00", "30270.45"]}]}
+_FIELD_COLS = {
+    "GP14": ("涨停金额万", "开板次数"),
+    "GP15": ("涨跌停状态", "封单金额万"),
+    "GP22": ("封成比", "封流比"),
+    "GP24": ("首次涨停时间HHMMSS", "最大封单额万"),
+}
+
+
+def _series(value: Any) -> dict[str, dict[str, list[str]]]:
+    """{FIELD: [{Date, Value:[...]}]} -> {FIELD: {Date: [值...]}}。"""
+    out: dict[str, dict[str, list[str]]] = {}
+    for field, rows in (value or {}).items():
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            out.setdefault(str(field), {})[str(row.get("Date") or "")] = [str(v) for v in (row.get("Value") or [])]
     return out
 
 
-def _find(cols: dict[str, list[Any]], *keys: str) -> str | None:
-    for col in cols:
-        if any(k in col for k in keys):
-            return col
-    return None
-
-
-def _first_num(values: list[Any]) -> float | None:
-    for v in values:
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            continue
-    return None
+def _num(series: dict[str, dict[str, list[str]]], field: str, day: str, idx: int) -> float | None:
+    vals = series.get(field, {}).get(day.replace("-", ""))
+    if not vals or idx >= len(vals):
+        return None
+    try:
+        return float(vals[idx])
+    except (TypeError, ValueError):
+        return None
 
 
 def _amounts(day: str, symbols: list[str]) -> dict[str, float]:
@@ -322,90 +324,107 @@ def evaluate() -> int:
     res = json.loads(RESULT_PATH.read_text(encoding="utf-8"))
     pos = {r["code"] + _suffix(r["code"]) for r in res["controls"]["positive"]}
     neg = {r["code"] + _suffix(r["code"]) for r in res["controls"]["negative"]}
-    amounts = _amounts(res["controls"]["day"], list(pos | neg))
+    day = res["controls"]["day"]
+    amounts = _amounts(day, list(pos | neg))
 
     per: dict[str, Any] = {}
-    p1_flags: list[bool] = []
+    p1_pos: list[bool] = []
+    p1_neg: list[bool] = []
     p2_hits: list[bool] = []
     p2_detail: list[dict[str, Any]] = []
     p3_flags: list[bool] = []
+    p1_literal = True
 
     for rec in res["records"]:
         sym = rec["symbol"]
-        item: dict[str, Any] = {"role": "pos" if sym in pos else "neg", "ok": rec["ok"]}
+        role = "pos" if sym in pos else "neg"
+        item: dict[str, Any] = {"role": role, "ok": rec["ok"]}
         if not rec["ok"]:
             item["why"] = rec.get("error_text") or rec.get("error") or "空返回且无错误原文"
+            p1_literal = False
             per[sym] = item
             continue
-        cols = _flatten(json.loads(rec["value_json"]) if rec.get("value_json") else {})
-        item["columns"] = sorted(cols)
-        status_col = _find(cols, "状态", "status")
-        seal_col = _find(cols, "封单", "seal")
-        ratio_col = _find(cols, "封成", "fcb")
-        date_col = _find(cols, "日期", "date", "时间", "time")
-        item["matched"] = {"status": status_col, "seal": seal_col, "ratio": ratio_col, "date": date_col}
+        series = _series(json.loads(rec["value_json"] or "{}"))
+        item["fields"] = sorted(series)
+        if not series:
+            p1_literal = False          # 例如 {"Data": {}}：结构非空、数据为空
 
-        status = _first_num(cols.get(status_col, [])) if status_col else None
-        item["status"] = status
-        hit = (status in (2, 1)) if status is not None else None
-        item["p1"] = (hit is True) if item["role"] == "pos" else (hit is not True)
-        if status_col:
-            p1_flags.append(bool(item["p1"]))
+        status = _num(series, "GP15", day, 0)
+        seal = _num(series, "GP15", day, 1)
+        item["GP15_status"] = status
+        item["GP15_seal_wan"] = seal
+        if role == "pos":
+            p1_pos.append(status in (2, 1))
+        else:
+            # 负控"没有 GP15 行"本身就是合格结果：涨跌停字段家族是事件条件表
+            p1_neg.append(status is None or status not in (2, 1) or not seal)
 
-        if item["role"] == "pos" and seal_col and ratio_col and sym in amounts and amounts[sym] > 0:
-            seal = _first_num(cols.get(seal_col, []))
-            fcb = _first_num(cols.get(ratio_col, []))
-            if seal is not None and fcb:
-                # 量纲（预注册 §3）：落在 [1,100] 视作百分数，否则视作小数；择一不可回头。
+        if role == "pos" and seal is not None and sym in amounts and amounts[sym] > 0:
+            fcb = _num(series, "GP22", day, 0)
+            flr = _num(series, "GP22", day, 1)
+            if fcb:
+                # 量纲（§3）：落在 [1,100] 视作百分数，否则视作小数；择一，不得回头再换。
                 scale = "percent" if 1.0 <= abs(fcb) <= 100.0 else "decimal"
                 fcb_v = fcb / 100.0 if scale == "percent" else fcb
                 implied = seal * 1e4 / amounts[sym]
-                rel = abs(implied - fcb_v) / abs(fcb_v) if fcb_v else None
-                ok = rel is not None and rel < 0.20
-                item["p2"] = {"seal_wan": seal, "ratio_raw": fcb, "scale": scale,
-                              "implied": implied, "rel_err": rel, "pass": ok}
+                rel = abs(implied - fcb_v) / abs(fcb_v)
+                ok = rel < 0.20
+                item["P2"] = {"封单万": seal, "封成比原文": fcb, "封流比": flr, "量纲": scale,
+                              "反算": implied, "相对误差": rel, "过": ok}
                 p2_hits.append(ok)
-                p2_detail.append({"symbol": sym, **item["p2"]})
+                p2_detail.append({"symbol": sym, **item["P2"]})
 
-        if date_col:
-            vals = [str(v)[:10] for v in cols.get(date_col, [])]
-            item["p3"] = any(v.startswith(res["controls"]["day"]) for v in vals)
-            p3_flags.append(item["p3"])
+        # P3 只对"有行"的标的判覆盖：负控无行是合格结果，谈不上覆盖/不覆盖
+        if series:
+            p3_flags.append(bool(series.get("GP15", {}).get(day.replace("-", ""))))
+        item["P3_date_hit"] = bool(series.get("GP15", {}).get(day.replace("-", ""))) if series else None
         per[sym] = item
 
-    # ---- FAIL 归类
+    # ---- 归类（§4）：F 类才关线；C1 是判据缺陷，不产生研究结论
     errs = [r for r in res["records"] if not r["ok"]]
     texts = " ".join(str(r.get("error_text") or r.get("error") or "") for r in errs)
-    verdict: str
-    if not errs:
-        verdict = "F0" if any("has no attribute" in t or "ImportError" in t for t in texts) else ""
-    if errs and len(errs) == len(res["records"]):
-        if any(k in texts for k in ("权限", "积分", "额度", "认证", "套餐", "未开通", "token", "unauthori")):
-            verdict = "F1"
-        elif texts.strip() == "":
-            verdict = "F4"
-        else:
-            verdict = "F0"
-
-    p1 = bool(p1_flags) and all(p1_flags)
+    p1_sub = bool(p1_pos) and all(p1_pos) and bool(p1_neg) and all(p1_neg)
     p2 = sum(1 for h in p2_hits if h) >= 2
     p3 = bool(p3_flags) and all(p3_flags)
+
+    if errs and len(errs) == len(res["records"]):
+        if any(k in texts for k in ("权限", "积分", "额度", "认证", "套餐", "未开通", "token", "unauthori")):
+            fail = "F1"
+        elif not texts.strip():
+            fail = "F4"
+        else:
+            fail = "F0"
+    elif any(k in texts for k in ("has no attribute", "ImportError", "OSError")):
+        fail = "F0"
+    elif not p2 or not p3:
+        fail = "F3"
+    elif not p1_sub:
+        fail = "F2"
+    elif not p1_literal:
+        fail = "C1"
+    else:
+        fail = "PASS"
+
     out = {
         "prereg_sha256": res["prereg"]["sha256"],
+        "prereg_git_blob": res["prereg"].get("git_blob"),
         "git_head": res["prereg"].get("git_head"),
         "run_at": res["run_at"],
         "attempt": res["attempt"],
         "evaluated_at": datetime.now().isoformat(timespec="seconds"),
-        "P1": {"pass": p1, "n": len(p1_flags)},
+        "P1_literal": {"pass": p1_literal, "criterion": "§3 原文：4 只票都返回非空"},
+        "P1_substantive": {"pass": p1_sub, "pos": p1_pos, "neg": p1_neg,
+                           "criterion": "正控 GP15 状态∈{2,1}；负控无行或状态∉{2,1} 或封单为 0"},
         "P2": {"pass": p2, "hits": sum(1 for h in p2_hits if h), "n": len(p2_hits), "detail": p2_detail},
         "P3": {"pass": p3, "n": len(p3_flags)},
-        "fail_class": verdict or ("PASS" if (p1 and p2 and p3) else "F3"),
+        "fail_class": fail,
         "per_symbol": per,
     }
     VERDICT_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({k: out[k] for k in ("P1", "P2", "P3", "fail_class")}, ensure_ascii=False, indent=2))
+    print(json.dumps({k: out[k] for k in ("P1_literal", "P1_substantive", "P2", "P3", "fail_class")},
+                     ensure_ascii=False, indent=2))
     print(f"→ {VERDICT_PATH.name}")
-    return 0 if out["fail_class"] == "PASS" else 1
+    return 0 if fail == "PASS" else 1
 
 
 # ---------------------------------------------------------------- main

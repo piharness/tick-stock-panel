@@ -1,0 +1,196 @@
+{
+  "generated_by": "analysis/_diag_probe_gp.py",
+  "prereg": {
+    "path": "_prereg_gp_seal_probe.md",
+    "sha256": "1aba83f7d61665044100125ee00fd2d7aab0e01a0720d9e65c261c83e9e78881",
+    "dirty_check": "clean",
+    "git_head": "d428b1e4a90b27dd7c3152a3b15fccb6d4ff9f5a"
+  },
+  "run_at": "2026-11-10T18:58:25",
+  "attempt": 1,
+  "controls": {
+    "day": "2025-11-13",
+    "universe": {
+      "items": 70,
+      "unique": 64,
+      "hit_limit": 29,
+      "below_2pct": 5
+    },
+    "positive": [
+      {
+        "code": "300497",
+        "name": "富祥药业",
+        "change": 0.200274,
+        "st": false
+      },
+      {
+        "code": "688602",
+        "name": "康鹏科技",
+        "change": 0.20021,
+        "st": false
+      }
+    ],
+    "negative": [
+      {
+        "code": "600506",
+        "name": "统一股份",
+        "change": -0.001039,
+        "st": false
+      },
+      {
+        "code": "001298",
+        "name": "好上好",
+        "change": 0.013935,
+        "st": false
+      }
+    ],
+    "symbols": [
+      "300497.SZ",
+      "688602.SH",
+      "600506.SH",
+      "001298.SZ"
+    ]
+  },
+  "request": {
+    "symbols": [
+      "300497.SZ",
+      "688602.SH",
+      "600506.SH",
+      "001298.SZ"
+    ],
+    "fields": [
+      "GP14",
+      "GP15",
+      "GP22",
+      "GP24"
+    ],
+    "start": "2025-11-13",
+    "end": "2025-11-13",
+    "call_layer": "native.get_pro_data(type=3)"
+  },
+  "records": [
+    {
+      "symbol": "300497.SZ",
+      "request": {
+        "type": 3,
+        "code": "300497.SZ",
+        "table_list": [
+          "GP14",
+          "GP15",
+          "GP22",
+          "GP24"
+        ],
+        "start_time": "2025-11-13 00:00:00",
+        "end_time": "2025-11-13 00:00:00"
+      },
+      "raw_head": "{\"Error\":\"\",\"ErrorId\":\"0\",\"Value\":{\"GP14\":[{\"Date\":\"20251113\",\"Value\":[\"75513.90\",\"0.00\"]}],\"GP15\":[{\"Date\":\"20251113\",\"Value\":[\"2.00\",\"30270.45\"]}],\"GP22\":[{\"Date\":\"20251113\",\"Value\":[\"32.85\",\"4.26\"]}],\"GP24\":[{\"Date\":\"20251113\",\"Value\":[\"93000.00\",\"81057.73\"]}]}}\n",
+      "error_id": "0",
+      "error_text": null,
+      "result_set_num": null,
+      "shape": {
+        "type": "dict",
+        "keys": [
+          "GP14",
+          "GP15",
+          "GP22",
+          "GP24"
+        ],
+        "n_keys": 4
+      },
+      "empty": false,
+      "ok": true,
+      "value_json": "{\"GP14\": [{\"Date\": \"20251113\", \"Value\": [\"75513.90\", \"0.00\"]}], \"GP15\": [{\"Date\": \"20251113\", \"Value\": [\"2.00\", \"30270.45\"]}], \"GP22\": [{\"Date\": \"20251113\", \"Value\": [\"32.85\", \"4.26\"]}], \"GP24\": [{\"Date\": \"20251113\", \"Value\": [\"93000.00\", \"81057.73\"]}]}"
+    },
+    {
+      "symbol": "688602.SH",
+      "request": {
+        "type": 3,
+        "code": "688602.SH",
+        "table_list": [
+          "GP14",
+          "GP15",
+          "GP22",
+          "GP24"
+        ],
+        "start_time": "2025-11-13 00:00:00",
+        "end_time": "2025-11-13 00:00:00"
+      },
+      "raw_head": "{\"Error\":\"\",\"ErrorId\":\"0\",\"Value\":{\"GP14\":[{\"Date\":\"20251113\",\"Value\":[\"10286.11\",\"0.00\"]}],\"GP15\":[{\"Date\":\"20251113\",\"Value\":[\"2.00\",\"5659.16\"]}],\"GP22\":[{\"Date\":\"20251113\",\"Value\":[\"9.29\",\"1.90\"]}],\"GP24\":[{\"Date\":\"20251113\",\"Value\":[\"104048.00\",\"33830.05\"]}]}}\n",
+      "error_id": "0",
+      "error_text": null,
+      "result_set_num": null,
+      "shape": {
+        "type": "dict",
+        "keys": [
+          "GP14",
+          "GP15",
+          "GP22",
+          "GP24"
+        ],
+        "n_keys": 4
+      },
+      "empty": false,
+      "ok": true,
+      "value_json": "{\"GP14\": [{\"Date\": \"20251113\", \"Value\": [\"10286.11\", \"0.00\"]}], \"GP15\": [{\"Date\": \"20251113\", \"Value\": [\"2.00\", \"5659.16\"]}], \"GP22\": [{\"Date\": \"20251113\", \"Value\": [\"9.29\", \"1.90\"]}], \"GP24\": [{\"Date\": \"20251113\", \"Value\": [\"104048.00\", \"33830.05\"]}]}"
+    },
+    {
+      "symbol": "600506.SH",
+      "request": {
+        "type": 3,
+        "code": "600506.SH",
+        "table_list": [
+          "GP14",
+          "GP15",
+          "GP22",
+          "GP24"
+        ],
+        "start_time": "2025-11-13 00:00:00",
+        "end_time": "2025-11-13 00:00:00"
+      },
+      "raw_head": "{\"Data\":{},\"Error\":\"\",\"ErrorId\":\"0\"}\n",
+      "error_id": "0",
+      "error_text": null,
+      "result_set_num": null,
+      "shape": {
+        "type": "dict",
+        "keys": [
+          "Data"
+        ],
+        "n_keys": 1
+      },
+      "empty": false,
+      "ok": true,
+      "value_json": "{\"Data\": {}}"
+    },
+    {
+      "symbol": "001298.SZ",
+      "request": {
+        "type": 3,
+        "code": "001298.SZ",
+        "table_list": [
+          "GP14",
+          "GP15",
+          "GP22",
+          "GP24"
+        ],
+        "start_time": "2025-11-13 00:00:00",
+        "end_time": "2025-11-13 00:00:00"
+      },
+      "raw_head": "{\"Data\":{},\"Error\":\"\",\"ErrorId\":\"0\"}\n",
+      "error_id": "0",
+      "error_text": null,
+      "result_set_num": null,
+      "shape": {
+        "type": "dict",
+        "keys": [
+          "Data"
+        ],
+        "n_keys": 1
+      },
+      "empty": false,
+      "ok": true,
+      "value_json": "{\"Data\": {}}"
+    }
+  ],
+  "verdict": null
+}
