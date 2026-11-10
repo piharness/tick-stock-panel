@@ -1,0 +1,91 @@
+universe n=43,685 days=356 hit=0.5957
+{
+ "envelope": {
+  "n": 4299,
+  "n_days": 40,
+  "hit": 0.5506,
+  "ev_bp": -153.46,
+  "nw_t": -9.65,
+  "seal_bp": 142.8,
+  "break_bp": -516.5,
+  "start": "2026-08-31",
+  "end": "2026-11-04",
+  "events_per_day_mean": 107.5,
+  "events_per_day_min": 58,
+  "events_per_day_max": 223,
+  "distinct_symbols": 1934,
+  "pull_requests": 1934,
+  "pull_note": "单标的一次 count=9600 覆盖 40 交易日 ⇒ 请求数 = 标的数"
+ },
+ "coverage": 24,
+ "decompose_net20": {
+  "need_hit": 0.8238,
+  "delta_pp": 10.65
+ },
+ "verdict": {
+  "target_shift_bp": 95.7,
+  "provider_ceiling_tdays": 40,
+  "settings_clamp_tdays": 30,
+  "margin": {
+   "k=4.6": {
+    "rho_crit": 0.521,
+    "t_star_rho0": 83.4,
+    "t_star_rho50": 41.7,
+    "t_star_rho80": 16.7
+   },
+   "k=5": {
+    "rho_crit": 0.477,
+    "t_star_rho0": 76.5,
+    "t_star_rho50": 38.2,
+    "t_star_rho80": 15.3
+   },
+   "k=11": {
+    "rho_crit": -0.222,
+    "t_star_rho0": 32.7,
+    "t_star_rho50": 16.4,
+    "t_star_rho80": 6.5
+   },
+   "k=25": {
+    "rho_crit": -2.25,
+    "t_star_rho0": 12.3,
+    "t_star_rho50": 6.2,
+    "t_star_rho80": 2.5
+   }
+  },
+  "calibration_ok": true,
+  "verdict_note": "免费窗口（40 交易日）够不够用，取决于分钟筛与日线筛的选择重叠率 rho；rho 只能在免费窗口上测出来 ⇒ 先跑免费 40 天，再决定买多少天"
+ },
+ "calib": [
+  {
+   "k": 4,
+   "n_days": 40,
+   "emp_sd_bp": 223.1,
+   "analytic_sd_bp": 237.4,
+   "ratio": 0.94,
+   "within_25pct": true
+  }
+ ],
+ "power": {
+  "rho=0.0": {
+   "se_bp": 47.24,
+   "mde_bp": 132.35,
+   "t_star_days": 76.5
+  },
+  "rho=0.5": {
+   "se_bp": 33.41,
+   "mde_bp": 93.59,
+   "t_star_days": 38.2
+  },
+  "rho=0.8": {
+   "se_bp": 21.13,
+   "mde_bp": 59.19,
+   "t_star_days": 15.3
+  },
+  "rho=0.95": {
+   "se_bp": 10.56,
+   "mde_bp": 29.6,
+   "t_star_days": 3.8
+  }
+ }
+}
+written _audit_intraday_budget_result.json in 9.1s

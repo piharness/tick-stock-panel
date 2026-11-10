@@ -1,0 +1,282 @@
+{
+ "meta": {
+  "generated": "2026-11-10 20:01:45",
+  "elapsed_s": 9.1,
+  "defs": {
+   "TICK": 0.011,
+   "REACH": 0.005,
+   "universe": "touch & fill_window & ok_win",
+   "buy_px": "limit_up",
+   "sell": "T+1 open",
+   "cost_bp": 20.0,
+   "sel_rate": 0.0371,
+   "z_power": 2.8016
+  }
+ },
+ "envelope": {
+  "full": {
+   "n": 43685,
+   "n_days": 356,
+   "hit": 0.5957,
+   "ev_bp": -82.54,
+   "nw_t": -12.91,
+   "seal_bp": 162.6,
+   "break_bp": -443.8
+  },
+  "free_window": {
+   "n": 4299,
+   "n_days": 40,
+   "hit": 0.5506,
+   "ev_bp": -153.46,
+   "nw_t": -9.65,
+   "seal_bp": 142.8,
+   "break_bp": -516.5,
+   "start": "2026-08-31",
+   "end": "2026-11-04",
+   "events_per_day_mean": 107.5,
+   "events_per_day_min": 58,
+   "events_per_day_max": 223,
+   "distinct_symbols": 1934,
+   "pull_requests": 1934,
+   "pull_note": "单标的一次 count=9600 覆盖 40 交易日 ⇒ 请求数 = 标的数"
+  },
+  "all": {
+   "events_per_day_mean": 122.7,
+   "median": 113,
+   "min": 50,
+   "max": 423
+  },
+  "sd_trade_bp": 483.8,
+  "sd_daily_mean_bp_full": 131.6,
+  "sd_daily_mean_bp_free": 144.3,
+  "free_tdays": 40,
+  "settings_clamp_tdays": 30
+ },
+ "minute_coverage": {
+  "files": 21,
+  "symbols": 40,
+  "days": 21,
+  "bars_total": 189022,
+  "bars_per_symbol_median": 4800,
+  "days_truncated_before_close": [
+   "2026-11-05"
+  ],
+  "matched_events": 24,
+  "matched_event_symbols": [
+   "000006.SZ",
+   "000010.SZ",
+   "000011.SZ",
+   "000017.SZ",
+   "000020.SZ",
+   "000031.SZ",
+   "000032.SZ",
+   "000035.SZ",
+   "000037.SZ",
+   "000048.SZ",
+   "000056.SZ",
+   "000058.SZ",
+   "000530.SZ",
+   "600261.SH"
+  ]
+ },
+ "decompose": {
+  "now": {
+   "hit": 0.7173,
+   "seal_bp": 178.23,
+   "break_bp": -720.01,
+   "ev_bp": -75.73,
+   "nw_t": -2.84
+  },
+  "gross": {
+   "cost_bp": 0.0,
+   "A_hit": {
+    "need_hit": 0.8016,
+    "delta_pp": 8.43
+   },
+   "B_break": {
+    "need_break_bp": -452.2,
+    "delta_bp": 267.8
+   },
+   "C_seal": {
+    "need_seal_bp": 283.8,
+    "delta_bp": 105.5
+   }
+  },
+  "net20": {
+   "cost_bp": 20.0,
+   "A_hit": {
+    "need_hit": 0.8238,
+    "delta_pp": 10.65
+   },
+   "B_break": {
+    "need_break_bp": -523.0,
+    "delta_bp": 197.0
+   },
+   "C_seal": {
+    "need_seal_bp": 311.7,
+    "delta_bp": 133.4
+   }
+  },
+  "t1_constraint": "A 股 T+1：以涨停价成交后当日不可卖出 ⇒ B/C 不能在成交后取得；只能通过「不成交」实现，而那是 A 的互补面"
+ },
+ "power": {
+  "ks": [
+   4.6,
+   5,
+   11,
+   25
+  ],
+  "rhos": [
+   0.0,
+   0.5,
+   0.8,
+   0.95
+  ],
+  "T": 40,
+  "sd_trade_bp": 483.8,
+  "target_bp": 95.7,
+  "grid": {
+   "k=4.6": {
+    "rho=0.0": {
+     "se_bp": 49.35,
+     "mde_bp": 138.26,
+     "t_star_days": 83.4
+    },
+    "rho=0.5": {
+     "se_bp": 34.9,
+     "mde_bp": 97.76,
+     "t_star_days": 41.7
+    },
+    "rho=0.8": {
+     "se_bp": 22.07,
+     "mde_bp": 61.83,
+     "t_star_days": 16.7
+    },
+    "rho=0.95": {
+     "se_bp": 11.03,
+     "mde_bp": 30.92,
+     "t_star_days": 4.2
+    }
+   },
+   "k=5": {
+    "rho=0.0": {
+     "se_bp": 47.24,
+     "mde_bp": 132.35,
+     "t_star_days": 76.5
+    },
+    "rho=0.5": {
+     "se_bp": 33.41,
+     "mde_bp": 93.59,
+     "t_star_days": 38.2
+    },
+    "rho=0.8": {
+     "se_bp": 21.13,
+     "mde_bp": 59.19,
+     "t_star_days": 15.3
+    },
+    "rho=0.95": {
+     "se_bp": 10.56,
+     "mde_bp": 29.6,
+     "t_star_days": 3.8
+    }
+   },
+   "k=11": {
+    "rho=0.0": {
+     "se_bp": 30.9,
+     "mde_bp": 86.58,
+     "t_star_days": 32.7
+    },
+    "rho=0.5": {
+     "se_bp": 21.85,
+     "mde_bp": 61.22,
+     "t_star_days": 16.4
+    },
+    "rho=0.8": {
+     "se_bp": 13.82,
+     "mde_bp": 38.72,
+     "t_star_days": 6.5
+    },
+    "rho=0.95": {
+     "se_bp": 6.91,
+     "mde_bp": 19.36,
+     "t_star_days": 1.6
+    }
+   },
+   "k=25": {
+    "rho=0.0": {
+     "se_bp": 18.95,
+     "mde_bp": 53.1,
+     "t_star_days": 12.3
+    },
+    "rho=0.5": {
+     "se_bp": 13.4,
+     "mde_bp": 37.55,
+     "t_star_days": 6.2
+    },
+    "rho=0.8": {
+     "se_bp": 8.48,
+     "mde_bp": 23.75,
+     "t_star_days": 2.5
+    },
+    "rho=0.95": {
+     "se_bp": 4.24,
+     "mde_bp": 11.87,
+     "t_star_days": 0.6
+    }
+   }
+  },
+  "calibration": [
+   {
+    "k": 4,
+    "n_days": 40,
+    "emp_sd_bp": 223.1,
+    "analytic_sd_bp": 237.4,
+    "ratio": 0.94,
+    "within_25pct": true
+   }
+  ]
+ },
+ "value": {
+  "trades_per_day_model_sel": 4.93,
+  "annual_gross_pct_at_ev": {
+   "10bp": 24.2,
+   "20bp": 48.4,
+   "50bp": 121.0,
+   "100bp": 242.0
+  },
+  "note": "EV 是单日持仓口径 ⇒ 每日全仓轮动的年毛收益 = EV×242，与每日几只无关；故决策是纯符号判定，不是幅度判定。"
+ },
+ "verdict": {
+  "target_shift_bp": 95.7,
+  "provider_ceiling_tdays": 40,
+  "settings_clamp_tdays": 30,
+  "margin": {
+   "k=4.6": {
+    "rho_crit": 0.521,
+    "t_star_rho0": 83.4,
+    "t_star_rho50": 41.7,
+    "t_star_rho80": 16.7
+   },
+   "k=5": {
+    "rho_crit": 0.477,
+    "t_star_rho0": 76.5,
+    "t_star_rho50": 38.2,
+    "t_star_rho80": 15.3
+   },
+   "k=11": {
+    "rho_crit": -0.222,
+    "t_star_rho0": 32.7,
+    "t_star_rho50": 16.4,
+    "t_star_rho80": 6.5
+   },
+   "k=25": {
+    "rho_crit": -2.25,
+    "t_star_rho0": 12.3,
+    "t_star_rho50": 6.2,
+    "t_star_rho80": 2.5
+   }
+  },
+  "calibration_ok": true,
+  "verdict_note": "免费窗口（40 交易日）够不够用，取决于分钟筛与日线筛的选择重叠率 rho；rho 只能在免费窗口上测出来 ⇒ 先跑免费 40 天，再决定买多少天"
+ }
+}
