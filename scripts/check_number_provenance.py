@@ -113,6 +113,35 @@ docstring 与 `_hac_stats` 都写「7 条偏窄 0.7–17.5%、1 条偏宽 10.1%�
 锚定、一句封存是合法的：**计数按指纹合并**，不做「二选一」。核锚定项时按文本
 相似度挑回它自己那一行，避免拿隔壁那行过审。
 
+## 一个口径一份登记表（13w）
+
+登记表能用 `--registry` 换，于是「几个口径共用一张表」有两种写法：**合并**（一张表
+服务默认三组 glob 与 `analysis/*.py`，靠「这次没扫到的文件不判」实现）与**分表**
+（每个口径一份表，各自配自己的 `--globs`）。这里选分表。
+
+理由是合并必须给「不在本口径」发明一个**合法状态**，而它恰好吃掉两种真失败：
+整段 docstring 被删空、整个文件被删——两者都表现为「这个文件不再产出断言行」。
+实测（临时仓库 2 条封存、`*.py` 口径）：合并版删掉一个文件后 `claims 2→1`、
+失败 0、判定 ✓；而 `_rebaseline` 若仍按「产出行的文件」判 kept，抹空 docstring
+之后重签**清不掉**那条 STALE——罚一次、永久红，还留一条幽灵封存。分表没有这个
+状态：本口径扫不到该文件 ⇒ `repo=0` ⇒ STALE，`_rebaseline` 整表替换天然正确。
+
+今天两份，射程不相交、没有「跳过」分支：
+
+- `docs/number-provenance.json` —— 默认三组 glob，94 条（12 锚 + 82 封）；
+- `docs/number-provenance.analysis.json` —— `analysis/*.py`，106 条全封存、0 锚定，
+  按「新增债务 106」入账。
+
+配对由 `test_each_registry_covers_its_own_scope` 钉住（两个 `(registry, globs)`
+对都要 `ok`，且 `claims` 不低于钉住值），`test_registry_files_are_in_scope_and_on_disk`
+钉射程本身。**别把两个口径并回一张表**：省下的是一条命令，赔上的是「删文件」
+从红变绿。
+
+射程缩小的可见形态只有 `claims` 下降，而 `--rebaseline` 会把不再扫描的文件的债务
+连记录一起删掉——检查器自己看不见「这条该不该还算数」。所以这两件事只能由测试守：
+删文件当轮 ⇒ `STALE` 红 + 射程孤儿；`--rebaseline` 之后 ⇒ `check()` 绿、孤儿也没了，
+**只剩 `claims` 从 2 掉到 1**。地板因此不是覆盖率指标，是射程的锚。
+
 ## 它不是万能的
 
 - **抓不到「语义混用」**：把增量序列的 `28–62` 贴到 verdict 上，数值仍在容差
@@ -124,9 +153,10 @@ docstring 与 `_hac_stats` 都写「7 条偏窄 0.7–17.5%、1 条偏宽 10.1%�
   进名单的 94 条是「读数形态」那一层，剩下 190 条只含整数/公式/日期。分母不给，
   `✓` 就等于在说「我看过的地方都对」而读者以为「所有数字都对」——那正是 13p 的
   SKIP（36 项没核对仍打 ✓）。**宽窄可以争，分母不能藏。**
-- **封存名单是债**：82 处历史读数今天仍然没有产物（见登记表 `frozen`），封存只保证它们**不能再
-  悄悄变**，不保证它们是对的。数量写进 `docs/decision-ledger.md` §9.39，每锚定
-  一处就从名单里删一处（`--rebaseline` 会自动把它移出 frozen）。
+- **封存名单是债**：`82 + 106 = 188` 处历史读数今天仍然没有产物（两份登记表各自
+  的 `frozen`），封存只保证它们**不能再悄悄变**，不保证它们是对的。数量写进
+  `docs/decision-ledger.md` §9.39 / §9.50，每锚定一处就从名单里删一处
+  （`--rebaseline` 会自动把它移出 frozen）。
 - **rebaseline 是逃生门**：它能一键把新数封存。它挡住的是「悄悄改」，不是
   「故意改」；后者只能靠评审。
 
@@ -138,12 +168,17 @@ docstring 与 `_hac_stats` 都写「7 条偏窄 0.7–17.5%、1 条偏宽 10.1%�
     python scripts/check_number_provenance.py --rebaseline  # 重封存（打印增删）
     python scripts/check_number_provenance.py --allow-skip  # 无产物环境下放行 SKIP
 
+    # analysis 口径是**另一份登记表**，必须成对出现（少一半就是 198 条红）
+    python scripts/check_number_provenance.py \
+        --registry docs/number-provenance.analysis.json --globs 'analysis/*.py'
+
 `root` / `globs` / `claim_keywords` 都可注入（`Config`，命令行上是
 `--root` 与 `--globs`），测试用临时仓库验证「它会不会红」，见
 `backend/tests/test_decision_number_provenance.py`。
 
 退出码三档：`0` 全绿；`1` 有 `UNREGISTERED` / `STALE` / `STALE_ENTRY` /
-`VALUE_MISMATCH` / `REGISTRY_DRIFT`；`2` 没有失败但**有锚定项无法核对**
+`VALUE_MISMATCH` / `REGISTRY_DRIFT`，**或者一行都没扫到**（空射程不是通过：glob 与
+登记表配错时，「没有 failures ⇒ ✓」照样成立）；`2` 没有失败但**有锚定项无法核对**
 （产物不在）——它是「没验」，不是「验过了没事」，所以不与 `1` 混用。
 `PROSE_DRIFT` 从不算失败（数没变，只是字变了）。
 """
@@ -472,7 +507,14 @@ class Report:
 
     @property
     def ok(self) -> bool:
-        return not self.failures
+        """判定层的**唯一**产地：无失败**且**至少扫到一行。
+
+        空射程（`claims == 0`）曾经只由 `main()` 的一个分支判红，于是「退出码」与
+        `--json` 里的 `"ok"` 各说一套：临时仓库里一个文件都没有时，进程返 1 而 JSON
+        写 `ok: true`。`--json` 是给机器读的那一面，它说通过，任何消费方都会信。
+        判据必须落在 `Report` 上，`main()` 只负责**印哪一段话**——它不是第二个产地。
+        """
+        return not self.failures and self.claims > 0
 
     @property
     def verified(self) -> int:
@@ -726,6 +768,14 @@ def main(argv: list[str] | None = None) -> int:
               f"\n      {n['text'][:100]}")
     if rep.failures:
         print("判定：✗ 有没出处的读数")
+        return 1
+    if not rep.ok:
+        # 空射程不是通过：glob 写错、目录改名、`--registry` 与 `--globs` 配错，
+        # 都会扫到 0 行。有 failures 时上面已经判红（诊断更有用），所以这里接的是
+        # 「0 行 + 0 失败」那种——它的结论本来会是「✓ 每个读数都有出处」。
+        # 判据在 `Report.ok`（`--json` 的 `ok` 与退出码必须同源），这里只选措辞。
+        print("判定：✗ 这个口径一条断言行都没扫到（0 行）——空射程不算通过。"
+              "检查 --globs / --registry 是否配对。")
         return 1
     if rep.skipped and not args.allow_skip:
         print(f"判定：✗ 无法核对——{len(rep.skipped)} 项锚定的产物不在。"

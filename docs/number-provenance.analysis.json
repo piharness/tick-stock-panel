@@ -1,0 +1,642 @@
+{
+ "entries": [],
+ "frozen": [
+  {
+   "file": "analysis/_artifact_guard.py",
+   "text": "为什么不是「从散文里抽 ±0.000bp 再与同层字段比对」：那个做法对 `0.00bp`",
+   "where": "<module>",
+   "sha": "070eba89d8379d81"
+  },
+  {
+   "file": "analysis/_artifact_guard.py",
+   "text": "（引用的是另一个产物里的净值口径）必然假红 —— 本产物里没有值为 0.00 的字段。",
+   "where": "<module>",
+   "sha": "561b2814d3c09e62"
+  },
+  {
+   "file": "analysis/_artifact_guard.py",
+   "text": "同层若有 `share_<X>_gt_<Y>`，且 `|share-0.5| >= 0.05`，则任何读作 `X − Y` 的值必须",
+   "where": "<module>",
+   "sha": "49fa05d32e3f9106"
+  },
+  {
+   "file": "analysis/_artifact_guard.py",
+   "text": "与 `share-0.5` 同号、读作 `Y − X` 的必须反号。D8 被这条同时抓到，且它指出的是",
+   "where": "<module>",
+   "sha": "5a6a20c12da7f514"
+  },
+  {
+   "file": "analysis/_audit_intraday_budget.py",
+   "text": "日线层级回封可预测（OOS AUC 0.668），但 EV = -75.7bp（t=-2.84），",
+   "where": "<module>",
+   "sha": "ef3163c5f184478f"
+  },
+  {
+   "file": "analysis/_audit_intraday_budget.py",
+   "text": "为了把 EV 从 -75.7bp 推到 0，需要多少「交易日 × 事件」的数据？",
+   "where": "<module>",
+   "sha": "dcceb6afc304e410"
+  },
+  {
+   "file": "analysis/_audit_intraday_budget.py",
+   "text": "C 门槛分解 —— -75.7bp 到 0 的三条充分路径，以及在 T+1 下哪几条物理可达",
+   "where": "<module>",
+   "sha": "273e94c53f78110b"
+  },
+  {
+   "file": "analysis/_audit_intraday_budget.py",
+   "text": "必须与解析式 sd*sqrt(2(1-rho)/k) 在 ±25% 内一致；否则 MDE 表整体作废。",
+   "where": "<module>",
+   "sha": "1d30f8e56305cdc1"
+  },
+  {
+   "file": "analysis/_diag_d13_weighting_gap.py",
+   "text": "这件事；日间又高度自相关（F=1.68），iid 的 se 会把区间做窄。两个问题一起处理，",
+   "where": "boot_contrast",
+   "sha": "199a20603ed157aa"
+  },
+  {
+   "file": "analysis/_diag_f_frontier.py",
+   "text": "`_diag_tstar_hac_lag` 的 [F] 表只给 k ∈ {4.6, 5, 11, 25} 四行，",
+   "where": "<module>",
+   "sha": "810485386454f87f"
+  },
+  {
+   "file": "analysis/_diag_f_frontier.py",
+   "text": "[2] 复算 F_crit(4.6) = 1.2769：闭式 (target^2*60/Z^2 - Var(e_k))/g0",
+   "where": "<module>",
+   "sha": "8c6836d86fd2a549"
+  },
+  {
+   "file": "analysis/_diag_f_frontier.py",
+   "text": "与 `_diag_f_sampling` 用的 1+((target/MDE_iid)^2-1)/s_k 必须同值。",
+   "where": "<module>",
+   "sha": "62e000b3b061a133"
+  },
+  {
+   "file": "analysis/_diag_f_frontier.py",
+   "text": "（k=5→40 降 12.4bp，而 se(差值) 在 rho∈[0,1] 上恒 ≥ 17.4bp）⇒",
+   "where": "<module>",
+   "sha": "66231486a0ff3f37"
+  },
+  {
+   "file": "analysis/_diag_f_sampling.py",
+   "text": "问题：`_diag_tstar_hac_lag` 给出 F 的四个点估计（1.215 / 1.517 / 1.519 / 1.679），",
+   "where": "<module>",
+   "sha": "9a4684a16822f42e"
+  },
+  {
+   "file": "analysis/_diag_f_sampling.py",
+   "text": "但**没有一个带误差棒**。于是「边界 F=1.277，点估计高出 19% ⇒ 判决稳」这句话",
+   "where": "<module>",
+   "sha": "aa4715cc248522fa"
+  },
+  {
+   "file": "analysis/_diag_f_sampling.py",
+   "text": "逐位抄录（T=356，产物第 2 行印的 se(rho)=1/sqrt(356)=0.053）。脚本先把该产物",
+   "where": "<module>",
+   "sha": "fd9bcc5779791af4"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "`_diag_l1_kcurve` 的 k*（45.1–81.3）不是 cohort 的：它把**参照类**的归一化曲线形状",
+   "where": "<module>",
+   "sha": "d5da3271dc5bfab4"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "映射到 cohort 的两个端点（Δ(1)=14.64、Δ(240)=109.29）上，再解 `c(k*)=判据`。",
+   "where": "<module>",
+   "sha": "bfde9f7b08bece9b"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "`_diag_l1_kstar_slope_provenance` 进一步证明，这条链的斜率（`dΔ/dk=−0.06949`、",
+   "where": "<module>",
+   "sha": "60054966f604a0e9"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "`dc/dk=0.00383`）来自 `kline_minute` 的 40 只 000xxx.SZ，与 cohort 的 (date,symbol)",
+   "where": "<module>",
+   "sha": "20f3233bc4df4f37"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "用它们做端点复现，单位错（volume 手/股差 100 倍）会立刻把它顶红。",
+   "where": "<module>",
+   "sha": "ad57366865126e55"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "D1 接缝。 Δ(0)、Δ(239) 的 cell 均值与 kcurve 已发布的 14.64 / 109.29 差 ≤1.5bp",
+   "where": "<module>",
+   "sha": "09a2aca624135a2d"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "① 阈值 `gap/2` 是**参照类两种读数的 c 间隙**（0.122/2），不是 cohort 的判据余量；",
+   "where": "<module>",
+   "sha": "a6011153d957a43d"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "② se 取自 k=52。实测 cohort 的 c(k) 在 k=28.7 就到 `c_required=0.4011`、k=52 是",
+   "where": "<module>",
+   "sha": "946c3c957c5adf62"
+  },
+  {
+   "file": "analysis/_diag_l1_cohort_curve.py",
+   "text": "0.5115、k=239 是 1.0 ⇒ **c 在 k* 附近早已饱和**，任何形如 `c(k*) ≥ 0.4011` 的",
+   "where": "<module>",
+   "sha": "c7598e7a6b941c59"
+  },
+  {
+   "file": "analysis/_diag_l1_kcurve.py",
+   "text": "据此给了容量 5.8–8.2 亿。本脚本把那条曲线**落成产物并复算**，结论是：",
+   "where": "<module>",
+   "sha": "36874586f9a04133"
+  },
+  {
+   "file": "analysis/_diag_l1_kcurve.py",
+   "text": "参照类自己的 Δ(k) 是**平的**（R²≈0.2，不是线性），139 只在「按参照类自身两端",
+   "where": "<module>",
+   "sha": "f6d1cf9c79fa8012"
+  },
+  {
+   "file": "analysis/_diag_l1_kcurve.py",
+   "text": "把 open 打回原始价再比。不除这个因子，Δ(240) 会从 109 变 433（4 倍），",
+   "where": "<module>",
+   "sha": "8c04d7743095a7fa"
+  },
+  {
+   "file": "analysis/_diag_l1_kcurve.py",
+   "text": "必须落在 `entry_price_penalty` 的 ±1bp 内，否则说明复权或成交量单位",
+   "where": "<module>",
+   "sha": "93c0511d4e723297"
+  },
+  {
+   "file": "analysis/_diag_l1_kcurve.py",
+   "text": "K2 形状。 参照类 Δ(k) 若对 k 的线性回归 R² < 0.8，则「近乎线性」不成立，",
+   "where": "<module>",
+   "sha": "5f3e908234f545a4"
+  },
+  {
+   "file": "analysis/_diag_l1_kcurve.py",
+   "text": "两者相差 2 倍以上时报区间，不报点值。",
+   "where": "<module>",
+   "sha": "d4735e3a265e16ee"
+  },
+  {
+   "file": "analysis/_diag_l1_kcurve.py",
+   "text": "推出；19bp 差在 60 天下的 σ 数若 < 2，则「60 天够判」不成立。",
+   "where": "<module>",
+   "sha": "7c424befa3e6a86c"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "`_diag_l1_kcurve_result.json` 给出两个读数 k*∈[45.1, 81.3]、c(k*)∈[0.390, 0.512]，",
+   "where": "<module>",
+   "sha": "c946431f4dd67d08"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "判据 0.4011 被区间跨过 ⇒ `identified=false`。上一轮据此建议「首轮窗口 60→116 天」，",
+   "where": "<module>",
+   "sha": "fc4ae75f9feab10c"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "理由是「19bp 的差在 60 天下只有 1.44σ」。",
+   "where": "<module>",
+   "sha": "69d25c16f9fdb740"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "1. **19bp 没有产地。** `_diag_l1_kcurve.py:270` 是裸字面量 `19.0`，产物里没有任何",
+   "where": "<module>",
+   "sha": "bab046f4849c5aeb"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "字段说它是谁的差。盘上能对上的 19bp 是**另一个决策**的经济门槛",
+   "where": "<module>",
+   "sha": "9400f1b21cb527d7"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "（`docs/decision-target-prereg.md`：成本 19bp/往返），而本产物判打平用的是",
+   "where": "<module>",
+   "sha": "9400f1b21cb527d7"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "`cost.equity_round_bp = 20.0`。同一个脚本里两个成本口径，差 1bp 不报错。",
+   "where": "<module>",
+   "sha": "467b1039a6c57fa4"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "2. **决策量不在 bp 空间。** 判据是 `c(k*) ≥ 0.4011`——一个**横轴位置**。它的不确定性",
+   "where": "<module>",
+   "sha": "a01d90511560e4a3"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "（dΔ/dk ≈ −0.07bp/根），这个 1/斜率 把误差放大一个量级。",
+   "where": "<module>",
+   "sha": "e8731e8ac36307cf"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "3. **放大之后，任何可行窗口都不够。** 316 天下 `se_c ≈ 0.32`，而两种归一化读数的",
+   "where": "<module>",
+   "sha": "f93dc040a0c90d49"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "差距只有 0.122、下沿余量只有 0.011。要 `se_c` 压到半个口径差需约 8.5 千天，",
+   "where": "<module>",
+   "sha": "83abaa6f6ad9bba6"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "压到 0.011 需约 26 万天——**不是「60 天不够」，是「这个参数化永远不够」**。",
+   "where": "<module>",
+   "sha": "14c2e279e841edc7"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "不反演的写法：在**固定的累计成交额份额 c** 上读价格位移，判 `Δ(c=0.4011) ≤ 打平线`。",
+   "where": "<module>",
+   "sha": "a01d90511560e4a3"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "端点都是实测（Δ(1)=14.64、Δ(240)=109.29），不是假设。",
+   "where": "<module>",
+   "sha": "bfde9f7b08bece9b"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_condition.py",
+   "text": "K7 目标无名。 `19bp` 既不等于本产物的成本口径，也不等于水平检验的余量 ⇒ 它是借来的。",
+   "where": "<module>",
+   "sha": "065d03542014210a"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "4 倍，要 8,481 天」。这个结论把 116 天判死、也把 316 天判死。但它的 **两个** 定量",
+   "where": "<module>",
+   "sha": "1d7bf7c54da2d5fa"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "`d_delta_dk = −0.06949`、`d_c_dk = 0.00383` 来自 `_diag_l1_kstar_condition._curve()`",
+   "where": "<module>",
+   "sha": "39ff84602272e3c0"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "19 个可用分区（2026-10-09 → 11-04）、40 只、748 格，**全部 000xxx.SZ**。",
+   "where": "<module>",
+   "sha": "63769a9b961b6312"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "（这三个数不写死在散文里，以 `provenance` 块的实测值为准；上一版此处留了 18/708/11-03 的",
+   "where": "<module>",
+   "sha": "d494c2008de97ef0"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "陈旧值，而产物早已是 19/748/11-04 —— 散文与产物不同产地，本身就是本条要修的病。）",
+   "where": "<module>",
+   "sha": "59b9929c3ce83317"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "用 cohort 自己的两个实测端点（Δ(1)=14.64、Δ(240)=109.29）给出**同一宇宙内**的端点",
+   "where": "<module>",
+   "sha": "bfde9f7b08bece9b"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "- 水平口径（level_space）的余量同样不是一个数：参照类的归一化形状给 8.37bp，",
+   "where": "<module>",
+   "sha": "fa366ea43be46510"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "c 线性给 55.32bp。两者跨过 t=2 ⇒ 判决由形状决定。",
+   "where": "<module>",
+   "sha": "a78486d4c50d73cc"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "K12 形状是选择效应。 cohort 的 Δ 跨度 ≥ 2 倍参照类跨度，且参照类曲线非单调",
+   "where": "<module>",
+   "sha": "18e3f614f88e424e"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "割线；把参照类自己的切/割比（0.816，按 max−min/239 量）迁移过来，K5 就翻回",
+   "where": "<module>",
+   "sha": "d38d2e9986e3874f"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "true。但这条迁移本身不合法：参照类的 Δ 随 k **下降**（端点差 −18.78、含 94 段",
+   "where": "<module>",
+   "sha": "bcc335f10939de39"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "回升），cohort 随 k **上升**（+94.65），弯曲方向相反 ⇒ 形状比换不了宇宙。",
+   "where": "<module>",
+   "sha": "fec7a23b92df2456"
+  },
+  {
+   "file": "analysis/_diag_l1_kstar_slope_provenance.py",
+   "text": "再加上参照类的斜率口径自带 2.73× 跨度、而跨线只需 9.0% ⇒ 两个方向都能由",
+   "where": "<module>",
+   "sha": "9e624b2374c2a852"
+  },
+  {
+   "file": "analysis/_diag_l1_open_depth.py",
+   "text": "`r* = (cost − vwap)/gap`。它顺手写了一句「只要开盘吃掉 11.8% 就打平」。",
+   "where": "<module>",
+   "sha": "b4c51a27c4edf268"
+  },
+  {
+   "file": "analysis/_diag_l1_open_depth.py",
+   "text": "- **迁移**（备用/对拍）：`data/kline_minute` 那 38–40 只（全 000xxx.SZ）与 cohort 的",
+   "where": "<module>",
+   "sha": "1ce9e851ea9ffb82"
+  },
+  {
+   "file": "analysis/_diag_l1_open_depth.py",
+   "text": "必须迁移并报留一日误差；实测覆盖 < 80% 时，主线仍判「不可判」。",
+   "where": "<module>",
+   "sha": "48449a14a4ff7d79"
+  },
+  {
+   "file": "analysis/_diag_l1_open_depth.py",
+   "text": "π* ≤ 10% ⇒ 深度这一格通过；10% < π* ≤ 30% ⇒ 不可判；π* > 30% ⇒ 关闭。",
+   "where": "<module>",
+   "sha": "b9f1f727bfee2f5b"
+  },
+  {
+   "file": "analysis/_diag_l1_open_depth.py",
+   "text": "阈值理由：10% 的 bar0 约等于 0.3–0.7% 日成交额，是正常参与率；",
+   "where": "<module>",
+   "sha": "099b029296c29d52"
+  },
+  {
+   "file": "analysis/_diag_l1_open_depth.py",
+   "text": "30% 已经接近「一个人就是那根 bar」。",
+   "where": "<module>",
+   "sha": "624b60c58c9d8bfb"
+  },
+  {
+   "file": "analysis/_diag_l1_open_depth.py",
+   "text": "倒数上，不报错、只让结论反向。断言 0.01 < r* < 0.5。",
+   "where": "<module>",
+   "sha": "700cac3228f215e3"
+  },
+  {
+   "file": "analysis/_diag_l1_open_probe.py",
+   "text": "值得做的实验（R5-E / L1），判据是中位偏差 <=5bp 且 |p95| <=20bp。",
+   "where": "<module>",
+   "sha": "cfb0bf6b107fc51f"
+  },
+  {
+   "file": "analysis/_diag_l1_open_probe.py",
+   "text": "用 round5 的 |5bp| / |p95 20bp| 判它。",
+   "where": "<module>",
+   "sha": "c7fbb098c3d34d74"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "`_diag_l1_vwap_entry.py` 交付了「121.5 → 6.4bp」，但它自己带进文档的三个量都有口径问题，",
+   "where": "<module>",
+   "sha": "a4523074567d2d64"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "而 `_diag_l1_indep_recount.py` 用「日历相邻 + 复权」定义。两者差 45.7 vs 47.1。",
+   "where": "<module>",
+   "sha": "e59328b83dbfad9e"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "文档把这 1.4bp 归给「停牌跨日」。实测：停牌跨日只多 249 个 cell、值 0.01bp；",
+   "where": "<module>",
+   "sha": "cfee5eec92594389"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "`mean(pen)/mean(i1)`；文档把它当「斜率」与 0.5 比，还出现 1.266 —— 单调路径下斜率",
+   "where": "<module>",
+   "sha": "7084b1fc7dca1caa"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "3. **5.3% / −0.3bp 是删掉 14 个 cell 之后的均值**。`in_band` 只筛掉 14/243,598，",
+   "where": "<module>",
+   "sha": "c950808dac09b1f9"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "但这 14 个单独贡献 +1,045bp 的池均值。文档报的是筛后均值，等于让 0.006% 的样本",
+   "where": "<module>",
+   "sha": "35020408276233e9"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "`slope = 成交量质心`，不是 0.5。质心与收盘竞价占比都能从本地分钟库直接测",
+   "where": "<module>",
+   "sha": "d2cbad71ff333de6"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "替代解释可以被**定量**否掉，而不是靠「0.887 > 0.5」。",
+   "where": "<module>",
+   "sha": "3d253915e18b0fe0"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_curvature.py",
+   "text": "质心 = `Σ v·(k+0.5)/240 / Σv`。首根 bar（k=0）**含 09:25 集合竞价**，",
+   "where": "<module>",
+   "sha": "1ab9370d87650e6d"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "2.0MB，而信号窗口是 367 个交易日 ⇒ 这个模拟在现有数据上跑不出来（`minute_coverage` 段）。",
+   "where": "<module>",
+   "sha": "4fd0caecdcf9a62b"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "`sum(amount)/sum(volume)` 算出的全日 VWAP，与日线公式的差中位数 **0.02bp**、p90 0.4bp；",
+   "where": "<module>",
+   "sha": "3be1e6fc38645aa0"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "- 有效性门：`vwap ∈ [raw_low, raw_high]`（0.1% 容差）。越界剔除并计数——这条同时是量纲",
+   "where": "<module>",
+   "sha": "14be4b45f18e0d8c"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "- 容量轴：POV 的 p% 参与率下回合资本 = 只数 × p × 当日 amount；年利润 = 资本 × 净bp × 208.4。",
+   "where": "<module>",
+   "sha": "d7d5c3d7ae94e1dd"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "`gap_pool_unselected.open_entry_bp = 45.7`（逐日）与 `gap_pool_by_window.full.open_entry_bp",
+   "where": "<module>",
+   "sha": "fce5e64959fa46a4"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "= 43.8`（cell）是**同一批 243,584 个 cell** 的两个权重，键名却不区分。现在：",
+   "where": "<module>",
+   "sha": "5940092ffb73eb4c"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "是同一个定义 ⇒ `47.10`（逐日）/ `44.79`（cell）/ `239,521` cell，可对拍。",
+   "where": "<module>",
+   "sha": "0cd0755563177241"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "在 `in_band` 上算（13 个越界 cell 能把 cell 均值从 −6.24 抬到 +1,045.6）。两个 N 都落盘",
+   "where": "<module>",
+   "sha": "c631d1d806696d96"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "- A 口径降级为 `a_legacy`，只做对照不再当结论：`45.7 / 243,584 / −0.3` 那一组**作废**。",
+   "where": "<module>",
+   "sha": "bc9a1e7562f8e853"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "口径产出（q1 59,879 / 90.9 / −4.1 / 91.4），本脚本再算一遍就是第二个产地。",
+   "where": "<module>",
+   "sha": "17d1dd23dae4e496"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "`_diag_l1_vwap_curvature.py` 的 `pen_slope`）。cohort 侧（121.5 / 6.4 / 115.1）不受影响。",
+   "where": "<module>",
+   "sha": "4d5fd2b9cfd50fac"
+  },
+  {
+   "file": "analysis/_diag_l1_vwap_entry.py",
+   "text": "零假设是「日内路径线性」⇒ 斜率 0.5。全市场实测斜率本身就是基准，不用 0.5。",
+   "where": "robustness",
+   "sha": "4b240217a8fa4e03"
+  },
+  {
+   "file": "analysis/_diag_probe_gp.py",
+   "text": "装机的 1.2.2 实际是 `(stock_list, field_list, start_time, end_time)`，另一个 `by_date`",
+   "where": "<module>",
+   "sha": "15e59605aa3c3bbc"
+  },
+  {
+   "file": "analysis/_diag_probe_gp.py",
+   "text": "子列顺序由厂商文档 tdxaidata使用文档.md:2022-2030 定义（不是从数据里猜列名再拟合）。",
+   "where": "comment#6",
+   "sha": "bf3c324673f05b23"
+  },
+  {
+   "file": "analysis/_diag_probe_gp.py",
+   "text": "实测回执形状：{\"GP15\": [{\"Date\": \"20251113\", \"Value\": [\"2.00\", \"30270.45\"]}]}",
+   "where": "comment#6",
+   "sha": "22fc5bfd490dab5e"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_k.py",
+   "text": "把「se_blk/se_iid = 1.01」拆成「相关不存在」还是「相关被稀释」。",
+   "where": "<module>",
+   "sha": "cb5d2011975d7a70"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_k.py",
+   "text": "前一件产物 `_diag_tstar_hac.py` 在 k=5 上测得比值 1.00-1.01，据此写下",
+   "where": "<module>",
+   "sha": "3c599e2034b1b995"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_k.py",
+   "text": "mu_d = 当日全事件均值 —— 含日间序列相关，Bartlett(L=5) 膨胀 ~1.16",
+   "where": "<module>",
+   "sha": "a613d5eec649e817"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_k.py",
+   "text": "=> 预测：se 比值应从 k=5 的 ~1.02 升到 k=25 的 ~1.05，而不是恒为 1.00。",
+   "where": "<module>",
+   "sha": "d957217272dd94f0"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_k.py",
+   "text": "**单臂水平**。rho=0 时两者差一个 2 倍量级的因子，不可同表并列。",
+   "where": "<module>",
+   "sha": "5f34cfca69d48e66"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_k.py",
+   "text": "可红测试：解析 Var(e_5) 必须复现 bootstrap 的 249.9bp/d -> 62450，否则作废。",
+   "where": "<module>",
+   "sha": "036a9a7804842717"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_lag.py",
+   "text": "块长=5 正是相关所在的 lag：上一件的 1.01 是采样器自己抹掉的。",
+   "where": "<module>",
+   "sha": "d42932994c56feeb"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_lag.py",
+   "text": "lag=1..3 rho = -0.043 / +0.059 / +0.038 （噪声量级）",
+   "where": "<module>",
+   "sha": "d81c48425b88c8fd"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_lag.py",
+   "text": "lag=4..5 rho = +0.114 / +0.123 （≈2.1σ / 2.3σ，相邻两 lag 同号）",
+   "where": "<module>",
+   "sha": "5f9c7cf24dae7eee"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_lag.py",
+   "text": "=> 相关几乎全部落在 lag 4-5，即**周内周期**。",
+   "where": "<module>",
+   "sha": "cebc03007ff90caa"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_lag.py",
+   "text": "块内 lag=l 的相关权重只有 (1-l/b)，l=4 时 0.2。",
+   "where": "<module>",
+   "sha": "31f1ef1b68034f4c"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_lag.py",
+   "text": "=> 该采样器对 lag=5 这个最大项**结构性失明**。实测比值 1.01 < 解析 1.02，且",
+   "where": "<module>",
+   "sha": "7d4c2929fe922d67"
+  },
+  {
+   "file": "analysis/_diag_tstar_hac_lag.py",
+   "text": "随 k 单调低于解析（-0.017/-0.024/-0.029，均同号）——方向正是「少算了」。",
+   "where": "<module>",
+   "sha": "6d69b0f11ffe3444"
+  }
+ ],
+ "_doc": "断言行的出处登记。entries = 能 index 到落盘产物的读数（每次运行重算比对）；frozen = 目前没有产物的历史读数（只保证读数不再变，措辞可变）。`sha` 是**数字向量**（行里全部数字连同前置符号，剔掉 §章节号、v版本号与行首有序列表编号）的指纹，不是整行文本的哈希：任何一位数或 `+`/`−`/`±` 变了就换身份，错字不换。由 scripts/check_number_provenance.py 读取，见 docs/decision-ledger.md §9.39/§9.41。"
+}

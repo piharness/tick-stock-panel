@@ -35,6 +35,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 REGISTRY = REPO / "docs" / "number-provenance.json"
+#: 一个口径一份登记表（§9.50）。合并成一张表要给「不在本口径」发明一个合法状态，
+#: 而那个状态同时吃掉「删文件」和「抹空 docstring」两种真失败。
+ANALYSIS_REGISTRY = REPO / "docs" / "number-provenance.analysis.json"
 ARTIFACTS = (REPO / "data" / ".scratch" / "pwin_variance.json",
              REPO / "data" / ".scratch" / "hac_size.json",
              #: 13r：产品决策真正在引用的四个产物。只放两个旧产物时，
@@ -62,9 +65,37 @@ def _load_checker():
 CHECKER = _load_checker()
 CFG = CHECKER.Config()
 
+#: `(登记表, 它自己的 globs, claims 地板)` —— 一个口径一份表（§9.50）。
+#: **新加口径必须在这里登记**，否则 `test_every_registry_on_disk_is_registered_here`
+#: 红。地板是「射程不许悄悄缩小」的那一侧：`--rebaseline` 会把不再扫描的文件的债务
+#: 整段删掉，而出题人看不见——只有这个数下降能被复算出来。
+REGISTRIES = (
+    (REGISTRY, CHECKER.SCOPE_GLOBS, 94),
+    (ANALYSIS_REGISTRY, ("analysis/*.py",), 106),
+)
 
-def _registry() -> dict:
-    return json.loads(REGISTRY.read_text(encoding="utf-8"))
+
+def _registry(path: Path = REGISTRY) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _scope_orphans(root: Path, reg: dict, globs: tuple[str, ...]) -> list[str]:
+    """登记表里「不在自己射程内 / 不在盘上」的 `file`。
+
+    这是 §9.50 那条不变量的**可执行形态**：每个登记表的每个 `file` 必须在它自己的
+    globs 命中内、且真实存在。`check()` 只用计数据能看见它（`repo=0 ⇒ STALE`），
+    而 `--rebaseline` 一跑，那条债务就连着记录一起消失——写侧永远不该说「这条不算数」。
+    """
+    in_scope = {p.relative_to(root).as_posix()
+                for pat in globs for p in root.glob(pat)}
+    out: list[str] = []
+    for f in list(reg.get("entries", [])) + list(reg.get("frozen", [])):
+        rel = f["file"]
+        if not (root / rel).exists():
+            out.append(f"{rel}: 文件不在盘上")
+        elif rel not in in_scope:
+            out.append(f"{rel}: 不在 {globs} 的命中内")
+    return out
 
 
 def _write(root: Path, rel: str, body: str) -> Path:
@@ -92,6 +123,76 @@ def test_every_reading_is_anchored_or_frozen():
         for f in rep.failures)
     # 封存是债：锚定的数量不该倒退。
     assert rep.anchored >= 12, f"只锚定了 {rep.anchored} 条，登记表被删了？"
+
+
+@pytest.mark.parametrize("reg_path, globs, floor", REGISTRIES,
+                         ids=[p.name for p, _, _ in REGISTRIES])
+def test_each_registry_covers_its_own_scope(reg_path, globs, floor):
+    """每个口径在自己的 globs 上必须全绿，且断言行数不低于钉住值。
+
+    这是 §9.50 的配对判据。合并成一张表时，两个口径的正确读数只能靠「跳过不在射程
+    的文件」凑出来，而那条跳过同时让「删文件」变绿；分表之后每个口径都是**全量**
+    判定——没有「不算数」这个状态。
+
+    地板不是覆盖率：`claims` 下降只有一种成因（源码里带读数的行变少了），而
+    `--rebaseline` 会把它悄悄改小。所以它必须被钉住，不能只被打印。
+    """
+    rep = CHECKER.check(REPO, _registry(reg_path), CHECKER.Config(globs=globs))
+    assert rep.claims >= floor, (
+        f"{reg_path.name} 只扫到 {rep.claims} 条断言行（地板 {floor}）——射程被改小了，"
+        "或那份表的 globs 与源码目录已经错位")
+    assert rep.ok, "\n".join(
+        f"{f['kind']} {f['file']} {f.get('where', '')}: {f['text'][:80]} ← {f['detail']}"
+        for f in rep.failures)
+    # 每条断言行都要有归属：绿的时候 anchored + frozen 恰等于 claims。少一条就是
+    # 「扫到了但没人记账」，与删除等价。
+    assert rep.anchored + rep.frozen == rep.claims
+
+
+def test_every_registry_on_disk_is_registered_here():
+    """`docs/` 下有几份登记表，`REGISTRIES` 里就得有几份、且文件名对得上。
+
+    没有这一条，「新加一个口径」的默认做法就是再写一份 JSON——它会永远绿，因为没人
+    跑它。射程是从**盘上发现的**，不是从这个文件记得的。
+
+    它顺带把新登记表钉进版本控制：只要 `docs/number-provenance.analysis.json` 没
+    `git add`，新克隆上这一条就红——那是 13r 的形态（产物在盘上、在库里没有）。
+    本机是绿的，所以它的牙齿只在「别人拿得到吗」这一侧。
+    """
+    on_disk = {p.name for p in (REPO / "docs").glob("number-provenance*.json")}
+    assert on_disk == {p.name for p, _, _ in REGISTRIES}, (
+        f"盘上 {sorted(on_disk)} vs 本文件 {sorted(p.name for p, _, _ in REGISTRIES)}"
+        "——新口径必须在 REGISTRIES 里配上它的 globs 与地板")
+
+
+@pytest.mark.parametrize("reg_path, globs, _floor", REGISTRIES,
+                         ids=[p.name for p, _, _ in REGISTRIES])
+def test_registry_files_are_in_scope_and_on_disk(reg_path, globs, _floor):
+    """§9.50 的不变量：每个 `file` 在自己的射程内、且在盘上。
+
+    它比「跑一次 `check()` 是绿的」更强：`check()` 是用计数据推断「这条还在不在」，
+    而 `--rebaseline` 会把推断不出来的那条**删掉**。删掉之后 `check()` 照样绿——
+    这正是「绿但无感知」的第四种形态：不是抽样挡在射程外，而是**射程的边界可以
+    由被检查的那一方改写**。
+    """
+    orphans = _scope_orphans(REPO, _registry(reg_path), globs)
+    assert not orphans, (
+        f"{reg_path.name} 有 {len(orphans)} 条登记指不到东西：\n  " + "\n  ".join(orphans)
+        + "\n文件不在了就删它的登记（那是真的删了口径），不要靠 rebaseline 顺手带走。")
+
+
+def test_scope_orphans_reports_real_orphans(tmp_path):
+    """`_scope_orphans` 必须能同时报出两种孤儿——否则上面那条恒绿。
+
+    两个方向都要能红：文件在、但不在射程（glob 改窄）；文件不在盘上（被删/被改名）。
+    只造其中一个的话，另一条分支永远是「没扫到 ⇒ 空 ⇒ 绿」。
+    """
+    _write(tmp_path, "a/b.py", _doc("实测 1.31 倍。"))
+    reg = {"entries": [], "frozen": [{"file": "a/b.py", "text": "实测 1.31 倍。"}]}
+    assert _scope_orphans(tmp_path, reg, ("a/*.py",)) == []
+    assert "不在" in _scope_orphans(tmp_path, reg, ("other/*.py",))[0]
+    gone = {"entries": [], "frozen": [{"file": "a/gone.py", "text": "x"}]}
+    assert "盘上" in _scope_orphans(tmp_path, gone, ("a/*.py",))[0]
 
 
 def test_anchored_values_match_their_artifacts():
@@ -228,14 +329,19 @@ def test_renumbering_an_ordered_list_keeps_identity(tmp_path):
     assert CHECKER.check(tmp_path, reg, CFG).kinds() == {"STALE", "UNREGISTERED"}
 
 
-def test_every_digit_in_the_repo_is_identity_bearing():
+@pytest.mark.parametrize("globs, floor", ((CHECKER.SCOPE_GLOBS, 90), (("analysis/*.py",), 106)),
+                         ids=("default", "analysis"))
+def test_every_digit_in_the_repo_is_identity_bearing(globs, floor):
     """真仓库的断言行：每一位数都承重，一个都不能是哑的。
 
     这条是主断言——「检查器不许悄悄放宽身份」的护栏。豁免必须恰好由 §章节号、
     v版本号与行首列表编号解释掉，多剔一种（例如把日期也剔了）就会红。
+
+    两个口径都跑：analysis 的 313 个承重数字（317 个原始数字 − 4 个文档坐标）
+    以前一次都没被这条看过——身份规则是全局的，但**射程是每个口径自己的**。
     """
-    lines = CHECKER.scan(REPO, CFG)
-    assert len(lines) >= 90, f"只扫到 {len(lines)} 条断言行"
+    lines = CHECKER.scan(REPO, CHECKER.Config(globs=globs))
+    assert len(lines) >= floor, f"只扫到 {len(lines)} 条断言行（地板 {floor}）"
     blind, unexplained = [], []
     for ln in lines:
         body = CHECKER.identity_text(ln.text)
@@ -282,10 +388,39 @@ def test_repo_census_matches_the_quoted_numbers():
         "claim 段落带数字行数翻倍了，扫描口径或 docstring 出了事"
 
 
+def test_analysis_scope_census_is_the_quoted_debt():
+    """账本 §9.50 与两份测试 docstring 引的 **106 / 104 / 2 / 317 / 313** 必须算得出。
+
+    这一层只能由断言兜底，原因与 94 那条相同：检查器自己不进入任何射程，所以它
+    docstring 里的数没有任何机制看得见。账本里「新增债务 106」也得与它同源——
+    `106 行 → 104 键`（`_diag_l1_kstar_condition.py` 两组撞键各占 2 行）正是
+    「82 条封存折成 80 个键」的来源，逐键报 STALE 时不能拿行数当键数。
+    """
+    lines = CHECKER.scan(REPO, CHECKER.Config(globs=("analysis/*.py",)))
+    assert len(lines) == 106
+    assert len({ln.file for ln in lines}) == 16, "产出断言行的 analysis 文件数变了"
+    groups = Counter((ln.file, ln.key) for ln in lines)
+    assert (len(groups), sum(1 for n in groups.values() if n > 1)) == (104, 2)
+    # 射程是**单层** glob。`analysis/` 下出现子目录里的 `.py` 会被静默漏掉——
+    # 这正是「射程把被测路径挡在外面」的那种绿，所以要有断言，而不是靠记得。
+    assert not list((REPO / "analysis").glob("*/*.py")), (
+        "analysis/ 出现子目录 .py，`analysis/*.py` 这条单层 glob 会漏掉它")
+    reg = _registry(ANALYSIS_REGISTRY)
+    assert not reg["entries"] and len(reg["frozen"]) == 106
+    rep = CHECKER.check(REPO, reg, CHECKER.Config(globs=("analysis/*.py",)))
+    assert (rep.anchored, rep.frozen, rep.failures) == (0, 106, [])
+    # 317 / 313 是**数字个数**，不是行数：行数守恒（106）而某一行悄悄多长出一个
+    # 数字，前面的断言一条都不动。`test_every_digit_in_the_repo_is_identity_bearing`
+    # 的 docstring 正在引这两个数，而那个 docstring 不在任何射程内——所以它必须
+    # 在这里被算出来，否则就是「引用一个没人复算的读数」，与 §9.50 修的是同一个病。
+    raw = sum(len(CHECKER.DIGITS.findall(ln.text)) for ln in lines)
+    kept = sum(len(CHECKER.digits(ln.text)) for ln in lines)
+    assert (raw, kept, raw - kept) == (317, 313, 4), (
+        f"承重数字口径变了：原始 {raw} / 承重 {kept} / 文档坐标剔除 {raw - kept}")
+
+
 def test_bare_integer_edit_in_a_real_file_turns_red(tmp_path):
     """真文件 + 真登记表：把样本量改一位，端到端必须红。
-
-    这是本轮修法的回归——旧身份只看小数与带量纲的数，这一改动全绿。
     """
     rel = "backend/app/decision/pwin.py"
     src = (REPO / rel).read_text(encoding="utf-8")
@@ -515,6 +650,40 @@ def test_missing_artifact_blocks_the_gate(tmp_path):
         json.dumps(reg, ensure_ascii=False), encoding="utf-8")
     assert CHECKER.main(["--root", str(tmp_path)]) == 2
     assert CHECKER.main(["--root", str(tmp_path), "--allow-skip"]) == 0
+
+
+def _registry_of(root: Path) -> dict:
+    return json.loads((root / "docs" / "number-provenance.json").read_text(encoding="utf-8"))
+
+
+def test_empty_scope_is_not_a_pass(tmp_path):
+    """扫到 0 行 ⇒ 退出码 `1`，不是 `0`。空射程不是通过。
+
+    glob 写错、目录改名、`--registry` 与 `--globs` 配错、新克隆上压根没有登记表——
+    这些都会让 `scan()` 返回空，而判定层原来只看 `failures`：0 行 + 0 失败 ⇒
+    「✓ 每个读数都有出处」。它把「我没在看」说成「都对」，比一条假绿更贵。
+    （§9.50：这条地板与射程不变量是一对——有 failures 时按 failures 判，诊断更有用。）
+    """
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "number-provenance.json").write_text(
+        json.dumps({"entries": [], "frozen": []}), encoding="utf-8")
+    assert CHECKER.main(["--root", str(tmp_path)]) == 1, "一个文件都没扫到时判了通过"
+    # 判据必须在 `Report` 上，而不是在 `main()` 的打印分支里：`--json` 是机器读的
+    # 那一面，它若写 `ok: true` 而进程返 1，任何消费方都会信错一半。这条断言钉的是
+    # 层位，不是措辞——把它挪回 `main()` 会让这里绿、`--json` 重新说谎。
+    empty = CHECKER.check(tmp_path, _registry_of(tmp_path), CFG)
+    assert empty.claims == 0 and not empty.ok, (
+        "空射程在 `Report.ok` 上仍是绿的——`--json` 会与退出码矛盾")
+    assert empty.as_dict()["ok"] is False, "as_dict 的 ok 走了另一条路径"
+    # 有文件、在射程内，但一行读数都没有——同样是空射程
+    _write(tmp_path, "backend/app/decision/sample.py", '"""设计说明，没有数。"""\n')
+    assert CHECKER.main(["--root", str(tmp_path)]) == 1, "扫到文件、没扫到断言行，仍算空"
+    # 反过来钉一次：有读数就必须走正常判定（这里没登记 ⇒ 1 是因为 UNREGISTERED，
+    # 不是因为地板——否则上面两条可能红在别的原因上）
+    _write(tmp_path, "backend/app/decision/sample.py", _doc("实测 1.31 倍。"))
+    rep = CHECKER.check(tmp_path, _registry_of(tmp_path), CFG)
+    assert rep.claims == 1 and rep.kinds() == {"UNREGISTERED"}
+    assert not rep.ok, "有 UNREGISTERED 却判通过"
 
 
 def _sealed_scratch_artifacts() -> tuple[Path, ...]:
