@@ -1,0 +1,250 @@
+{
+  "purpose": "对冲市场 beta 能否抬 IR；以及未对冲的 IR 是不是「广度」而不是「beta」的函数",
+  "caliber": "C（日历相邻 + 复权）；cohort 复用 _diag_l1_vwap_curvature.build_cohort()",
+  "panel": {
+    "cohort_days": 316,
+    "cohort_cells": 2752,
+    "cohort_names_per_day": 8.71,
+    "pool_days": 366,
+    "rounds_per_year": 208.4,
+    "index_overlap_days": 216
+  },
+  "cost": {
+    "equity_round_bp": 20.0,
+    "hedge_fee_open_bp": 0.23,
+    "hedge_fee_close_today_bp": 3.45,
+    "hedge_slip_bp": 0.66,
+    "hedge_round_bp_per_notional": 4.34,
+    "note": "费率是外生参数（中金所平今 3.45bp 是日内对冲无法回避的一笔），不是本地数据算出来的；敏感性见 hedge.cost_sensitivity"
+  },
+  "unhedged": {
+    "mean_bp": 121.49,
+    "sd_bp": 343.2,
+    "ir_per_round_annualized": 5.11,
+    "net_mean_after_equity_cost_bp": 101.49,
+    "annual_return_on_deployed_pct": 211.5,
+    "t_nw5": 6.91
+  },
+  "beta": {
+    "cohort_vs_ew_market": {
+      "beta": 1.1,
+      "alpha_bp": 110.69,
+      "t_hac_lag5": 7.56,
+      "r2": 0.141,
+      "x_mean_bp": 9.82,
+      "x_sd_bp": 117.2
+    },
+    "cohort_vs_nonpool": {
+      "beta": 1.008,
+      "alpha_bp": 117.31,
+      "t_hac_lag5": 6.72,
+      "r2": 0.114
+    },
+    "cohort_vs_index": {
+      "000001.SH": {
+        "days": 216,
+        "beta": 1.72,
+        "t_hac": 6.29,
+        "r2": 0.137,
+        "x_mean_bp": 6.91,
+        "x_sd_bp": 75.7
+      },
+      "399001.SZ": {
+        "days": 216,
+        "beta": 0.944,
+        "t_hac": 6.09,
+        "r2": 0.135,
+        "x_mean_bp": 0.3,
+        "x_sd_bp": 137.1
+      },
+      "399006.SZ": {
+        "days": 216,
+        "beta": 0.666,
+        "t_hac": 5.67,
+        "r2": 0.118,
+        "x_mean_bp": -5.41,
+        "x_sd_bp": 181.8
+      },
+      "399107.SZ": {
+        "days": 216,
+        "beta": 1.151,
+        "t_hac": 7.0,
+        "r2": 0.173,
+        "x_mean_bp": 1.7,
+        "x_sd_bp": 127.1
+      }
+    },
+    "pool_vs_ew_market": {
+      "beta": 1.136,
+      "t_hac_lag5": 35.65,
+      "r2": 0.771
+    },
+    "rolling60": {
+      "n": 276,
+      "min": 0.45,
+      "median": 1.05,
+      "max": 2.06,
+      "sd": 0.41
+    }
+  },
+  "hedge": {
+    "in_sample_ew": {
+      "mean_bp": 105.91,
+      "sd_bp": 318.1,
+      "ir": 4.81,
+      "net_mean_after_equity_cost_bp": 85.91,
+      "n_days": 316
+    },
+    "oos_rolling60": {
+      "mean_bp": 105.39,
+      "sd_bp": 324.3,
+      "ir": 4.69,
+      "net_mean_after_equity_cost_bp": 85.39,
+      "n_days": 276
+    },
+    "statistical_nonpool": {
+      "mean_bp": 117.31,
+      "sd_bp": 323.1,
+      "ir": 5.24,
+      "net_mean_after_equity_cost_bp": 97.31,
+      "n_days": 316
+    },
+    "ir_delta_ci95_block20": [
+      -1.1,
+      0.26
+    ],
+    "ir_delta_median": -0.35,
+    "prob_ir_improves": 0.139,
+    "cost_sensitivity": {
+      "0.0": 5.02,
+      "3.68": 4.84,
+      "4.34": 4.81,
+      "6.0": 4.72,
+      "10.0": 4.52
+    },
+    "net_mean_delta_bp": -15.58,
+    "net_mean_delta_pct": -12.8
+  },
+  "breadth": {
+    "names_per_day": 8.71,
+    "single_name_sd_bp": 665.0,
+    "idio_floor_sd_bp": 225.3,
+    "observed_sd_bp": 343.2,
+    "ir_if_pure_idio": 7.78,
+    "market_share_of_variance": 0.141,
+    "market_explained_pct": 14.1,
+    "market_explained_pct_pool": 77.1
+  },
+  "entry_axis": {
+    "open": {
+      "mean_bp": 121.49,
+      "sd_bp": 343.2,
+      "net_mean_bp": 101.49,
+      "ir": 5.11
+    },
+    "vwap": {
+      "mean_bp": 6.43,
+      "sd_bp": 164.9,
+      "net_mean_bp": -13.57,
+      "ir": -1.19
+    },
+    "return_gap_bp": 115.05,
+    "ir_gap_entry_vs_hedge": 6.3
+  },
+  "regime": {
+    "prior5d_market_tercile": {
+      "low": 43.7,
+      "mid": 46.19,
+      "high": 31.83
+    },
+    "tercile_days": {
+      "low": 121,
+      "mid": 120,
+      "high": 120
+    },
+    "days_used": 361,
+    "excess_mean_bp": 40.58,
+    "prior5d_high_vs_low_bp": -11.87,
+    "prior5d_high_vs_low_ci95_block20": [
+      -36.56,
+      10.8
+    ],
+    "half_split": {
+      "first_half_excess_bp": 36.75,
+      "second_half_excess_bp": 45.64,
+      "first_half_ci95_block20": [
+        26.11,
+        45.28
+      ],
+      "second_half_ci95_block20": [
+        36.22,
+        62.19
+      ]
+    },
+    "by_year": {
+      "2025": {
+        "days": 163,
+        "excess_bp": 37.61
+      },
+      "2026": {
+        "days": 203,
+        "excess_bp": 44.07
+      }
+    },
+    "note": "状态变量用**滞后 5 日**的全市场日内累计，不用当日（当日市场与当日池收益机械相关，拿它分档等于自己证自己）；分档显著性用重定边界的块自举"
+  },
+  "elapsed_s": 18.4,
+  "reading_template": "cohort {cd} 日 / {cc} 只-日、每日 {npd} 只。未对冲：均值 {raw}bp、sd {rawsd}bp、逐回合年化 IR **{ir}**，扣 {cost}bp 权益成本后 {net}bp/回合（对投入资本 {ann}%/年）。把日收益回归到全市场等权日内均值上，beta {beta}（t {t}）、R² {r2} ⇒ 市场只解释方差的 {mpct}%；同一暴露在 654 只/日的池上 beta {pb}、R² {pr2}（解释 {ppct}%）。全样本对冲后：均值 {hm}bp、sd {hsd}bp、IR {hir}（ΔIR 中位 {dir}，P(ΔIR>0) {pz}）；逐日只数 {npd} 只时单只日波动 {ssd}bp，纯 idio 地板 {ifl}bp ⇒ 一个只靠广度、没有 beta 的 组合 IR 上界约 {irid}。对冲一回合要付 {hc}bp/名义（平今 {pjt}bp + 开 {op}bp + 滑点 {sl}bp），净均值变化 {dnet}bp（{dnetp}%）。滚动 60 日 beta（{rn} 日）在 {bmin}–{bmax} 之间、sd {bsd}，用它对冲后 IR {rir}。regime：按事前 5 日市场分三档，池−非池超额是 {r1}/{rmid}/{r3}bp，高−低 {rh}bp、CI {rci}；前半段 {h1}bp（CI {h1ci}）对后半段 {h2}bp（CI {h2ci}）。同一组合只把成交价从 open 换成 VWAP：均值 {vm}bp（均值收益差 {rgap}bp）、IR **{vir}** —— 入场价这一格值 {vgap} 个 IR 点，而对冲这一格只值 {dh}。",
+  "reading_fields": {
+    "cd": "panel.cohort_days",
+    "cc": "panel.cohort_cells",
+    "npd": "panel.cohort_names_per_day",
+    "raw": "unhedged.mean_bp",
+    "rawsd": "unhedged.sd_bp",
+    "ir": "unhedged.ir_per_round_annualized",
+    "cost": "cost.equity_round_bp",
+    "net": "unhedged.net_mean_after_equity_cost_bp",
+    "ann": "unhedged.annual_return_on_deployed_pct",
+    "beta": "beta.cohort_vs_ew_market.beta",
+    "t": "beta.cohort_vs_ew_market.t_hac_lag5",
+    "r2": "beta.cohort_vs_ew_market.r2",
+    "mpct": "breadth.market_explained_pct",
+    "ppct": "breadth.market_explained_pct_pool",
+    "pb": "beta.pool_vs_ew_market.beta",
+    "pr2": "beta.pool_vs_ew_market.r2",
+    "hm": "hedge.in_sample_ew.mean_bp",
+    "hsd": "hedge.in_sample_ew.sd_bp",
+    "hir": "hedge.in_sample_ew.ir",
+    "dir": "hedge.ir_delta_median",
+    "pz": "hedge.prob_ir_improves",
+    "ssd": "breadth.single_name_sd_bp",
+    "ifl": "breadth.idio_floor_sd_bp",
+    "irid": "breadth.ir_if_pure_idio",
+    "hc": "cost.hedge_round_bp_per_notional",
+    "pjt": "cost.hedge_fee_close_today_bp",
+    "op": "cost.hedge_fee_open_bp",
+    "sl": "cost.hedge_slip_bp",
+    "dnet": "hedge.net_mean_delta_bp",
+    "dnetp": "hedge.net_mean_delta_pct",
+    "rn": "beta.rolling60.n",
+    "bmin": "beta.rolling60.min",
+    "bmax": "beta.rolling60.max",
+    "bsd": "beta.rolling60.sd",
+    "rir": "hedge.oos_rolling60.ir",
+    "r1": "regime.prior5d_market_tercile.low",
+    "rmid": "regime.prior5d_market_tercile.mid",
+    "r3": "regime.prior5d_market_tercile.high",
+    "rh": "regime.prior5d_high_vs_low_bp",
+    "rci": "regime.prior5d_high_vs_low_ci95_block20",
+    "h1": "regime.half_split.first_half_excess_bp",
+    "h1ci": "regime.half_split.first_half_ci95_block20",
+    "h2": "regime.half_split.second_half_excess_bp",
+    "h2ci": "regime.half_split.second_half_ci95_block20",
+    "vm": "entry_axis.vwap.mean_bp",
+    "vir": "entry_axis.vwap.ir",
+    "rgap": "entry_axis.return_gap_bp",
+    "vgap": "entry_axis.ir_gap_entry_vs_hedge",
+    "dh": "hedge.ir_delta_median"
+  },
+  "reading": "cohort 316 日 / 2752 只-日、每日 8.71 只。未对冲：均值 121.49bp、sd 343.2bp、逐回合年化 IR **5.11**，扣 20.0bp 权益成本后 101.49bp/回合（对投入资本 211.5%/年）。把日收益回归到全市场等权日内均值上，beta 1.1（t 7.56）、R² 0.141 ⇒ 市场只解释方差的 14.1%；同一暴露在 654 只/日的池上 beta 1.136、R² 0.771（解释 77.1%）。全样本对冲后：均值 105.91bp、sd 318.1bp、IR 4.81（ΔIR 中位 −0.35，P(ΔIR>0) 0.139）；逐日只数 8.71 只时单只日波动 665.0bp，纯 idio 地板 225.3bp ⇒ 一个只靠广度、没有 beta 的 组合 IR 上界约 7.78。对冲一回合要付 4.34bp/名义（平今 3.45bp + 开 0.23bp + 滑点 0.66bp），净均值变化 −15.58bp（−12.8%）。滚动 60 日 beta（276 日）在 0.45–2.06 之间、sd 0.41，用它对冲后 IR 4.69。regime：按事前 5 日市场分三档，池−非池超额是 43.7/46.19/31.83bp，高−低 −11.87bp、CI [−36.56, 10.8]；前半段 36.75bp（CI [26.11, 45.28]）对后半段 45.64bp（CI [36.22, 62.19]）。同一组合只把成交价从 open 换成 VWAP：均值 6.43bp（均值收益差 115.05bp）、IR **−1.19** —— 入场价这一格值 6.3 个 IR 点，而对冲这一格只值 −0.35。"
+}
