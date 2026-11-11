@@ -48,7 +48,7 @@
     }
   },
   "robustness": {
-    "note": "pen~i1 斜率 0.5 = 日内路径线性（VWAP 在中间）；越接近 1 = 涨幅越集中在开盘",
+    "note": "pen~i1 是 OLS 斜率，不是 mean 比。线性路径的零假设是 slope = 成交量质心 C ≈ 0.404（**不是 0.5**，收盘竞价那 1.03% 已在 C 里）；且该线性模型本身被拒绝（C_eff 中位 0.572 ≠ C 0.404）。by_window 的 pen_over_i1 = mean(pen)/mean(i1)，越过 1 的含义是「VWAP 高于收盘」= VWAP→收盘为负，不是「更前载」。见 `_diag_l1_vwap_curvature.py` / `_diag_l1_gapset_audit.py`。",
     "market_wide": {
       "n_stock_days": 2000524,
       "slope_pen_on_i1": 0.658,
@@ -169,5 +169,5 @@
     },
     "breakeven_net_bp_for_5pct_pov": 3.6
   },
-  "elapsed_s": 14.7
+  "elapsed_s": 13.6
 }

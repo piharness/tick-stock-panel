@@ -249,17 +249,21 @@
       "n": 687,
       "median_C_eff": 0.5719,
       "median_C_minus_C_eff": 0.1519,
+      "median_C_eff_minus_C": 0.1519,
       "share_C_eff_gt_C": 0.645,
       "median_gap_up_days": 0.2266,
       "median_gap_down_days": 0.1249,
-      "small_sample_slope": 0.576
+      "small_sample_slope": 0.576,
+      "reading": "线性路径要求 C_eff == C。实际中位差 +0.152、64.5% 的日子 C_eff 更高 ⇒ 线性模型被数据拒绝（路径是「快速下探后走平」）。于是 0.658 只作投影系数，不能读成时间质心；前载幅度不能拿 0.658-0.404 当量（那是被拒绝模型的残差）。"
     },
     "linear_path_null": {
-      "comment": "线性路径下 slope = 成交量质心；再叠加收盘竞价权重 w 后 = C*(1-w) + w",
+      "comment": "线性路径下 slope **就是**成交量质心 C。收盘竞价那 1.03% 的权重已经在 C 里，再写 C*(1-w)+w 是把同一段权重加第二遍 —— 旧产物的 0.410 由此而来。",
       "C_median": 0.4039,
       "w_close_median": 0.0103,
-      "null_slope_with_auction": 0.41
+      "null_slope": 0.4039,
+      "null_slope_with_auction": 0.41,
+      "double_counted_legacy": 0.41
     }
   },
-  "elapsed_s": 14.4
+  "elapsed_s": 14.7
 }

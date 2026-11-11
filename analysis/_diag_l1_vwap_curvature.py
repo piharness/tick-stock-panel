@@ -344,18 +344,27 @@ def minute_null() -> dict:
             "n": int(cs.size),
             "median_C_eff": round(float(np.median(ce)), 4),
             "median_C_minus_C_eff": round(float(np.median(ce - cs)), 4),
+            "median_C_eff_minus_C": round(float(np.median(ce - cs)), 4),
             "share_C_eff_gt_C": round(float((ce > cs).mean()), 3),
             "median_gap_up_days": round(float(np.median((ce - cs)[up])), 4),
             "median_gap_down_days": round(float(np.median((ce - cs)[~up])), 4),
             "small_sample_slope": round(float(np.polyfit(sub["i1d"].to_numpy() * 1e4,
                                                          sub["p_min"].to_numpy() * 1e4, 1)[0]), 3),
+            "reading": "线性路径要求 C_eff == C。实际中位差 +0.152、64.5% 的日子 C_eff 更高 "
+                       "⇒ 线性模型被数据拒绝（路径是「快速下探后走平」）。于是 0.658 只作投影系数，"
+                       "不能读成时间质心；前载幅度不能拿 0.658-0.404 当量（那是被拒绝模型的残差）。",
         },
         "linear_path_null": {
-            "comment": "线性路径下 slope = 成交量质心；再叠加收盘竞价权重 w 后 = C*(1-w) + w",
+            "comment": "线性路径下 slope **就是**成交量质心 C。收盘竞价那 1.03% 的权重已经在 C 里，"
+                       "再写 C*(1-w)+w 是把同一段权重加第二遍 —— 旧产物的 0.410 由此而来。",
             "C_median": q("centroid", .5),
             "w_close_median": q("s_close_auction", .5),
+            "null_slope": q("centroid", .5),
+            # 旧键保留（老引用不会 KeyError），值是被撤回的双计版本
             "null_slope_with_auction": round(q("centroid", .5) * (1 - q("s_close_auction", .5))
                                              + q("s_close_auction", .5), 4),
+            "double_counted_legacy": round(q("centroid", .5) * (1 - q("s_close_auction", .5))
+                                           + q("s_close_auction", .5), 4),
         },
     }
 

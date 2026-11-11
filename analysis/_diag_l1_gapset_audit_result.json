@@ -1,0 +1,144 @@
+{
+  "purpose": "缺口池 A/C 集合分解、阈值边界 cell、以及「0.00bp」是净值还是值",
+  "sets": {
+    "A_shift_raw": {
+      "tag": "原始 gap + 跨停牌",
+      "cells": 243598,
+      "days": 366,
+      "i1_daily_equal_bp": 45.75,
+      "i1_cell_equal_bp": 43.76
+    },
+    "C_cal_adj": {
+      "tag": "日历相邻 + 复权",
+      "cells": 239521,
+      "days": 366,
+      "i1_daily_equal_bp": 47.1,
+      "i1_cell_equal_bp": 44.79
+    },
+    "A_minus_C": {
+      "tag": "只被原始 gap 选中",
+      "cells": 4119,
+      "days": 339,
+      "i1_daily_equal_bp": 6.66,
+      "i1_cell_equal_bp": -16.34
+    },
+    "C_minus_A": {
+      "tag": "只被复权 gap 选中（反向流入）",
+      "cells": 42,
+      "days": 41,
+      "i1_daily_equal_bp": 26.82,
+      "i1_cell_equal_bp": 18.38
+    },
+    "intersection": {
+      "tag": "两者都选中",
+      "cells": 239479,
+      "days": 366,
+      "i1_daily_equal_bp": 47.1,
+      "i1_cell_equal_bp": 44.79
+    },
+    "ex_rights_leg": {
+      "tag": "A\\C 里的除权伪缺口",
+      "cells": 3870,
+      "days": 320,
+      "i1_daily_equal_bp": -7.73,
+      "i1_cell_equal_bp": -20.65
+    },
+    "non_adjacent_leg": {
+      "tag": "A\\C 里的停牌跨日",
+      "cells": 249,
+      "days": 124,
+      "i1_daily_equal_bp": 21.88,
+      "i1_cell_equal_bp": 50.59
+    },
+    "both_legs": {
+      "tag": "同时是除权与停牌",
+      "cells": 0,
+      "days": 0,
+      "i1_daily_equal_bp": 0.0,
+      "i1_cell_equal_bp": 0.0
+    },
+    "D_no_exdiv": {
+      "tag": "A 去掉除权、保留停牌",
+      "cells": 239728,
+      "days": 366,
+      "i1_daily_equal_bp": 47.1,
+      "i1_cell_equal_bp": 44.8
+    },
+    "D_no_exdiv_no_susp": {
+      "tag": "D 再去掉停牌（= C 减去反向 42）",
+      "cells": 239479,
+      "days": 366,
+      "i1_daily_equal_bp": 47.1,
+      "i1_cell_equal_bp": 44.79
+    }
+  },
+  "identity": {
+    "cells_A": 243598,
+    "cells_C": 239521,
+    "net_A_minus_C": 4077,
+    "legs_sum": 4119,
+    "legs_intersection": 0,
+    "reverse_flow_C_minus_A": 42,
+    "check_legs_sum_minus_reverse": 4077,
+    "share_ex_rights_of_A_minus_C": 0.9395
+  },
+  "threshold_edge": {
+    "eps_band": 1e-09,
+    "reverse_cells": 42,
+    "reverse_abs_eps_median": 8.673617379884035e-18,
+    "reverse_abs_eps_max": 1.196959198423997e-16,
+    "reverse_within_band": 42,
+    "forward_cells": 4119,
+    "forward_abs_eps_median": 0.010906423343451257,
+    "forward_within_band": 35,
+    "forward_gcaladj_null": 249,
+    "forward_raw_within_band": 37,
+    "all_within_band": 77
+  },
+  "net_vs_value_bp": {
+    "A_daily": 45.75,
+    "D_daily": 47.1,
+    "D_minus_249_daily": 47.1,
+    "C_daily": 47.1,
+    "leg_ex_rights": 1.347,
+    "leg_drop_249_only": 0.007,
+    "leg_add_reverse_42": -0.001,
+    "leg_non_adjacent_net_of_reverse": 0.006,
+    "total_A_to_C": 1.353,
+    "additivity_residual": 0.0,
+    "non_adjacent_cells_value_daily_bp": 21.88,
+    "non_adjacent_cells_value_cell_bp": 50.59,
+    "reverse_cells_value_daily_bp": 26.82,
+    "reverse_cells_value_cell_bp": 18.38,
+    "reading": "249 个 cell 自身 +21.88bp，但去掉它们只动 +0.008bp；42 个反向 cell 加回来 −0.005bp ⇒ 净值 0.00 是两个方向抵消，不是它们值 0"
+  },
+  "pool_mean_caliber": {
+    "A_screen": {
+      "cells": 243598,
+      "cells_after_screen": 243584,
+      "out_of_band": 14,
+      "iv_mean_bp": 1028.01,
+      "iv_median_bp": -13.43,
+      "iv_daily_equal_bp": 134.78,
+      "iv_daily_equal_after_screen_bp": -0.3,
+      "iv_winsor_mean_bp": -6.96,
+      "iv_mean_after_screen_bp": -6.25,
+      "iv_median_after_screen_bp": -13.43,
+      "mean_shift_due_to_screen_bp": 1034.3
+    },
+    "C_screen": {
+      "cells": 239521,
+      "cells_after_screen": 239508,
+      "out_of_band": 13,
+      "iv_mean_bp": 1045.62,
+      "iv_median_bp": -13.74,
+      "iv_daily_equal_bp": 134.75,
+      "iv_daily_equal_after_screen_bp": -0.32,
+      "iv_winsor_mean_bp": -6.96,
+      "iv_mean_after_screen_bp": -6.24,
+      "iv_median_after_screen_bp": -13.75,
+      "mean_shift_due_to_screen_bp": 1051.9
+    }
+  },
+  "elapsed_s": 1.3
+}
