@@ -24,6 +24,44 @@
     "n_cells_out_of_band": 0,
     "names_per_day": 8.71
   },
+  "cohort_by_pool_size_tercile": {
+    "pool_small": {
+      "days": 106,
+      "mean_pool_names": 233.6,
+      "cohort_i1_day_bp": 117.64,
+      "cohort_i1_day_sd_bp": 354.2,
+      "cohort_i1_day_se_bp": 34.4,
+      "cohort_net_day_after_cost_bp": 97.64,
+      "cohort_excess_day_bp": 98.81,
+      "cohort_excess_day_sd_bp": 322.8,
+      "cohort_excess_day_se_bp": 31.4,
+      "nonpool_day_bp": 18.83
+    },
+    "pool_mid": {
+      "days": 105,
+      "mean_pool_names": 417.2,
+      "cohort_i1_day_bp": 93.75,
+      "cohort_i1_day_sd_bp": 361.8,
+      "cohort_i1_day_se_bp": 35.3,
+      "cohort_net_day_after_cost_bp": 73.75,
+      "cohort_excess_day_bp": 105.23,
+      "cohort_excess_day_sd_bp": 347.5,
+      "cohort_excess_day_se_bp": 33.9,
+      "nonpool_day_bp": -11.47
+    },
+    "pool_large": {
+      "days": 105,
+      "mean_pool_names": 1247.3,
+      "cohort_i1_day_bp": 153.1,
+      "cohort_i1_day_sd_bp": 312.2,
+      "cohort_i1_day_se_bp": 30.5,
+      "cohort_net_day_after_cost_bp": 133.1,
+      "cohort_excess_day_bp": 148.17,
+      "cohort_excess_day_sd_bp": 298.1,
+      "cohort_excess_day_se_bp": 29.1,
+      "nonpool_day_bp": 4.93
+    }
+  },
   "daily_bp": {
     "open_entry": 121.5,
     "vwap_entry": 6.4,
@@ -48,7 +86,7 @@
     }
   },
   "robustness": {
-    "note": "pen~i1 是 OLS 斜率，不是 mean 比。线性路径的零假设是 slope = 成交量质心 C ≈ 0.404（**不是 0.5**，收盘竞价那 1.03% 已在 C 里）；且该线性模型本身被拒绝（C_eff 中位 0.572 ≠ C 0.404）。by_window 的 pen_over_i1 = mean(pen)/mean(i1)，越过 1 的含义是「VWAP 高于收盘」= VWAP→收盘为负，不是「更前载」。见 `_diag_l1_vwap_curvature.py` / `_diag_l1_gapset_audit.py`。",
+    "note": "pen~i1 是 OLS 斜率，不是 mean 比。线性路径的零假设是 slope = 成交量质心 C ≈ 0.404（**不是 0.5**，收盘竞价那 1.03% 已在 C 里）；且该线性模型本身被拒绝（C_eff 中位 0.572 ≠ C 0.404）。pen_over_i1 = mean(pen)/mean(i1)，越过 1 的含义是「VWAP 高于收盘」= VWAP→收盘为负，不是「更前载」。见 `_diag_l1_vwap_curvature.py` / `_diag_l1_gapset_audit.py`。",
     "market_wide": {
       "n_stock_days": 2000524,
       "slope_pen_on_i1": 0.658,
@@ -70,73 +108,188 @@
     },
     "gap_pool_by_window": {
       "full": {
-        "n_cells": 243584,
-        "open_entry_bp": 43.8,
-        "vwap_entry_bp": -6.2,
-        "pen_over_i1": 1.091
+        "n_cells": 239521,
+        "n_cells_in_band": 239508,
+        "n_days": 366,
+        "open_entry_cell_bp": 44.79,
+        "open_entry_day_bp": 47.1,
+        "vwap_entry_cell_bp": -6.24,
+        "vwap_entry_day_bp": -0.32,
+        "pen_over_i1_in_band": 1.088,
+        "pen_over_i1_all_cells": 1.086
       },
       "2025": {
-        "n_cells": 72922,
-        "open_entry_bp": 67.4,
-        "vwap_entry_bp": 5.3,
-        "pen_over_i1": 0.887
+        "n_cells": 70963,
+        "n_cells_in_band": 70961,
+        "n_days": 163,
+        "open_entry_cell_bp": 69.89,
+        "open_entry_day_bp": 52.5,
+        "vwap_entry_cell_bp": 5.64,
+        "vwap_entry_day_bp": 2.38,
+        "pen_over_i1_in_band": 0.886,
+        "pen_over_i1_all_cells": 0.885
       },
       "2026": {
-        "n_cells": 170662,
-        "open_entry_bp": 33.7,
-        "vwap_entry_bp": -11.2,
-        "pen_over_i1": 1.266
+        "n_cells": 168558,
+        "n_cells_in_band": 168547,
+        "n_days": 203,
+        "open_entry_cell_bp": 34.22,
+        "open_entry_day_bp": 42.77,
+        "vwap_entry_cell_bp": -11.24,
+        "vwap_entry_day_bp": -2.49,
+        "pen_over_i1_in_band": 1.263,
+        "pen_over_i1_all_cells": 1.259
       },
       "last21": {
-        "n_cells": 30351,
-        "open_entry_bp": 57.4,
-        "vwap_entry_bp": 4.8,
-        "pen_over_i1": 0.89
+        "n_cells": 30239,
+        "n_cells_in_band": 30233,
+        "n_days": 21,
+        "open_entry_cell_bp": 57.61,
+        "open_entry_day_bp": 27.47,
+        "vwap_entry_cell_bp": 4.76,
+        "vwap_entry_day_bp": -7.38,
+        "pen_over_i1_in_band": 0.892,
+        "pen_over_i1_all_cells": 0.879
       }
     },
-    "weighting": "by_window 是 cell 等权；gap_pool_unselected 是逐日等权，两者的 open_entry_bp 不同不是矛盾"
+    "gap_pool_by_window_a_legacy": {
+      "full": {
+        "n_cells": 243598,
+        "n_cells_in_band": 243584,
+        "n_days": 366,
+        "open_entry_cell_bp": 43.76,
+        "open_entry_day_bp": 45.75,
+        "vwap_entry_cell_bp": -6.25,
+        "vwap_entry_day_bp": -0.3,
+        "pen_over_i1_in_band": 1.091,
+        "pen_over_i1_all_cells": 1.089
+      },
+      "2025": {
+        "n_cells": 72924,
+        "n_cells_in_band": 72922,
+        "n_days": 163,
+        "open_entry_cell_bp": 67.4,
+        "open_entry_day_bp": 50.3,
+        "vwap_entry_cell_bp": 5.3,
+        "vwap_entry_day_bp": 2.32,
+        "pen_over_i1_in_band": 0.887,
+        "pen_over_i1_all_cells": 0.887
+      },
+      "2026": {
+        "n_cells": 170674,
+        "n_cells_in_band": 170662,
+        "n_days": 203,
+        "open_entry_cell_bp": 33.66,
+        "open_entry_day_bp": 42.09,
+        "vwap_entry_cell_bp": -11.18,
+        "vwap_entry_day_bp": -2.4,
+        "pen_over_i1_in_band": 1.266,
+        "pen_over_i1_all_cells": 1.261
+      },
+      "last21": {
+        "n_cells": 30357,
+        "n_cells_in_band": 30351,
+        "n_days": 21,
+        "open_entry_cell_bp": 57.45,
+        "open_entry_day_bp": 27.68,
+        "vwap_entry_cell_bp": 4.82,
+        "vwap_entry_day_bp": -6.96,
+        "pen_over_i1_in_band": 0.89,
+        "pen_over_i1_all_cells": 0.878
+      }
+    },
+    "gap_caliber": {
+      "C": "gap = open / prev_close_adj − 1，prev_close_adj 取日历相邻前一交易日（复权）",
+      "A_legacy": "gap = raw_open / raw_close.shift(1) − 1，上一「有数据日」，含除权与停牌",
+      "why_C": "A 多出的 4,077 个 cell 里 3,870 个是除权伪缺口、249 个是停牌跨日；A→C 让池均值 +1.35bp（详见 _diag_l1_gapset_audit.py 的 A_minus_C）"
+    },
+    "weighting": {
+      "cell": "池内每个 (symbol, date) 等权 ⇒ 大池日权重高",
+      "day": "先日内等权、再对日等权 ⇒ 每个交易日等权",
+      "rule": "键名必须带 cell_bp/day_bp；两者不同不是矛盾，是两种口径"
+    },
+    "domain": {
+      "in_band": "VWAP 相关的量（vwap_entry、entry_price_penalty、pen_over_i1_in_band）",
+      "all_cells": "open→close 与 pen_over_i1_all_cells；curvature 的 ratio_of_means 用的是这一版",
+      "why_split": "13 个 vwap∉[low,high] 的 cell 只污染分母含 vwap 的均值；两个定义域都落盘，引用时必须说清是哪一版（差 ≤0.004，不改变任何结论）"
+    }
   },
   "gap_pool_unselected": {
+    "caliber": "C",
+    "caliber_definition": "gap = open / prev_close_adj − 1，日历相邻前一交易日（复权）",
     "n_days": 366,
-    "n_cells": 243584,
-    "open_entry_bp": 45.7,
-    "vwap_entry_bp": -0.3,
-    "entry_price_penalty_bp": 43.5,
-    "share_of_gross_kept_by_vwap": -0.0065,
-    "by_gap_depth": [
-      {
-        "bucket": "q1",
-        "n": 60909,
-        "gap_bp": -431.0,
-        "open_entry_bp": 88.2,
-        "vwap_entry_bp": -4.1,
-        "entry_price_penalty_bp": 88.8
-      },
-      {
-        "bucket": "q2",
-        "n": 60889,
-        "gap_bp": -197.0,
-        "open_entry_bp": 36.2,
-        "vwap_entry_bp": -8.6,
-        "entry_price_penalty_bp": 42.5
-      },
-      {
-        "bucket": "q3",
-        "n": 60890,
-        "gap_bp": -142.0,
-        "open_entry_bp": 25.8,
-        "vwap_entry_bp": -7.4,
-        "entry_price_penalty_bp": 31.5
-      },
-      {
-        "bucket": "q4",
-        "n": 60896,
-        "gap_bp": -111.0,
-        "open_entry_bp": 24.8,
-        "vwap_entry_bp": -4.9,
-        "entry_price_penalty_bp": 28.2
+    "n_cells": 239521,
+    "n_cells_in_band": 239508,
+    "n_cells_out_of_band": 13,
+    "open_entry_cell_bp": 44.79,
+    "open_entry_day_bp": 47.1,
+    "vwap_entry_cell_bp": -6.24,
+    "vwap_entry_day_bp": -0.32,
+    "vwap_entry_cell_median_in_band_bp": -13.75,
+    "vwap_entry_cell_median_all_cells_bp": -13.74,
+    "vwap_entry_cell_median_abs_gap_bp": 0.0047,
+    "entry_price_penalty_cell_bp": 48.75,
+    "entry_price_penalty_day_bp": 44.83,
+    "share_of_gross_kept_by_vwap_cell": -0.139,
+    "share_of_gross_kept_by_vwap_day": -0.007,
+    "vwap_unfiltered": {
+      "cell_bp": 1045.62,
+      "day_bp": 134.75,
+      "why": "13 个 vwap∉[low,high] 的 cell 把均值抬到千位量级；中位不动 ⇒ VWAP 量必须 in_band"
+    },
+    "a_legacy": {
+      "n_days": 366,
+      "n_cells": 243598,
+      "n_cells_in_band": 243584,
+      "n_cells_out_of_band": 14,
+      "open_entry_cell_bp": 43.76,
+      "open_entry_day_bp": 45.75,
+      "vwap_entry_cell_bp": -6.25,
+      "vwap_entry_day_bp": -0.3,
+      "vwap_entry_cell_median_in_band_bp": -13.43,
+      "vwap_entry_cell_median_all_cells_bp": -13.43,
+      "vwap_entry_cell_median_abs_gap_bp": 0.0044,
+      "entry_price_penalty_cell_bp": 47.75,
+      "entry_price_penalty_day_bp": 43.5,
+      "share_of_gross_kept_by_vwap_cell": -0.143,
+      "share_of_gross_kept_by_vwap_day": -0.006,
+      "vwap_unfiltered": {
+        "cell_bp": 1028.01,
+        "day_bp": 134.78,
+        "why": "13 个 vwap∉[low,high] 的 cell 把均值抬到千位量级；中位不动 ⇒ VWAP 量必须 in_band"
       }
-    ]
+    },
+    "a_minus_c_open_entry_day_bp": -1.35,
+    "gap_pool_by_depth": {
+      "role": "reference",
+      "caliber": "C",
+      "source": "_diag_l1_vwap_curvature_result.json#gap_pool_by_depth",
+      "n_cells_in_band": 239508,
+      "note_template": "深度四档不在本脚本算：同一张表由 curvature 按 C 口径产出（{n} cell，q1…q4）。旧表用的是 A 口径，除权伪缺口会流进最深档，已删除；本池 N 与之相等是测试断言，不是抄写。",
+      "note_fields": {
+        "n": "n_cells_in_band"
+      },
+      "note": "深度四档不在本脚本算：同一张表由 curvature 按 C 口径产出（239508 cell，q1…q4）。旧表用的是 A 口径，除权伪缺口会流进最深档，已删除；本池 N 与之相等是测试断言，不是抄写。"
+    },
+    "reading_template": "全缺口池 C 口径（日历相邻 + 复权）：{n_days} 日 / {n_cells} cell，open→close 逐日等权 {open_day}bp、cell 等权 {open_cell}bp；同一批 cell 上 VWAP→close 的 cell 中位 {iv_med_all}bp（全池）/ {iv_med}bp（in_band）、筛后均值 {iv_cell}bp、逐日等权 {iv_day}bp。{n_out} 个 in_band 越界 cell 能把 VWAP→close 的 cell 均值抬到 {iv_raw}bp、逐日等权抬到 {iv_raw_day}bp，而中位两个定义域只差 {iv_med_gap}bp。A 口径（{a_cells} cell）的 {a_open}bp 已作废，与 C 差 {a_minus_c}bp。",
+    "reading_fields": {
+      "n_days": "n_days",
+      "n_cells": "n_cells",
+      "open_day": "open_entry_day_bp",
+      "open_cell": "open_entry_cell_bp",
+      "iv_med": "vwap_entry_cell_median_in_band_bp",
+      "iv_med_all": "vwap_entry_cell_median_all_cells_bp",
+      "iv_med_gap": "vwap_entry_cell_median_abs_gap_bp",
+      "iv_cell": "vwap_entry_cell_bp",
+      "iv_day": "vwap_entry_day_bp",
+      "iv_raw": "vwap_unfiltered.cell_bp",
+      "iv_raw_day": "vwap_unfiltered.day_bp",
+      "n_out": "n_cells_out_of_band",
+      "a_cells": "a_legacy.n_cells",
+      "a_open": "a_legacy.open_entry_day_bp",
+      "a_minus_c": "a_minus_c_open_entry_day_bp"
+    },
+    "reading": "全缺口池 C 口径（日历相邻 + 复权）：366 日 / 239521 cell，open→close 逐日等权 47.1bp、cell 等权 44.79bp；同一批 cell 上 VWAP→close 的 cell 中位 −13.74bp（全池）/ −13.75bp（in_band）、筛后均值 −6.24bp、逐日等权 −0.32bp。13 个 in_band 越界 cell 能把 VWAP→close 的 cell 均值抬到 1045.62bp、逐日等权抬到 134.75bp，而中位两个定义域只差 0.0047bp。A 口径（243598 cell）的 45.75bp 已作废，与 C 差 −1.35bp。"
   },
   "annualized": {
     "signals_per_year": 208.4,
@@ -169,5 +322,5 @@
     },
     "breakeven_net_bp_for_5pct_pov": 3.6
   },
-  "elapsed_s": 13.6
+  "elapsed_s": 15.5
 }

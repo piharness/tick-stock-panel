@@ -54,6 +54,7 @@ import asymmetry_control as ac  # noqa: E402
 import asymmetry_probe as ap  # noqa: E402
 from _diag_base_t0 import leg  # noqa: E402
 from _diag_gaprev import N_DECILE  # noqa: E402
+from _artifact_guard import assert_clean, render_reading  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = Path(__file__).resolve().parent / "_diag_l1_vwap_curvature_result.json"
@@ -248,7 +249,7 @@ def outlier_sensitivity(shift_pool: pl.DataFrame, cohort: pl.DataFrame) -> dict:
             float(pl.DataFrame({"di": df["di"], "iv": v}).group_by("di")
                   .agg(pl.col("iv").mean())["iv"].mean()), 2)
         return out
-    return {
+    out = {
         "pool_before_screen": dict(blk(shift_pool), cells=shift_pool.height),
         "pool_after_screen": dict(blk(good), cells=good.height),
         "out_of_band_cells": {
@@ -259,8 +260,11 @@ def outlier_sensitivity(shift_pool: pl.DataFrame, cohort: pl.DataFrame) -> dict:
             "mean_shift_due_to_screen_bp": round(float(iv_all.mean() - bp(good["iv"]).mean()), 1),
         },
         "cohort": dict(blk(cohort), cells=cohort.height, out_of_band=int((~cohort["in_band"]).sum())),
-        "note": "均值对 14 个越界 cell 的敏感度；中位与 1/99 缩尾给的是另一个数",
+        "note_template": "均值对 {n} 个越界 cell 的敏感度；中位与 1/99 缩尾给的是另一个数",
+        "reading_fields": {"n": "out_of_band_cells.cells"},
     }
+    out["note"] = render_reading(out, stem="note")
+    return out
 
 
 def minute_null() -> dict:
@@ -311,7 +315,7 @@ def minute_null() -> dict:
         (pl.col("tv") / 1.0).len().alias("_n")]).sort("date")
     j_all = mi.join(d, on=["date", "symbol"], how="inner").with_columns(
         (pl.col("ta") / pl.col("amount") - 1.0).alias("amt_ratio"))
-    return {
+    out = {
         "coverage": {
             "partitions": mi["date"].n_unique(),
             "symbol_days": mi.height,
@@ -342,21 +346,38 @@ def minute_null() -> dict:
                             "p90": q("s_close_auction", .9)},
         "implied_centroid": {
             "n": int(cs.size),
+            "median_C": round(float(np.median(cs)), 4),
             "median_C_eff": round(float(np.median(ce)), 4),
-            "median_C_minus_C_eff": round(float(np.median(ce - cs)), 4),
+            # 镜像键必须反号：D8 是这两行都写成 median(ce-cs)，两个键同号 +0.1519
+            "median_C_minus_C_eff": round(float(np.median(cs - ce)), 4),
             "median_C_eff_minus_C": round(float(np.median(ce - cs)), 4),
+            # 「差的中位」≠「中位的差」：文档写「差 0.17」指的是这个，不是上面那个
+            "diff_of_medians_C_eff_minus_C": round(
+                float(np.median(ce) - np.median(cs)), 4),
             "share_C_eff_gt_C": round(float((ce > cs).mean()), 3),
             "median_gap_up_days": round(float(np.median((ce - cs)[up])), 4),
             "median_gap_down_days": round(float(np.median((ce - cs)[~up])), 4),
             "small_sample_slope": round(float(np.polyfit(sub["i1d"].to_numpy() * 1e4,
                                                          sub["p_min"].to_numpy() * 1e4, 1)[0]), 3),
-            "reading": "线性路径要求 C_eff == C。实际中位差 +0.152、64.5% 的日子 C_eff 更高 "
-                       "⇒ 线性模型被数据拒绝（路径是「快速下探后走平」）。于是 0.658 只作投影系数，"
-                       "不能读成时间质心；前载幅度不能拿 0.658-0.404 当量（那是被拒绝模型的残差）。",
+            "reading_template": (
+                "线性路径要求 C_eff == C。实际「中位差」{median_C_eff_minus_C:+.3f}"
+                "（逐日求差再取中位）、{share_C_eff_gt_C:.1%} 的日子 C_eff 更高；"
+                "而「差的中位」是另一个数 {diff_of_medians_C_eff_minus_C:+.3f}"
+                "（{median_C_eff:.4f} − {median_C:.4f}），两者不是同一个统计量，"
+                "旧文档的 0.17 指后者 ⇒ 线性模型被数据拒绝（路径是「快速下探后走平」）。"
+                "于是 0.658 只作投影系数，不能读成时间质心；前载幅度不能拿 0.658-0.404 "
+                "当量（那是被拒绝模型的残差）。"),
+            "reading_fields": [
+                "median_C_eff_minus_C", "share_C_eff_gt_C",
+                "diff_of_medians_C_eff_minus_C", "median_C_eff", "median_C",
+            ],
         },
         "linear_path_null": {
-            "comment": "线性路径下 slope **就是**成交量质心 C。收盘竞价那 1.03% 的权重已经在 C 里，"
-                       "再写 C*(1-w)+w 是把同一段权重加第二遍 —— 旧产物的 0.410 由此而来。",
+            "comment_template": (
+                "线性路径下 slope **就是**成交量质心 C。收盘竞价那 {w:.2%} 的权重已经在 C 里，"
+                "再写 C*(1-w)+w 是把同一段权重加第二遍 —— 旧产物的 {legacy:.3f} 由此而来。"),
+            "reading_fields": {"w": "w_close_median", "legacy": "double_counted_legacy"},
+            "n_symbol_days": full.height,   # 0.4039 的样本是 747 只-日；687 那份是 0.4042
             "C_median": q("centroid", .5),
             "w_close_median": q("s_close_auction", .5),
             "null_slope": q("centroid", .5),
@@ -367,6 +388,13 @@ def minute_null() -> dict:
                                            + q("s_close_auction", .5), 4),
         },
     }
+    out["linear_path_null"]["comment"] = render_reading(out["linear_path_null"], stem="comment")
+    ic = out["implied_centroid"]
+    if abs(ic["median_C_minus_C_eff"] + ic["median_C_eff_minus_C"]) > 1e-12:
+        raise SystemExit("mirror keys not opposite: "
+                         f"{ic['median_C_minus_C_eff']} / {ic['median_C_eff_minus_C']}")
+    ic["reading"] = render_reading(ic)
+    return out
 
 
 def build_cohort() -> pl.DataFrame:
@@ -431,6 +459,7 @@ def main() -> None:
         "elapsed_s": 0.0,
     }
     out["elapsed_s"] = round(time.time() - t0, 1)
+    assert_clean(out, OUT.name)      # 散文/镜像键/符号：写盘前
     OUT.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print("== gap 定义 ==")

@@ -41,6 +41,7 @@ from pathlib import Path
 import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _artifact_guard import assert_clean, render_reading  # noqa: E402
 from _diag_l1_vwap_curvature import GAP_MAX, load_daily  # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "_diag_l1_gapset_audit_result.json"
@@ -56,6 +57,86 @@ def daily_bp(df: pl.DataFrame) -> float:
 
 def cell_bp(df: pl.DataFrame) -> float:
     return float(df["i1"].mean() * 1e4) if df.height else 0.0
+
+
+def check_leg_cover(n_aminusc: int, n_ex: int, n_non: int, n_both: int) -> None:
+    """|A\\C| == |除权| + |停牌| − |交集|。
+
+    **这条不是恒等式**：它断言 A\\C 的每个成员要么复权价没跌破阈值（除权腿）、要么
+    算不出复权 gap（停牌腿）。若某个 cell 的 g_cal_adj 因为**别的原因**为空，
+    这个等式立刻破 —— 反证见 `_test_artifact_guard.py::case_leg_cover_wrong_leg`。
+    """
+    if n_aminusc != n_ex + n_non - n_both:
+        raise SystemExit(
+            f"leg_cover broke: |A\\C|={n_aminusc} != {n_ex}+{n_non}-{n_both}")
+
+
+def check_cover_exact(aminusc: pl.DataFrame, ex: pl.DataFrame, non: pl.DataFrame) -> None:
+    """集合级版本：A\\C == 除权腿 ∪ 停牌腿（逐键，不只是计数）。"""
+    key = ["symbol", "date"]
+    legs = pl.concat([ex.select(key), non.select(key)]).unique()
+    only_legs = legs.join(aminusc.select(key), on=key, how="anti").height
+    only_aminusc = aminusc.join(legs, on=key, how="anti").height
+    if only_legs or only_aminusc:
+        raise SystemExit(
+            f"cover broke: 腿有而 A\\C 无 {only_legs} 个，A\\C 有而腿无 {only_aminusc} 个")
+
+
+def check_null_is_suspension(m: pl.DataFrame) -> None:
+    """算不出复权 gap 的 A 成员，必须**恰好**是跨停牌 —— 这是可证的实质命题，不是恒等式。"""
+    nulls = m.filter(pl.col("g_shift_raw") <= GAP_MAX)["g_cal_adj"].null_count()
+    susp = m.filter((pl.col("g_shift_raw") <= GAP_MAX) & (pl.col("day_gap") > 1))
+    if susp["g_cal_adj"].null_count() != susp.height:
+        raise SystemExit("null_is_suspension broke: 停牌腿里有非空 g_cal_adj")
+    if nulls != susp.height:
+        raise SystemExit(
+            f"null_is_suspension broke: A 里 g_cal_adj 为空 {nulls} 个，"
+            f"但跨停牌只有 {susp.height} 个 ⇒ 有 {nulls - susp.height} 个空值不是停牌造成")
+
+
+def dilution(super_df: pl.DataFrame, sub_df: pl.DataFrame) -> dict:
+    """逐日权重稀释的**精确**分解，用来取代「两个方向抵消」那句话。
+
+    D_t = 超集在 t 日的均值，n_t 个 cell；去掉 S 的 k_t 个（均值 s_t）后
+        noS_t = D_t + w_t·(D_t − s_t),  w_t = k_t/(n_t−k_t)
+    ⇒ mean_t(noS_t) − mean_t(D_t) = mean_t[ w_t·(D_t − s_t) ]（两侧同为全部交易日）。
+    注意符号：去掉均值**更低**的 cell 才抬高整体均值，所以右边为正对应「去掉后变大」。
+
+    这条走的是**逐日**路径，与 `daily_bp()` 的两次整体均值是两条独立代码路径，
+    所以 `|pred − (rest_bp − super_bp)| < 0.01` 是一次真检查，不是代数移项。
+
+    `pred != obs` 超过 0.01 时这里就终止（写盘前）。下面几个是**机制**描述量：
+    - `w_median_pct`：日权重中位 —— 用中位不用均值，因为 k 的分布右偏（max 35 个 cell）。
+    - `gap_median/p10/p90_bp`：当日池均值与腿内均值之差。它**不是**小量：中位 +63bp、
+      p10/p90 = −520/+472bp（腿内只有约 2 个 cell，方差极大）。所以 0.007 不是
+      「21.88 被权重稀释」一次乘出来的，而是**小权重 + 跨日符号混合**两件事叠加；
+      `w_mean × gap_mean = 0.15bp ≠ 0.007bp` 就是证据（均值与乘积不同序）。
+    """
+    key = ["symbol", "date"]
+    rest = super_df.join(sub_df.select(key), on=key, how="anti")
+    g = super_df.group_by("di").agg(pl.col("i1").mean().alias("mD"), pl.len().alias("n"))
+    h = sub_df.group_by("di").agg(pl.col("i1").mean().alias("mS"), pl.len().alias("k"))
+    j = (g.join(h, on="di", how="left")
+         .with_columns(pl.col("k").fill_null(0), pl.col("mS").fill_null(0.0)))
+    j = j.with_columns((pl.col("k") / (pl.col("n") - pl.col("k"))).alias("w"))
+    j = j.with_columns((pl.col("mD") - pl.col("mS")).alias("gp"))
+    aff = j.filter(pl.col("k") > 0)
+    pred = float((j["w"] * j["gp"]).mean() * 1e4)
+    obs = daily_bp(rest) - daily_bp(super_df)
+    if abs(pred - obs) > 0.01:
+        raise SystemExit(f"dilution identity broke: pred {pred:+.4f} != obs {obs:+.4f}")
+    return {
+        "weight_drop_bp": round(obs, 3),
+        "weight_drop_predicted_bp": round(pred, 3),
+        "affected_days": aff.height,
+        "w_median_pct_of_affected": round(float(aff["w"].median() * 100), 3),
+        "w_mean_pct_of_affected": round(float(aff["w"].mean() * 100), 3),
+        "gap_median_bp": round(float(aff["gp"].median() * 1e4), 1),
+        "gap_p10_bp": round(float(aff["gp"].quantile(0.1) * 1e4), 0),
+        "gap_p90_bp": round(float(aff["gp"].quantile(0.9) * 1e4), 0),
+        "product_of_means_bp": round(
+            float(aff["w"].mean() * aff["gp"].mean() * 1e4), 3),
+    }
 
 
 def stat(tag: str, df: pl.DataFrame) -> dict:
@@ -84,22 +165,17 @@ def main() -> None:
     both = ex_rights.join(non_adj.select(key), on=key, how="semi")
     d = a.join(ex_rights.select(key), on=key, how="anti")   # 去除权、保留停牌
 
-    # --- 不变量 1 & 2：集合闭合 ---
-    if a_minus_c.height != ex_rights.height + non_adj.height - both.height:
-        raise SystemExit(
-            f"invariant1 broke: |A\\C|={a_minus_c.height} != "
-            f"{ex_rights.height}+{non_adj.height}-{both.height}")
-    if a_minus_c.height - c_minus_a.height != a.height - c.height:
-        raise SystemExit(
-            f"invariant2 broke: |A\\C|-|C\\A|={a_minus_c.height}-{c_minus_a.height} "
-            f"!= |A|-|C|={a.height - c.height}")
-    # D 与 C 的差必须正好是「停牌腿 249 出去、反向 42 进来」
-    if d.join(c.select(key), on=key, how="anti").height != non_adj.height:
-        raise SystemExit("invariant2b broke: |D\\C| != |non_adjacent|")
-    if c.join(d.select(key), on=key, how="anti").height != c_minus_a.height:
-        raise SystemExit("invariant2c broke: |C\\D| != |C\\A|")
-    if d.height - c.height != non_adj.height - c_minus_a.height:
-        raise SystemExit("invariant2d broke: |D|-|C| != 249-42")
+    # --- 不变量：只留能失败的 ---
+    # 已删（喂**毫无关系**的随机集合也永远不红，反证实测 2,000/2,000 通过 ⇒ 它们只是注释）：
+    #   |A\C| − |C\A| ≡ |A| − |C|            （集合基数恒等式）
+    #   |D| − |C| ≡ |non_adj| − |C\A|        （上一条的同型）
+    #   (d−a) + (c−d) ≡ c−a                  （同一批浮点数的加减，残差恒为 0）
+    check_leg_cover(a_minus_c.height, ex_rights.height, non_adj.height, both.height)
+    check_cover_exact(a_minus_c, ex_rights, non_adj)
+    check_null_is_suspension(m)
+    # 「交集 0」不是实测项：除权腿要求 g_cal_adj 非空，停牌腿全部为空 ⇒ 结构性恒为 0。
+    if ex_rights["g_cal_adj"].null_count() != 0:
+        raise SystemExit("结构前提破了：除权腿里出现空 g_cal_adj")
 
     # --- 边界 cell：阈值 ±1e-9 ---
     rev_eps = (c_minus_a["g_cal_adj"] - GAP_MAX).abs()
@@ -119,18 +195,19 @@ def main() -> None:
         "all_within_band": int((rev_eps <= EPS_BAND).sum()) + int((fwd_eps <= EPS_BAND).sum()),
     }
 
-    # --- 净值 vs 值：不变量 3 ---
-    # 两个方向分开算：D 去掉 249 → no249；no249 加回 42 → C。
+    # --- 净值 vs 值：改成**可算的**权重分解（D11：原句把「稀释」写成「抵消」）---
     no249 = d.join(non_adj.select(key), on=key, how="anti")
-    if no249.join(c.select(key), on=key, how="anti").height or \
-            c.join(no249.select(key), on=key, how="anti").height != c_minus_a.height:
-        raise SystemExit("invariant3a broke: C != (D - non_adjacent) + C\\A")
+    rest_c = c.join(c_minus_a.select(key), on=key, how="anti")
+    if rest_c.height != no249.height:
+        raise SystemExit(f"wiring broke: C\\反向={rest_c.height} != D\\停牌={no249.height}")
     a_bp, d_bp, c_bp = daily_bp(a), daily_bp(d), daily_bp(c)
     n_bp = daily_bp(no249)
     leg_ex, leg_no = d_bp - a_bp, c_bp - d_bp
     total = c_bp - a_bp
-    if abs((leg_ex + leg_no) - total) > 0.01:
-        raise SystemExit(f"invariant3 broke: legs {leg_ex}+{leg_no} != {total}")
+    dil_drop = dilution(d, non_adj)      # D 去掉 249：这条给出 0.007 的**机制**
+    dil_add = dilution(c, c_minus_a)     # C 加回 42
+    if abs(dil_add["weight_drop_bp"] - (c_bp - n_bp)) > 0.01:
+        raise SystemExit("dilution(add) 与整体均值差不同源")
 
     out = {
         "purpose": "缺口池 A/C 集合分解、阈值边界 cell、以及「0.00bp」是净值还是值",
@@ -152,6 +229,8 @@ def main() -> None:
             "net_A_minus_C": a.height - c.height,
             "legs_sum": ex_rights.height + non_adj.height,
             "legs_intersection": both.height,
+            "legs_intersection_note": "结构性恒为 0：除权腿要求 g_cal_adj 非空、停牌腿全部为空，"
+                                      "不是实测出来的项，公式里不该当被减项读",
             "reverse_flow_C_minus_A": c_minus_a.height,
             "check_legs_sum_minus_reverse": ex_rights.height + non_adj.height - c_minus_a.height,
             "share_ex_rights_of_A_minus_C": round(ex_rights.height / a_minus_c.height, 4),
@@ -172,8 +251,40 @@ def main() -> None:
             "non_adjacent_cells_value_cell_bp": round(cell_bp(non_adj), 2),
             "reverse_cells_value_daily_bp": round(daily_bp(c_minus_a), 2),
             "reverse_cells_value_cell_bp": round(cell_bp(c_minus_a), 2),
-            "reading": "249 个 cell 自身 +21.88bp，但去掉它们只动 +0.008bp；"
-                       "42 个反向 cell 加回来 −0.005bp ⇒ 净值 0.00 是两个方向抵消，不是它们值 0",
+            # D11：0.007 的机制不是「两条腿相消」，是**小权重 × 跨日符号混合**（见 dilution()）
+            "susp_affected_days": dil_drop["affected_days"],
+            "susp_w_median_pct": dil_drop["w_median_pct_of_affected"],
+            "susp_w_mean_pct": dil_drop["w_mean_pct_of_affected"],
+            "susp_gap_median_bp": dil_drop["gap_median_bp"],
+            "susp_gap_p10_bp": dil_drop["gap_p10_bp"],
+            "susp_gap_p90_bp": dil_drop["gap_p90_bp"],
+            "susp_product_of_means_bp": dil_drop["product_of_means_bp"],
+            "susp_weight_drop_predicted_bp": dil_drop["weight_drop_predicted_bp"],
+            "reverse_cells": c_minus_a.height,
+            "reading_template": (
+                "{susp_cells} 个 cell 的日等权值 {non_adjacent_cells_value_daily_bp:+.2f}bp，"
+                "去掉它们只动 {leg_drop_249_only:+.3f}bp。机制不是两条腿相消：这 {susp_cells} 个"
+                "只在 {susp_affected_days}/{n_days} 天出现、日权重 k/(n−k) 中位 "
+                "{susp_w_median_pct:.3f}%；当日池均值与腿内均值之差中位 "
+                "{susp_gap_median_bp:+.1f}bp、p10/p90 = {susp_gap_p10_bp:+.0f}/"
+                "{susp_gap_p90_bp:+.0f}bp ⇒ 逐日乘积 mean_d[w·(mD−mS)] = "
+                "{susp_weight_drop_predicted_bp:+.4f}bp，与观测 {leg_drop_249_only:+.3f}bp "
+                "相同（写盘前已断言）。反向 {reverse_cells} 个 cell 只回补 "
+                "{leg_add_reverse_42:+.3f}bp，不是相消的另一半。"),
+            "reading_fields": {
+                "susp_cells": "$sets.non_adjacent_leg.cells",
+                "n_days": "$sets.A_shift_raw.days",
+                "non_adjacent_cells_value_daily_bp": "non_adjacent_cells_value_daily_bp",
+                "leg_drop_249_only": "leg_drop_249_only",
+                "susp_affected_days": "susp_affected_days",
+                "susp_w_median_pct": "susp_w_median_pct",
+                "susp_gap_median_bp": "susp_gap_median_bp",
+                "susp_gap_p10_bp": "susp_gap_p10_bp",
+                "susp_gap_p90_bp": "susp_gap_p90_bp",
+                "susp_weight_drop_predicted_bp": "susp_weight_drop_predicted_bp",
+                "reverse_cells": "reverse_cells",
+                "leg_add_reverse_42": "leg_add_reverse_42",
+            },
         },
         "pool_mean_caliber": {},
         "elapsed_s": 0.0,
@@ -206,6 +317,9 @@ def main() -> None:
         }
 
     out["elapsed_s"] = round(time.time() - t0, 1)
+    nv = out["net_vs_value_bp"]
+    nv["reading"] = render_reading(nv, root=out)   # 散文唯一产地：模板 + 带路径的字段
+    assert_clean(out, OUT.name)          # 散文/镜像键/符号：写盘前，不是写盘后
     OUT.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
 
     i = out["identity"]

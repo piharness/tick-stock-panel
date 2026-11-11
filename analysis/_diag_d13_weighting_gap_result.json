@@ -1,0 +1,163 @@
+{
+  "purpose": "cell 等权 − 逐日等权 的差，是否只是「入池只数多的日子收益高」",
+  "caliber": "C（日历相邻 + 复权），与 _diag_l1_vwap_entry.py 同源",
+  "panel": {
+    "days": 366,
+    "cells": 239521,
+    "i1_day_equal_bp": 47.1,
+    "i1_cell_equal_bp": 44.79,
+    "names_per_day_median": 397.0,
+    "names_per_day_p10": 211.0,
+    "names_per_day_p90": 1331.0
+  },
+  "relation": {
+    "pearson": -0.013,
+    "spearman": -0.03,
+    "slope_bp_per_name": -0.003,
+    "intercept_bp": 48.93,
+    "t_iid": -0.25,
+    "slope_ci95_block20": [
+      -0.035,
+      0.023
+    ],
+    "n_days": 366,
+    "note": "序列是 366 个交易日的 (n_d, m_d)，不是 239,521 个 cell；t 的自由度是天数"
+  },
+  "terciles_by_names": {
+    "n_small": {
+      "days": 122,
+      "cells": 28146,
+      "mean_names": 230.7,
+      "i1_day_bp": 63.94,
+      "i1_cell_bp": 61.96,
+      "mean_gap_in_pool_bp": -221.0,
+      "i1_day_sd_bp": 139.3,
+      "i1_day_se_bp": 12.6,
+      "nonpool_day_bp": 24.74,
+      "excess_day_bp": 39.2,
+      "market_gap_bp": 31.4
+    },
+    "n_mid": {
+      "days": 123,
+      "cells": 50609,
+      "mean_names": 411.5,
+      "i1_day_bp": 18.21,
+      "i1_cell_bp": 18.11,
+      "mean_gap_in_pool_bp": -208.0,
+      "i1_day_sd_bp": 137.4,
+      "i1_day_se_bp": 12.4,
+      "nonpool_day_bp": -15.41,
+      "excess_day_bp": 33.63,
+      "market_gap_bp": -0.6
+    },
+    "n_large": {
+      "days": 121,
+      "cells": 160766,
+      "mean_names": 1328.6,
+      "i1_day_bp": 59.5,
+      "i1_cell_bp": 50.18,
+      "mean_gap_in_pool_bp": -202.0,
+      "i1_day_sd_bp": 181.6,
+      "i1_day_se_bp": 16.5,
+      "nonpool_day_bp": 8.59,
+      "excess_day_bp": 50.9,
+      "market_gap_bp": -52.2
+    }
+  },
+  "benchmark": {
+    "definition": "非池股 = 同日 gap_c > GAP_MAX 的全部 cell，日内等权、再逐日等权；不用全市场均值作基准，因为池占比在只数多的日子达 24%，m − 全市场会被 (1−w) 机械压向 0。gap 为空（无日历相邻前收）的 6316 个 cell 两侧都不进，它们自身 i1 均值 -26.66bp，并进基准只动 -0.11bp",
+    "nonpool_names_per_day_min": 305,
+    "nonpool_names_per_day_median": 5029,
+    "null_gap_cells": 6316,
+    "null_gap_share": 0.00316,
+    "null_gap_mean_i1_bp": -26.66,
+    "null_gap_effect_on_benchmark_bp": -0.11,
+    "pool_day_bp": 47.1,
+    "nonpool_day_bp": 5.91,
+    "excess_day_bp": 41.2,
+    "excess_day_sd_bp": 86.2,
+    "excess_day_se_bp": 4.5,
+    "market_gap_day_bp": -7.0,
+    "corr_names_vs_market_gap": -0.855,
+    "allmarket_day_bp": 11.8,
+    "excess_vs_allmarket_day_bp": 35.31,
+    "contrast_mid_vs_ends": {
+      "raw_bp": -43.51,
+      "raw_ci95_block20": [
+        -67.45,
+        3.1
+      ],
+      "raw_ci95_block20_fixed_cuts": [
+        -70.09,
+        -19.36
+      ],
+      "nonpool_bp": -32.11,
+      "nonpool_ci95_block20": [
+        -50.35,
+        9.73
+      ],
+      "excess_bp": -11.4,
+      "excess_ci95_block20": [
+        -28.62,
+        5.66
+      ],
+      "excess_ci95_block20_fixed_cuts": [
+        -28.36,
+        1.82
+      ],
+      "excess_vs_allmarket_bp": -6.26,
+      "excess_vs_allmarket_ci95_block20": [
+        -22.36,
+        9.16
+      ],
+      "share_of_raw_explained_by_nonpool": 0.738,
+      "note": "对比量 = 中段均值 − 两端均值，逐日序列上算；块长 20 日，2000 次重采样。`_fixed_cuts` 是同一次自举但沿用样本内三分位边界，两版区间的宽度差就是「边界是挑出来的」这件事值多少 bp"
+    }
+  },
+  "drop_top10pct_names_days": {
+    "days_dropped": 37,
+    "threshold_names": 1331.0,
+    "i1_day_bp_kept": 49.31,
+    "i1_day_bp_all": 47.1
+  },
+  "elapsed_s": 1.9,
+  "reading_template": "池 {days} 日里，当日入池只数的中位 {med} 只（p10/p90 = {p10}/{p90}）。当日池均值与只数的相关是 Pearson {r} / Spearman {rho}，斜率 {b}bp/只（截距 {a}bp，t_iid {t}，块 CI {ci}）⇒ 只数多 100 只，当日均值高 {b100}bp。按只数三分位：少（{n1} 只，池内平均 gap {g1}bp）{v1}bp、中（{n2} 只，{g2}bp）{v2}bp、多（{n3} 只，{g3}bp）{v3}bp。去掉只数最多的 10%（≥{thr} 只，{ndrop} 天）后，日等权从 {all_bp}bp 落到 {keep_bp}bp。**但 U 形不是缺口溢价的性质**：同一批日子、同一权重下，非池股是 {e1}/{e2}/{e3}bp，超额（池−非池）{x1}/{x2}/{x3}bp——中段低 {c_ex}bp 的块 CI {ci_ex} 跨 0，而原始 {c_raw}bp 里有 {share} 在非池股身上同样出现。",
+  "reading_fields": {
+    "days": "panel.days",
+    "med": "panel.names_per_day_median",
+    "p10": "panel.names_per_day_p10",
+    "p90": "panel.names_per_day_p90",
+    "r": "relation.pearson",
+    "rho": "relation.spearman",
+    "b": "relation.slope_bp_per_name",
+    "b100": "slope_bp_per_100_names",
+    "a": "relation.intercept_bp",
+    "t": "relation.t_iid",
+    "ci": "relation.slope_ci95_block20",
+    "n1": "terciles_by_names.n_small.mean_names",
+    "v1": "terciles_by_names.n_small.i1_day_bp",
+    "n2": "terciles_by_names.n_mid.mean_names",
+    "v2": "terciles_by_names.n_mid.i1_day_bp",
+    "n3": "terciles_by_names.n_large.mean_names",
+    "v3": "terciles_by_names.n_large.i1_day_bp",
+    "g1": "terciles_by_names.n_small.mean_gap_in_pool_bp",
+    "g2": "terciles_by_names.n_mid.mean_gap_in_pool_bp",
+    "g3": "terciles_by_names.n_large.mean_gap_in_pool_bp",
+    "e1": "terciles_by_names.n_small.nonpool_day_bp",
+    "e2": "terciles_by_names.n_mid.nonpool_day_bp",
+    "e3": "terciles_by_names.n_large.nonpool_day_bp",
+    "x1": "terciles_by_names.n_small.excess_day_bp",
+    "x2": "terciles_by_names.n_mid.excess_day_bp",
+    "x3": "terciles_by_names.n_large.excess_day_bp",
+    "c_ex": "benchmark.contrast_mid_vs_ends.excess_bp",
+    "ci_ex": "benchmark.contrast_mid_vs_ends.excess_ci95_block20",
+    "c_raw": "benchmark.contrast_mid_vs_ends.raw_bp",
+    "share": "benchmark.contrast_mid_vs_ends.share_of_raw_explained_by_nonpool",
+    "thr": "drop_top10pct_names_days.threshold_names",
+    "ndrop": "drop_top10pct_names_days.days_dropped",
+    "all_bp": "drop_top10pct_names_days.i1_day_bp_all",
+    "keep_bp": "drop_top10pct_names_days.i1_day_bp_kept"
+  },
+  "slope_bp_per_100_names": -0.3,
+  "reading": "池 366 日里，当日入池只数的中位 397.0 只（p10/p90 = 211.0/1331.0）。当日池均值与只数的相关是 Pearson −0.013 / Spearman −0.03，斜率 −0.003bp/只（截距 48.93bp，t_iid −0.25，块 CI [−0.035, 0.023]）⇒ 只数多 100 只，当日均值高 −0.3bp。按只数三分位：少（230.7 只，池内平均 gap −221.0bp）63.94bp、中（411.5 只，−208.0bp）18.21bp、多（1328.6 只，−202.0bp）59.5bp。去掉只数最多的 10%（≥1331.0 只，37 天）后，日等权从 47.1bp 落到 49.31bp。**但 U 形不是缺口溢价的性质**：同一批日子、同一权重下，非池股是 24.74/−15.41/8.59bp，超额（池−非池）39.2/33.63/50.9bp——中段低 −11.4bp 的块 CI [−28.62, 5.66] 跨 0，而原始 −43.51bp 里有 0.738 在非池股身上同样出现。"
+}

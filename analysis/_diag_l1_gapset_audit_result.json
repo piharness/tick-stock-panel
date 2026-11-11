@@ -78,6 +78,7 @@
     "net_A_minus_C": 4077,
     "legs_sum": 4119,
     "legs_intersection": 0,
+    "legs_intersection_note": "结构性恒为 0：除权腿要求 g_cal_adj 非空、停牌腿全部为空，不是实测出来的项，公式里不该当被减项读",
     "reverse_flow_C_minus_A": 42,
     "check_legs_sum_minus_reverse": 4077,
     "share_ex_rights_of_A_minus_C": 0.9395
@@ -110,7 +111,31 @@
     "non_adjacent_cells_value_cell_bp": 50.59,
     "reverse_cells_value_daily_bp": 26.82,
     "reverse_cells_value_cell_bp": 18.38,
-    "reading": "249 个 cell 自身 +21.88bp，但去掉它们只动 +0.008bp；42 个反向 cell 加回来 −0.005bp ⇒ 净值 0.00 是两个方向抵消，不是它们值 0"
+    "susp_affected_days": 124,
+    "susp_w_median_pct": 0.279,
+    "susp_w_mean_pct": 0.548,
+    "susp_gap_median_bp": 62.5,
+    "susp_gap_p10_bp": -520.0,
+    "susp_gap_p90_bp": 472.0,
+    "susp_product_of_means_bp": 0.15,
+    "susp_weight_drop_predicted_bp": 0.007,
+    "reverse_cells": 42,
+    "reading_template": "{susp_cells} 个 cell 的日等权值 {non_adjacent_cells_value_daily_bp:+.2f}bp，去掉它们只动 {leg_drop_249_only:+.3f}bp。机制不是两条腿相消：这 {susp_cells} 个只在 {susp_affected_days}/{n_days} 天出现、日权重 k/(n−k) 中位 {susp_w_median_pct:.3f}%；当日池均值与腿内均值之差中位 {susp_gap_median_bp:+.1f}bp、p10/p90 = {susp_gap_p10_bp:+.0f}/{susp_gap_p90_bp:+.0f}bp ⇒ 逐日乘积 mean_d[w·(mD−mS)] = {susp_weight_drop_predicted_bp:+.4f}bp，与观测 {leg_drop_249_only:+.3f}bp 相同（写盘前已断言）。反向 {reverse_cells} 个 cell 只回补 {leg_add_reverse_42:+.3f}bp，不是相消的另一半。",
+    "reading_fields": {
+      "susp_cells": "$sets.non_adjacent_leg.cells",
+      "n_days": "$sets.A_shift_raw.days",
+      "non_adjacent_cells_value_daily_bp": "non_adjacent_cells_value_daily_bp",
+      "leg_drop_249_only": "leg_drop_249_only",
+      "susp_affected_days": "susp_affected_days",
+      "susp_w_median_pct": "susp_w_median_pct",
+      "susp_gap_median_bp": "susp_gap_median_bp",
+      "susp_gap_p10_bp": "susp_gap_p10_bp",
+      "susp_gap_p90_bp": "susp_gap_p90_bp",
+      "susp_weight_drop_predicted_bp": "susp_weight_drop_predicted_bp",
+      "reverse_cells": "reverse_cells",
+      "leg_add_reverse_42": "leg_add_reverse_42"
+    },
+    "reading": "249 个 cell 的日等权值 +21.88bp，去掉它们只动 +0.007bp。机制不是两条腿相消：这 249 个只在 124/366 天出现、日权重 k/(n−k) 中位 0.279%；当日池均值与腿内均值之差中位 +62.5bp、p10/p90 = −520/+472bp ⇒ 逐日乘积 mean_d[w·(mD−mS)] = +0.0070bp，与观测 +0.007bp 相同（写盘前已断言）。反向 42 个 cell 只回补 −0.001bp，不是相消的另一半。"
   },
   "pool_mean_caliber": {
     "A_screen": {
