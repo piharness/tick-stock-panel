@@ -1,0 +1,173 @@
+{
+  "cell": "top20 mom20, gap<=-1.0%, entry open[d+1] vs full-day VWAP, exit close[d+1]",
+  "vwap_formula": "amount / (volume * 100)",
+  "minute_coverage": {
+    "partitions": 21,
+    "symbols": 40,
+    "first": "2026-10-08",
+    "last": "2026-11-05"
+  },
+  "instrument_check": {
+    "n_symbol_days": 826,
+    "dates": 21,
+    "symbols": 40,
+    "d_vwap_median_abs_bp": 0.036,
+    "d_vwap_p90_abs_bp": 0.396,
+    "d_vwap_within_1bp": 0.9104,
+    "d_open_median_abs_bp": 0.0,
+    "d_open_max_abs_bp": 426.579
+  },
+  "cohort": {
+    "n_days": 316,
+    "n_cells_expected": 2752,
+    "n_cells_paired": 2752,
+    "n_cells_out_of_band": 0,
+    "names_per_day": 8.71
+  },
+  "daily_bp": {
+    "open_entry": 121.5,
+    "vwap_entry": 6.4,
+    "net_open_after_cost": 101.5,
+    "net_vwap_after_cost": -13.6,
+    "entry_price_penalty": {
+      "mean": 108.4,
+      "median": 100.0,
+      "comment": "vwap/raw_open-1：摊开到 VWAP 要比 open 多付的价"
+    },
+    "share_of_gross_kept_by_vwap": 0.053,
+    "paired_diff": {
+      "mean_bp": 115.1,
+      "sd_bp": 228.7,
+      "t_iid": 8.94,
+      "t_nw5": 8.98,
+      "ci95_block20_bp": [
+        83.6,
+        140.3
+      ],
+      "hit_positive": 0.68
+    }
+  },
+  "robustness": {
+    "note": "pen~i1 斜率 0.5 = 日内路径线性（VWAP 在中间）；越接近 1 = 涨幅越集中在开盘",
+    "market_wide": {
+      "n_stock_days": 2000524,
+      "slope_pen_on_i1": 0.658,
+      "intercept_bp": 5.6,
+      "slope_by_amount_tercile": {
+        "small": {
+          "n": 666842,
+          "slope_pen_on_i1": 0.665
+        },
+        "mid": {
+          "n": 666841,
+          "slope_pen_on_i1": 0.677
+        },
+        "large": {
+          "n": 666841,
+          "slope_pen_on_i1": 0.646
+        }
+      }
+    },
+    "gap_pool_by_window": {
+      "full": {
+        "n_cells": 243584,
+        "open_entry_bp": 43.8,
+        "vwap_entry_bp": -6.2,
+        "pen_over_i1": 1.091
+      },
+      "2025": {
+        "n_cells": 72922,
+        "open_entry_bp": 67.4,
+        "vwap_entry_bp": 5.3,
+        "pen_over_i1": 0.887
+      },
+      "2026": {
+        "n_cells": 170662,
+        "open_entry_bp": 33.7,
+        "vwap_entry_bp": -11.2,
+        "pen_over_i1": 1.266
+      },
+      "last21": {
+        "n_cells": 30351,
+        "open_entry_bp": 57.4,
+        "vwap_entry_bp": 4.8,
+        "pen_over_i1": 0.89
+      }
+    },
+    "weighting": "by_window 是 cell 等权；gap_pool_unselected 是逐日等权，两者的 open_entry_bp 不同不是矛盾"
+  },
+  "gap_pool_unselected": {
+    "n_days": 366,
+    "n_cells": 243584,
+    "open_entry_bp": 45.7,
+    "vwap_entry_bp": -0.3,
+    "entry_price_penalty_bp": 43.5,
+    "share_of_gross_kept_by_vwap": -0.0065,
+    "by_gap_depth": [
+      {
+        "bucket": "q1",
+        "n": 60909,
+        "gap_bp": -431.0,
+        "open_entry_bp": 88.2,
+        "vwap_entry_bp": -4.1,
+        "entry_price_penalty_bp": 88.8
+      },
+      {
+        "bucket": "q2",
+        "n": 60889,
+        "gap_bp": -197.0,
+        "open_entry_bp": 36.2,
+        "vwap_entry_bp": -8.6,
+        "entry_price_penalty_bp": 42.5
+      },
+      {
+        "bucket": "q3",
+        "n": 60890,
+        "gap_bp": -142.0,
+        "open_entry_bp": 25.8,
+        "vwap_entry_bp": -7.4,
+        "entry_price_penalty_bp": 31.5
+      },
+      {
+        "bucket": "q4",
+        "n": 60896,
+        "gap_bp": -111.0,
+        "open_entry_bp": 24.8,
+        "vwap_entry_bp": -4.9,
+        "entry_price_penalty_bp": 28.2
+      }
+    ]
+  },
+  "annualized": {
+    "signals_per_year": 208.4,
+    "open_entry_round_capital": 2.1147,
+    "vwap_entry_round_capital": -0.2827
+  },
+  "capacity_axis": {
+    "amount_median_cny": 1431295950.0,
+    "open_entry": {
+      "round_capital_cny": 21938325.0,
+      "annual_profit_cny": 46392572.0,
+      "net_bp": 101.5
+    },
+    "pov_entry": {
+      "p=5%": {
+        "participation": 0.05,
+        "round_capital_cny": 623247857.0,
+        "annual_profit_cny": -176199154.0
+      },
+      "p=2%": {
+        "participation": 0.02,
+        "round_capital_cny": 249299143.0,
+        "annual_profit_cny": -70479662.0
+      },
+      "p=1%": {
+        "participation": 0.01,
+        "round_capital_cny": 124649571.0,
+        "annual_profit_cny": -35239831.0
+      }
+    },
+    "breakeven_net_bp_for_5pct_pov": 3.6
+  },
+  "elapsed_s": 14.7
+}
