@@ -559,6 +559,80 @@ def test_evidence_artifacts_are_shippable():
         assert proc.returncode == 1, f"{rel} 仍被 .gitignore 忽略，克隆拿不到"
 
 
+def _untracked(scope: str) -> list[str]:
+    """盘上存在、`git` 不跟踪、且没被 `.gitignore` 挡住的路径。
+
+    `--others --exclude-standard` 就是这三件事的交集。它与上面那条
+    `check-ignore` 差一档，而差的正是那一档。
+    """
+    proc = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard", "-z", "--", scope],
+        cwd=REPO, capture_output=True, text=True, encoding="utf-8")
+    assert proc.returncode == 0, proc.stderr
+    return [p for p in proc.stdout.split("\0") if p]
+
+
+def test_analysis_dir_is_fully_tracked():
+    """`analysis/` 是证据目录：盘上有什么，库里就该有什么。
+
+    已实测的事故（2026-11-11）：53 份 `_result.json` 里有 **5 份从未 `git add`**
+    ——打板曲线、k 曲线、k\\* 条件、斜率溯源、premom CI 的全部读数。同一时刻
+    `test_evidence_artifacts_are_shippable` 一直是绿的：它问的是「会不会被
+    `.gitignore` 挡」，而 `git check-ignore` 对**未跟踪**文件返回 1（没被忽略），
+    断言遂通过。于是「克隆拿得到」这句判断对「压根没人提交」完全失明。
+
+    两问不同：`check-ignore` 答「挡没挡」，`ls-files --others` 答「在不在库里」。
+    只问前者，等于判据只覆盖了射程的一半——这是「绿但无感知」的第三种形态：
+    不是抽样把被测路径挡在射程外，而是**射程本身就是半句**。
+
+    范围只到 `analysis/`，不外扩到全仓：产品代码的 WIP 在 `backend/` 与
+    `scripts/`，那里未跟踪是常态，把它们拉进来只会教人删测试。证据目录不同，
+    这个目录里每个文件都是某个数的出处，没有「草稿豁免」。
+
+    新克隆上这条恒绿（文件都来自库），它只在 `commit` 之前有牙齿——那正是
+    它该在的位置。
+    """
+    if not (REPO / ".git").exists():
+        pytest.skip("没有 git 仓库，无从判断是否入库")
+    tracked = len(subprocess.run(
+        ["git", "ls-files", "-z", "--", "analysis"], cwd=REPO,
+        capture_output=True, text=True, encoding="utf-8").stdout.split("\0")) - 1
+    assert tracked >= 150, f"analysis/ 只跟踪到 {tracked} 个文件 ⇒ 这条钉子没在看东西"
+    stray = _untracked("analysis")
+    assert not stray, (
+        f"analysis/ 有 {len(stray)} 个文件在盘上、不在库里：\n  "
+        + "\n  ".join(stray)
+        + "\n要么 `git add`（它是某个数的出处），要么删掉（它不是）。")
+
+
+def test_untracked_scope_reports_a_real_file(tmp_path):
+    """`_untracked` 必须能报出一个真未跟踪的文件——否则上面那条恒绿。
+
+    这不是重复：`_untracked` 的两个参数（`--others` 与 `--exclude-standard`）
+    少任何一个都会静默变成「什么都没扫」。少了前者只剩已跟踪文件、恒空；
+    少了后者会把 `__pycache__` 一起算进来、恒非空。两个方向都要能红。
+    """
+    import os
+    if not (REPO / ".git").exists():
+        pytest.skip("没有 git 仓库")
+    if "PYTEST_XDIST_WORKER" in os.environ:
+        pytest.skip("并行 worker 会把探针文件算进上面那条守卫，只能串行跑")
+    probe = REPO / "analysis" / "_untracked_probe.tmp"
+    ignored = REPO / "analysis" / "__pycache__" / "_untracked_probe.pyc"
+    try:
+        probe.write_text("x", encoding="utf-8")
+        ignored.parent.mkdir(exist_ok=True)
+        ignored.write_text("x", encoding="utf-8")
+        assert "_untracked_probe.tmp" in "".join(_untracked("analysis")), (
+            "未跟踪文件没被报出来 ⇒ 这条守卫对着空气断言")
+        assert "_untracked_probe.pyc" not in "".join(_untracked("analysis")), (
+            "被 .gitignore 挡住的文件也算进来了 ⇒ 它会天天假红")
+    finally:
+        for p in (probe, ignored):
+            if p.exists():
+                os.remove(p)
+
+
 def test_custom_globs_support_other_layouts(tmp_path):
     """扫描口径是参数：默认口径扫不到 `src/`，换 `globs` 就必须扫到。
 

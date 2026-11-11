@@ -1,0 +1,308 @@
+{
+ "purpose": "k 曲线的两个端点 + 参照类形状；判 k* 能不能离线定",
+ "caliber": "Δ(k)=VWAP_k/open−1(bp)，VWAP_k=Σamount/Σ(volume×100)；日线 open 用 raw_close/close 打回原始价；日级聚类",
+ "breakeven": {
+  "open_bp": 121.49,
+  "vwap_bp": 6.43,
+  "gap_bp": 115.05,
+  "cost_bp": 20.0,
+  "r_star": 0.1179,
+  "delta_breakeven_bp": 107.92
+ },
+ "endpoints": {
+  "d1": {
+   "cells": 2752,
+   "days": 316,
+   "cell_mean_bp": 14.64,
+   "cell_median_bp": 13.06,
+   "day_eq_mean_bp": 13.67,
+   "se_day_bp": 2.21,
+   "t": 6.19
+  },
+  "d240": {
+   "cells": 2752,
+   "days": 316,
+   "cell_mean_bp": 109.29,
+   "cell_median_bp": 61.99,
+   "day_eq_mean_bp": 108.39,
+   "se_day_bp": 12.75,
+   "t": 8.5
+  },
+  "d240_without_adjf_bp": 433.21,
+  "adjf_multiple": 4.0
+ },
+ "reconcile": {
+  "published_penalty_bp": 108.4,
+  "day_eq_d240_bp": 108.39,
+  "gap_bp": 0.01,
+  "same_caliber": true
+ },
+ "reference": {
+  "cells": 748,
+  "days": 19,
+  "symbols": 40,
+  "partitions_used": 19,
+  "partitions_skipped": 2,
+  "checkpoints": {
+   "k1": 11.4,
+   "k5": 8.86,
+   "k20": 0.8,
+   "k52": -6.11,
+   "k139": -5.73,
+   "k239": -8.0
+  },
+  "ols_slope_bp_per_bar": -0.02545,
+  "ols_r2": 0.1987,
+  "monotone_violations": 94,
+  "curve_k": [
+   0,
+   10,
+   20,
+   30,
+   40,
+   50,
+   60,
+   70,
+   80,
+   90,
+   100,
+   110,
+   120,
+   130,
+   140,
+   150,
+   160,
+   170,
+   180,
+   190,
+   200,
+   210,
+   220,
+   230
+  ],
+  "curve_delta_bp": [
+   11.9,
+   5.73,
+   0.8,
+   -3.07,
+   -5.27,
+   -5.94,
+   -6.47,
+   -7.31,
+   -7.62,
+   -8.06,
+   -8.45,
+   -8.1,
+   -7.26,
+   -6.12,
+   -5.66,
+   -5.46,
+   -5.41,
+   -5.03,
+   -4.92,
+   -4.35,
+   -4.56,
+   -5.03,
+   -5.83,
+   -6.88
+  ],
+  "curve_c": [
+   0.046,
+   0.176,
+   0.253,
+   0.314,
+   0.367,
+   0.411,
+   0.449,
+   0.482,
+   0.509,
+   0.533,
+   0.557,
+   0.58,
+   0.614,
+   0.649,
+   0.677,
+   0.705,
+   0.736,
+   0.764,
+   0.789,
+   0.818,
+   0.847,
+   0.875,
+   0.909,
+   0.952
+  ]
+ },
+ "kstar": {
+  "r_star": 0.1179,
+  "delta_breakeven_bp": 107.92,
+  "self_norm_k": 45.1,
+  "mapped_k": 81.3,
+  "low_k": 45.1,
+  "high_k": 81.3,
+  "c_at_low": 0.39,
+  "c_at_high": 0.512,
+  "c_required": 0.4011,
+  "margin_at_low": -0.011,
+  "identified": false
+ },
+ "power": {
+  "se_ratio_k52_over_k1": 2.6,
+  "se_d52_316d_bp": 5.74,
+  "se_d52_60d_bp": 13.17,
+  "sigma_of_19bp_at_60d": 1.44,
+  "sixty_days_enough": false
+ },
+ "findings": [
+  "端点可离线复算；参照类形状是平的，不是线性",
+  "k* 只有区间：自归一化与映射到 cohort 端点相差一个量级",
+  "c(k*) 在下沿只剩不足一个百分点的余量，判据卡在边界",
+  "60 天下的检验力不足两个 sigma，首轮窗口要放大"
+ ],
+ "verdict": {
+  "K1_endpoints_recomputed": true,
+  "K1_adjf_guard_live": true,
+  "K2_shape_is_not_linear": true,
+  "K3_kstar_is_interval": true,
+  "K4_sixty_days_not_enough": true,
+  "online_run_justified": true,
+  "all_pass": true
+ },
+ "levels": {
+  "2026-10-08": {
+   "used": false,
+   "first_bar": "13:48:00",
+   "min_bars": 73
+  },
+  "2026-10-09": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-12": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-13": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-14": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-15": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-16": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-19": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-20": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-21": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-22": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-23": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-26": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-27": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-28": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-29": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-10-30": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-11-02": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-11-03": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 240
+  },
+  "2026-11-04": {
+   "used": true,
+   "first_bar": "09:31:00",
+   "min_bars": 239
+  },
+  "2026-11-05": {
+   "used": false,
+   "first_bar": "09:31:00",
+   "min_bars": 167
+  }
+ },
+ "reading_template": "k 曲线的左端点 {d1}bp（按日聚类 se {se1}，{days} 天）与右端点 {d240}bp 都能离线复算，但右端点必须先把日线复权 open 打回原始价——不除那个因子得到 {noadj}bp，是 {ratio_noadj} 倍，不抛异常、只让价格惩罚变成噪声。按日等权 {d240} 与 vwap_entry 的 {pub}bp 对上（差 {gap}bp）。\n参照类 {refcells} 格 / {refdays} 天 / {refsym} 只的 Δ(k) 不是线性：k=1 时 {k1}bp、k=52 时 {k52}bp、k=239 时 {k239}bp，对 k 回归 R²={r2}，还有 {viol} 段回升。所以「近乎线性走到 0、交于 k≈139」只在**按参照类自身两端归一化**时出现；把同一形状映射到 cohort 的两个端点，交点变成 {kmap}。两种读数给 k*∈[{low}, {high}]，对应 c(k*) 从 {clow} 到 {chigh}。\n判据要求 c(k*)≥{creq}，而这个区间**跨过**了它（下沿余量 {margin}）——「深度够不够」现在完全由一个离线不可辨的归一化选择决定。这正是必须联网测 cohort 自己那条曲线的理由，而且比原计划更硬：参照类 se 从 k=1 到 k=52 放大 {se_ratio} 倍，60 天下 19bp 的差只有 {sig}σ，首轮 60 天不足以判，窗口要按功效反推。",
+ "reading_fields": {
+  "d1": "$endpoints.d1.cell_mean_bp",
+  "se1": "$endpoints.d1.se_day_bp",
+  "days": "$endpoints.d1.days",
+  "d240": "$endpoints.d240.day_eq_mean_bp",
+  "noadj": "$endpoints.d240_without_adjf_bp",
+  "ratio_noadj": "$endpoints.adjf_multiple",
+  "pub": "$reconcile.published_penalty_bp",
+  "gap": "$reconcile.gap_bp",
+  "refcells": "$reference.cells",
+  "refdays": "$reference.days",
+  "refsym": "$reference.symbols",
+  "k1": "$reference.checkpoints.k1",
+  "k52": "$reference.checkpoints.k52",
+  "k239": "$reference.checkpoints.k239",
+  "r2": "$reference.ols_r2",
+  "viol": "$reference.monotone_violations",
+  "kmap": "$kstar.mapped_k",
+  "low": "$kstar.low_k",
+  "high": "$kstar.high_k",
+  "clow": "$kstar.c_at_low",
+  "chigh": "$kstar.c_at_high",
+  "creq": "$kstar.c_required",
+  "margin": "$kstar.margin_at_low",
+  "se_ratio": "$power.se_ratio_k52_over_k1",
+  "sig": "$power.sigma_of_19bp_at_60d"
+ },
+ "elapsed_s": 0.8,
+ "reading": "k 曲线的左端点 14.64bp（按日聚类 se 2.21，316 天）与右端点 108.39bp 都能离线复算，但右端点必须先把日线复权 open 打回原始价——不除那个因子得到 433.21bp，是 4.0 倍，不抛异常、只让价格惩罚变成噪声。按日等权 108.39 与 vwap_entry 的 108.4bp 对上（差 0.01bp）。\n参照类 748 格 / 19 天 / 40 只的 Δ(k) 不是线性：k=1 时 11.4bp、k=52 时 −6.11bp、k=239 时 −8.0bp，对 k 回归 R²=0.1987，还有 94 段回升。所以「近乎线性走到 0、交于 k≈139」只在**按参照类自身两端归一化**时出现；把同一形状映射到 cohort 的两个端点，交点变成 81.3。两种读数给 k*∈[45.1, 81.3]，对应 c(k*) 从 0.39 到 0.512。\n判据要求 c(k*)≥0.4011，而这个区间**跨过**了它（下沿余量 −0.011）——「深度够不够」现在完全由一个离线不可辨的归一化选择决定。这正是必须联网测 cohort 自己那条曲线的理由，而且比原计划更硬：参照类 se 从 k=1 到 k=52 放大 2.6 倍，60 天下 19bp 的差只有 1.44σ，首轮 60 天不足以判，窗口要按功效反推。"
+}

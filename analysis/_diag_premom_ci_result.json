@@ -1,0 +1,189 @@
+{
+  "block_ladder": [
+    {
+      "block": 1,
+      "ci5": 0.8727084545424416,
+      "ci95": 0.8997606980007063,
+      "half_width": 0.013526121729132368,
+      "mean": 0.8863682031600001,
+      "n": 326,
+      "n_boot": 2000,
+      "p_le0": 0.0,
+      "seed": 20261109
+    },
+    {
+      "block": 5,
+      "ci5": 0.8584295971109018,
+      "ci95": 0.9156378147447805,
+      "half_width": 0.02860410881693931,
+      "mean": 0.8863682031600001,
+      "n": 326,
+      "n_boot": 2000,
+      "p_le0": 0.0,
+      "seed": 20261109
+    },
+    {
+      "block": 10,
+      "ci5": 0.8519623806197515,
+      "ci95": 0.924223779093313,
+      "half_width": 0.03613069923678075,
+      "mean": 0.8863682031600001,
+      "n": 326,
+      "n_boot": 2000,
+      "p_le0": 0.0,
+      "seed": 20261109
+    },
+    {
+      "block": 20,
+      "ci5": 0.8423051358564982,
+      "ci95": 0.9327397585610469,
+      "half_width": 0.0452173113522743,
+      "mean": 0.8863682031600001,
+      "n": 326,
+      "n_boot": 2000,
+      "p_le0": 0.0,
+      "seed": 20261109
+    },
+    {
+      "block": 40,
+      "ci5": 0.8367953301370676,
+      "ci95": 0.9374976430088678,
+      "half_width": 0.0503511564359001,
+      "mean": 0.8863682031600001,
+      "n": 326,
+      "n_boot": 2000,
+      "p_le0": 0.0,
+      "seed": 20261109
+    },
+    {
+      "block": 60,
+      "ci5": 0.8386912092398874,
+      "ci95": 0.9335398925222498,
+      "half_width": 0.0474243416411812,
+      "mean": 0.8863682031600001,
+      "n": 326,
+      "n_boot": 2000,
+      "p_le0": 0.0,
+      "seed": 20261109
+    }
+  ],
+  "denominator_ci_bp": {
+    "ci5": 8423.05,
+    "ci95": 9327.4,
+    "point": 8864.0,
+    "width_ratio": 1.1074
+  },
+  "guard": {
+    "identity_gap_pp": 0.0031796839999884696,
+    "matched_finite": true,
+    "mismatch": {},
+    "passed": true,
+    "recomputed": {
+      "compounded_20d_legs_pct": 96.81,
+      "matched_mom20_pct": 8.17,
+      "mom20_excess_over_matched_pct": 88.64,
+      "mom20_median_pct": 95.78,
+      "mom20_pct": 96.81,
+      "n_cohorts": 326,
+      "ratio": 1.0
+    },
+    "stored": {
+      "compounded_20d_legs_pct": 96.81,
+      "matched_mom20_pct": 8.17,
+      "mom20_excess_over_matched_pct": 88.64,
+      "mom20_median_pct": 95.78,
+      "mom20_pct": 96.81,
+      "n_cohorts": 326,
+      "ratio": 1.0
+    }
+  },
+  "mc_error": {
+    "ci5_range_pp": 0.1687,
+    "ci95_range_pp": 0.2729,
+    "ok": true,
+    "per_seed": [
+      {
+        "ci5": 0.8423051358564982,
+        "ci95": 0.9327397585610469,
+        "seed": 20261109
+      },
+      {
+        "ci5": 0.8429962024312724,
+        "ci95": 0.9344260898508723,
+        "seed": 20261110
+      },
+      {
+        "ci5": 0.8419799296984536,
+        "ci95": 0.933774235161526,
+        "seed": 20261111
+      },
+      {
+        "ci5": 0.843666602724388,
+        "ci95": 0.9316967573578344,
+        "seed": 20261112
+      },
+      {
+        "ci5": 0.8425087612391863,
+        "ci95": 0.9339046993818446,
+        "seed": 20261113
+      }
+    ],
+    "seeds": [
+      20261109,
+      20261110,
+      20261111,
+      20261112,
+      20261113
+    ]
+  },
+  "parity_vs_regime2_block_boot": {
+    "identical": true,
+    "regime2": {
+      "ci5": 0.8423051358564982,
+      "ci95": 0.9327397585610469,
+      "mean": 0.8863682031600001,
+      "n": 326,
+      "p_le0": 0.0
+    },
+    "this_script": {
+      "block": 20,
+      "ci5": 0.8423051358564982,
+      "ci95": 0.9327397585610469,
+      "mean": 0.8863682031600001,
+      "n_boot": 2000,
+      "p_le0": 0.0,
+      "seed": 20261109
+    }
+  },
+  "plateau": {
+    "adjacent_rel_change": [
+      0.1135,
+      0.0581
+    ],
+    "half_width_span_x": 1.1135,
+    "holds": true
+  },
+  "pre_registration": {
+    "R-P1": "reproduce the five reconciliation fields to 2dp or exit 2",
+    "R-P2": "block ladder (1, 5, 10, 20, 40, 60), B=2000, main block=20, plateau = adjacent half-width change <=15% for block>=20",
+    "R-P3": "ratio bound = num_ci95 / den_ci5; red if ratio_bound >= 50%",
+    "R-P4": "max seed-to-seed CI endpoint range < ladder half-width span / 3"
+  },
+  "ratio": {
+    "bound_pct": 3.7371,
+    "break_even_as_share_of_point": 0.071,
+    "break_even_denominator_bp": 629.56,
+    "numerator_bp": 314.78,
+    "point_pct": 3.5512
+  },
+  "seed": 20261109,
+  "series": {
+    "first_date_index": 21,
+    "frac_pos": 1.0,
+    "last_date_index": 346,
+    "mean_pct": 88.6368,
+    "median_pct": 86.3051,
+    "n_cohorts": 326,
+    "sd_pct": 12.5001
+  }
+}

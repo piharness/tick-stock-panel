@@ -1,0 +1,121 @@
+{
+ "purpose": "k* 的条件数与「还需多少天/只」；判 116 天能否修 identified=false",
+ "caliber": "se_Δ(k=52) 由 kcurve.power.se_d52_316d_bp 按 1/√天数缩放；se_c=se_Δ·|dc/dΔ|；斜率取参照类日级曲线 k∈[40,70] 回归",
+ "inputs": {
+  "t_days_available": 316,
+  "cost_bp": 20.0,
+  "breakeven_bp": 107.92,
+  "c_required": 0.4011,
+  "se_delta_k52_316d_bp": 5.74
+ },
+ "slopes": [
+  {
+   "lo": 40,
+   "hi": 70,
+   "d_delta_dk": -0.06949,
+   "d_c_dk": 0.00383
+  },
+  {
+   "lo": 30,
+   "hi": 90,
+   "d_delta_dk": -0.06952,
+   "d_c_dk": 0.00358
+  },
+  {
+   "lo": 45,
+   "hi": 82,
+   "d_delta_dk": -0.05768,
+   "d_c_dk": 0.00337
+  },
+  {
+   "lo": 0,
+   "hi": 239,
+   "d_delta_dk": -0.02545,
+   "d_c_dk": 0.00326
+  }
+ ],
+ "slope_main": {
+  "lo": 40,
+  "hi": 70,
+  "d_delta_dk": -0.06949,
+  "d_c_dk": 0.00383
+ },
+ "position_space": {
+  "diagnostic_only": true,
+  "caveat": "se_c 的斜率取自参照类；cohort 自己的 dc/dk 与 k≈52 局部斜率无产地",
+  "dc_per_bp": 0.05506,
+  "se_c_at": {
+   "60d": 0.725,
+   "116d": 0.522,
+   "316d": 0.316
+  },
+  "gap_between_readings": 0.122,
+  "margin_below_gate": 0.0111,
+  "days_for_half_gap": 8481,
+  "days_for_margin_below": 256135,
+  "days_for_full_gap": 2120
+ },
+ "level_space": {
+  "delta_at_c_required_bp": 99.55,
+  "margin_bp": 8.37,
+  "t_at_316d": 1.46,
+  "days_for_2sigma": 594,
+  "names_per_day_for_2sigma_at_316d": 16.4,
+  "names_per_day_now": 8.71,
+  "breadth_multiple_needed": 1.88
+ },
+ "power_target": {
+  "power_target_bp": 19.0,
+  "this_artifact_cost_bp": 20.0,
+  "level_margin_bp": 8.37,
+  "equals_cost": false,
+  "equals_this_margin": false,
+  "named_in_artifact": false,
+  "days_from_target": 115
+ },
+ "verdict": {
+  "K5_inversion_ill_conditioned": true,
+  "K6_116d_does_not_identify": true,
+  "K7_target_unsourced": true,
+  "K8_level_test_reachable": false,
+  "K9_breadth_is_the_lever": true,
+  "all_pass": true
+ },
+ "findings": [
+  "决策量是横轴位置，不是 bp 水平；反演经过近乎水平的曲线，误差被放大一个量级",
+  "316 天下 se_c≈0.32，大于两种归一化差距（0.122）的一半 ⇒ k* 这个参数化不可辨",
+  "116 天下 se_c≈0.52，比整段口径差还宽 ⇒ 放窗口不能修 identified",
+  "19bp 既不是本产物的 20bp 成本，也不是水平检验的 8bp 余量 ⇒ 它是借来的",
+  "换到固定 c 的水平口径后，2σ 只需约 594 天或把每日只数翻近一倍"
+ ],
+ "reading_template": "决策量 `c(k*)` 的不确定性不是 `se_Δ`（{sed}bp），而是它除以斜率后的 `se_c`：k∈[{lo},{hi}] 的 dΔ/dk={sdd}bp/根、dc/dk={scd}/根 ⇒ 每 bp 位移换 {dcb} 个 c。316 天下 se_c={se316}，60 天 {se60}，116 天 {se116}——而两种归一化读数的 c 只差 {gap}、下沿余量只有 {mgn}。于是：**116 天不是「够判」，它的 se_c 仍比整段口径差还宽**；把 se_c 压到半个口径差需 ~{dh} 天，压到下沿余量需 ~{dm} 天。这条路不是窗口不够，是参数化不对。**这两个天数只是诊断**：斜率取自参照类（切/割口径还不一致），不能当「再跑多少天」的承诺。\n不反演的写法：在固定 c={creq} 上读位移，得 Δ={dat}bp，距打平线 {bep}bp 还剩 {lm}bp，t={t316}（316 天）；要 2σ 需 ~{dl} 天，或把每日只数从 {nnow} 提到 {nneed}（{mult} 倍）。后者才是便宜的那个杠杆。\n顺带钉死一处借来的数：功效里用的 {tgt}bp 既不等于本产物的成本口径 {cost}bp，也不等于水平余量 {lm}bp，产物里没有任何字段是它的产地；按它反推的 {d19} 天，回答的是水平问题，不是 k* 能不能定。",
+ "reading_fields": {
+  "sed": "$inputs.se_delta_k52_316d_bp",
+  "lo": "$slope_main.lo",
+  "hi": "$slope_main.hi",
+  "sdd": "$slope_main.d_delta_dk",
+  "scd": "$slope_main.d_c_dk",
+  "dcb": "$position_space.dc_per_bp",
+  "se316": "$position_space.se_c_at.316d",
+  "se60": "$position_space.se_c_at.60d",
+  "se116": "$position_space.se_c_at.116d",
+  "gap": "$position_space.gap_between_readings",
+  "mgn": "$position_space.margin_below_gate",
+  "dh": "$position_space.days_for_half_gap",
+  "dm": "$position_space.days_for_margin_below",
+  "creq": "$inputs.c_required",
+  "dat": "$level_space.delta_at_c_required_bp",
+  "bep": "$inputs.breakeven_bp",
+  "lm": "$level_space.margin_bp",
+  "t316": "$level_space.t_at_316d",
+  "dl": "$level_space.days_for_2sigma",
+  "nnow": "$level_space.names_per_day_now",
+  "nneed": "$level_space.names_per_day_for_2sigma_at_316d",
+  "mult": "$level_space.breadth_multiple_needed",
+  "tgt": "$power_target.power_target_bp",
+  "cost": "$power_target.this_artifact_cost_bp",
+  "d19": "$power_target.days_from_target"
+ },
+ "elapsed_s": 0.1,
+ "reading": "决策量 `c(k*)` 的不确定性不是 `se_Δ`（5.74bp），而是它除以斜率后的 `se_c`：k∈[40,70] 的 dΔ/dk=−0.06949bp/根、dc/dk=0.00383/根 ⇒ 每 bp 位移换 0.05506 个 c。316 天下 se_c=0.316，60 天 0.725，116 天 0.522——而两种归一化读数的 c 只差 0.122、下沿余量只有 0.0111。于是：**116 天不是「够判」，它的 se_c 仍比整段口径差还宽**；把 se_c 压到半个口径差需 ~8481 天，压到下沿余量需 ~256135 天。这条路不是窗口不够，是参数化不对。**这两个天数只是诊断**：斜率取自参照类（切/割口径还不一致），不能当「再跑多少天」的承诺。\n不反演的写法：在固定 c=0.4011 上读位移，得 Δ=99.55bp，距打平线 107.92bp 还剩 8.37bp，t=1.46（316 天）；要 2σ 需 ~594 天，或把每日只数从 8.71 提到 16.4（1.88 倍）。后者才是便宜的那个杠杆。\n顺带钉死一处借来的数：功效里用的 19.0bp 既不等于本产物的成本口径 20.0bp，也不等于水平余量 8.37bp，产物里没有任何字段是它的产地；按它反推的 115 天，回答的是水平问题，不是 k* 能不能定。"
+}

@@ -1,0 +1,26 @@
+panel dates=367 symbols=5581
+cohorts set up = 327
+[R-P1] recomputed: legs +96.81% mom20 +96.81% ratio 1.000000 matched +8.17% excess +88.64%
+[R-P1] PASS -- same estimator as the stored point value
+[R-P1b] d_i = mom20_i - matched_i : mean +88.6368% | identity gap 3.18e-03pp | matched finite True
+[parity] regime2.block_boot ci=[+84.23%, +93.27%] | mine ci=[+84.23%, +93.27%] | same=True
+
+[R-P2] block ladder (bootstrap of mean per-cohort excess, %):
+    block=  1  mean  +88.6368  ci [+87.2708, +89.9761]  half  1.3526  P(<=0) 0.0000
+    block=  5  mean  +88.6368  ci [+85.8430, +91.5638]  half  2.8604  P(<=0) 0.0000
+    block= 10  mean  +88.6368  ci [+85.1962, +92.4224]  half  3.6131  P(<=0) 0.0000
+    block= 20  mean  +88.6368  ci [+84.2305, +93.2740]  half  4.5217  P(<=0) 0.0000
+    block= 40  mean  +88.6368  ci [+83.6795, +93.7498]  half  5.0351  P(<=0) 0.0000
+    block= 60  mean  +88.6368  ci [+83.8691, +93.3540]  half  4.7424  P(<=0) 0.0000
+    adjacent relative change (block>=20): 11.4%, 5.8% | plateau=True | half-width span x1.11
+
+[R-P4] MC across 5 seeds at block=20: ci5 range 0.1687pp, ci95 range 0.2729pp | ladder half-width span 3.6825pp | ok=True
+
+[R-P3] denominator: point +8864.00bp  ci [+8423.05, +9327.40]bp  (n_cohorts 326)
+       numerator  (S8 95% upper): +314.78bp
+       ratio point (num/den_point) = 3.551%
+       ratio BOUND (num_ci95/den_ci5) = 3.737%
+       flips to >=50% only if denominator <= 629.6bp (7.10% of point; x14.08 smaller)
+       denominator CI width = x1.11 of its lower bound
+
+wrote analysis\_diag_premom_ci_result.json  sha256=3e7eedd4cf28e92f  elapsed=13.2s

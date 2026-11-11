@@ -59,6 +59,13 @@ data/.scratch/*
 !data/research/
 !data/research/l1_open_depth/
 !data/research/l1_open_depth/part.parquet
+#: 2026-11-11：`curves.parquet`（2,752 格 × 240 根 ≈ 10 MB）**不进**版本控制。
+#: 它与 part.parquet 不同：part 是 67KB 的锚点，这是可重拉的批量缓存（**2,752 次
+#: HTTP 请求**、有频控；≈316 批 × 每批 ≤20 只，316 是**批**不是请求——本行初稿
+#: 写成「~316 次请求」，正是 `fetch_l1_open_depth.py` docstring 记下的那个乘数错）。结论不依赖它的字节，而依赖它的**240 点曲线**——后者已整段落在
+#: `analysis/_diag_l1_cohort_curve_result.json` 的 `curve.delta_bp_by_k / c_by_k`，
+#: 克隆仓库的人拿得到每一个 k 上的 Δ 与 c，重抓脚本可逐位复现原表。
+data/research/l1_open_depth/curves.parquet
 #: 2026-11-08（13r）：同一课第三次。宽面前沿 / 流动性身份 / 宇宙缺口 / 生存偏差
 #: 四个产物支撑着产品决策，被 `data/.scratch/*` 一起挡在版本控制外——克隆仓库的人
 #: 拿得到引用它们的脚注，拿不到数。清单同时钉在
