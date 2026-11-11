@@ -1,0 +1,485 @@
+{
+  "caliber": "bar0 = 09:31:00 那一根（含 09:25 竞价）；份额按成交额；gap = open/prev_close−1 复权；cohort 复用 build_cohort()；实测来自 tdx get_minute 缓存，迁移来自 19 个全日分区",
+  "coverage": {
+    "partitions": 21,
+    "partitions_used": 19,
+    "partitions_skipped": 2,
+    "reference_cells": 748,
+    "reference_symbols": 40,
+    "cohort_cells": 2752,
+    "cohort_days": 316,
+    "cohort_cells_per_day": 8.709,
+    "cohort_minute_overlap": 0,
+    "direct_cells": 2752,
+    "direct_days": 316,
+    "direct_coverage": 1.0,
+    "direct_covers_enough": true,
+    "cohort_day_amt_med_yi": 14.313,
+    "cohort_day_amt_mean_yi": 23.948,
+    "reference_day_amt_med_yi": 1.063,
+    "cohort_gap_pct_med": -2.989
+  },
+  "levels": [
+    {
+      "date": "2026-10-08",
+      "used": false,
+      "first_bar": "13:48:00",
+      "min_bars": 73
+    },
+    {
+      "date": "2026-10-09",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-12",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-13",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-14",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-15",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-16",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-19",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-20",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-21",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-22",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-23",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-26",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-27",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-28",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-29",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-10-30",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-11-02",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-11-03",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 240
+    },
+    {
+      "date": "2026-11-04",
+      "used": true,
+      "first_bar": "09:31:00",
+      "min_bars": 239
+    },
+    {
+      "date": "2026-11-05",
+      "used": false,
+      "first_bar": "09:31:00",
+      "min_bars": 167
+    }
+  ],
+  "reference": {
+    "share_amt": {
+      "n": 748,
+      "med": 0.0354,
+      "mean": 0.0461,
+      "p10": 0.0154,
+      "p25": 0.0237,
+      "p75": 0.052,
+      "p90": 0.0751
+    },
+    "share_vol": {
+      "n": 748,
+      "med": 0.0352,
+      "mean": 0.046,
+      "p10": 0.0154,
+      "p25": 0.0236,
+      "p75": 0.0517,
+      "p90": 0.0755
+    },
+    "open_probe_vol_med": 0.0352,
+    "reconcile_with_open_probe_bp": 0.0,
+    "by_gap_bin": {
+      "le_m3": {
+        "n": 30,
+        "share_med": 0.0793,
+        "share_p25": 0.0578,
+        "share_p75": 0.1054,
+        "day_amt_med_yi": 4.546
+      },
+      "m3_m2": {
+        "n": 24,
+        "share_med": 0.0509,
+        "share_p25": 0.0419,
+        "share_p75": 0.0623,
+        "day_amt_med_yi": 1.617
+      },
+      "m2_m1": {
+        "n": 109,
+        "share_med": 0.0428,
+        "share_p25": 0.0315,
+        "share_p75": 0.054,
+        "day_amt_med_yi": 1.314
+      },
+      "m1_0": {
+        "n": 379,
+        "share_med": 0.0303,
+        "share_p25": 0.0207,
+        "share_p75": 0.042,
+        "day_amt_med_yi": 0.911
+      },
+      "0_1": {
+        "n": 157,
+        "share_med": 0.0334,
+        "share_p25": 0.0222,
+        "share_p75": 0.0489,
+        "day_amt_med_yi": 1.125
+      },
+      "gt_1": {
+        "n": 49,
+        "share_med": 0.0488,
+        "share_p25": 0.028,
+        "share_p75": 0.093,
+        "day_amt_med_yi": 1.624
+      }
+    }
+  },
+  "direct": {
+    "share_amt": {
+      "n": 2752,
+      "med": 0.055,
+      "mean": 0.0709,
+      "p10": 0.0295,
+      "p25": 0.0396,
+      "p75": 0.0758,
+      "p90": 0.1027
+    },
+    "by_gap_bin": {
+      "le_m3": {
+        "n": 1368,
+        "share_med": 0.0665,
+        "share_p25": 0.0495,
+        "share_p75": 0.089,
+        "day_amt_med_yi": 14.224
+      },
+      "m3_m2": {
+        "n": 615,
+        "share_med": 0.049,
+        "share_p25": 0.0368,
+        "share_p75": 0.0627,
+        "day_amt_med_yi": 14.11
+      },
+      "m2_m1": {
+        "n": 768,
+        "share_med": 0.043,
+        "share_p25": 0.0325,
+        "share_p75": 0.0581,
+        "day_amt_med_yi": 14.595
+      },
+      "m1_0": {
+        "n": 1,
+        "share_med": 0.0241,
+        "share_p25": 0.0241,
+        "share_p75": 0.0241,
+        "day_amt_med_yi": 7.871
+      }
+    },
+    "day_amt_med_yi": 14.313,
+    "open_vs_daily": {
+      "n": 2752,
+      "exact_share": 1.0,
+      "med_bp": 0.0,
+      "p95_abs_bp": 0.0
+    }
+  },
+  "transfer": {
+    "model": {
+      "beta": [
+        0.070486,
+        0.023593,
+        -0.005864
+      ],
+      "r2": 0.4124,
+      "lodo_mae_share": 0.0232,
+      "n": 748
+    },
+    "m1_med": 0.0749,
+    "m2_med": 0.0496,
+    "used_med": 0.0496,
+    "clip": [
+      0.0154,
+      0.0749
+    ],
+    "vs_direct_pp": 0.54
+  },
+  "budget": {
+    "r_star": 0.1179,
+    "open_bp": 121.49,
+    "vwap_bp": 6.43,
+    "gap_bp": 115.05,
+    "cost_bp": 20.0,
+    "impact_budget_bp": 101.49,
+    "book_yi": 5.0,
+    "names_per_day": 110,
+    "pi_at_5e8_med_110names": 0.0063,
+    "adv_pct_at_5e8": 4.01,
+    "direct": {
+      "cells": 2752,
+      "pool_med_yi": 0.8482,
+      "pool_mean_yi": 1.3651,
+      "pool_p25_yi": 0.4166,
+      "pi_req": {
+        "1yi": {
+          "med": 0.016,
+          "mean": 0.0099,
+          "p25": 0.0325
+        },
+        "2yi": {
+          "med": 0.0319,
+          "mean": 0.0198,
+          "p25": 0.065
+        },
+        "5yi": {
+          "med": 0.0798,
+          "mean": 0.0496,
+          "p25": 0.1625
+        },
+        "10yi": {
+          "med": 0.1597,
+          "mean": 0.0992,
+          "p25": 0.3251
+        }
+      },
+      "capacity": {
+        "p02": {
+          "med_yi": 1.253,
+          "mean_yi": 2.016,
+          "p25_yi": 0.615
+        },
+        "p05": {
+          "med_yi": 3.131,
+          "mean_yi": 5.04,
+          "p25_yi": 1.538
+        },
+        "p10": {
+          "med_yi": 6.263,
+          "mean_yi": 10.08,
+          "p25_yi": 3.076
+        },
+        "p20": {
+          "med_yi": 12.526,
+          "mean_yi": 20.159,
+          "p25_yi": 6.152
+        },
+        "p50": {
+          "med_yi": 31.315,
+          "mean_yi": 50.398,
+          "p25_yi": 15.381
+        }
+      },
+      "pi_at_5e8_med": 0.0798,
+      "cap_at_pi10_med_yi": 6.263
+    },
+    "transfer": {
+      "cells": 2752,
+      "pool_med_yi": 0.8373,
+      "pool_mean_yi": 1.4261,
+      "pool_p25_yi": 0.4307,
+      "pi_req": {
+        "1yi": {
+          "med": 0.0162,
+          "mean": 0.0095,
+          "p25": 0.0314
+        },
+        "2yi": {
+          "med": 0.0324,
+          "mean": 0.019,
+          "p25": 0.0629
+        },
+        "5yi": {
+          "med": 0.0809,
+          "mean": 0.0475,
+          "p25": 0.1572
+        },
+        "10yi": {
+          "med": 0.1618,
+          "mean": 0.095,
+          "p25": 0.3144
+        }
+      },
+      "capacity": {
+        "p02": {
+          "med_yi": 1.236,
+          "mean_yi": 2.106,
+          "p25_yi": 0.636
+        },
+        "p05": {
+          "med_yi": 3.091,
+          "mean_yi": 5.265,
+          "p25_yi": 1.59
+        },
+        "p10": {
+          "med_yi": 6.182,
+          "mean_yi": 10.53,
+          "p25_yi": 3.18
+        },
+        "p20": {
+          "med_yi": 12.364,
+          "mean_yi": 21.06,
+          "p25_yi": 6.36
+        },
+        "p50": {
+          "med_yi": 30.91,
+          "mean_yi": 52.649,
+          "p25_yi": 15.901
+        }
+      },
+      "pi_at_5e8_med": 0.0809,
+      "cap_at_pi10_med_yi": 6.182
+    },
+    "primary_route": "direct"
+  },
+  "path": {
+    "route": "direct",
+    "b0_ret_bp": {
+      "med": 19.07,
+      "mean": 30.45,
+      "p10": -249.97,
+      "p25": -119.17,
+      "p75": 171.66,
+      "p90": 316.15
+    },
+    "b0_range_bp_med": 252.11,
+    "b0_single_price_share": 0.0243
+  },
+  "verdict": {
+    "R-D1_overlap_zero": true,
+    "R-D1_reading": "参照类与 cohort 交集 0 -> 份额只能实测或迁移",
+    "R-D2_direct_vs_transfer_pp": 0.54,
+    "R-D2_reading": "实测量到的份额高于迁移值 -> 用全样本中位迁移是保守的",
+    "R-D3_route": "direct",
+    "R-D3_pi_star_at_5e8_med": 0.0798,
+    "R-D3_verdict": "pass",
+    "R-D3_verdict_zh": "通过",
+    "R-D4_unit_ok": true,
+    "binding_constraint": "impact"
+  },
+  "reading_template": "cohort {ccells} 只-日 / {cdays} 日、日均 {cpd:.2f} 只；参照类（{pused}/{ptot} 个全日分区、{rsyms} 只）与它的 (date,symbol) 交集是 {ov}，所以份额不能从参照类直接借。实测补到 {dcells} 只-日（{dcov:.0%}、{ddays} 日）：bar0 成交额份额中位 {dmed:.2%}（p25 {dp25:.2%}、p75 {dp75:.2%}），中位日成交额 {damt:.2f}亿，bar0 成交额中位 {pmed:.3f}亿（均值 {pmean:.3f}亿、p25 {pp25:.3f}亿）。cohort 自己的三个缺口档：{b3:.2%}（gap≤−3%，n {n3}）/ {b32:.2%}（{n32}）/ {b21:.2%}（{n21}）—— 缺口越深，首根 bar 占当日成交额的份额越高。迁移那条路（留一日误差 {lmae:.2%}）给的是 {tmed:.2%}，实测减迁移 {diff:+.2f}pp ⇒ {rd2}。r* = (cost {cost:.2f}bp − vwap {vwap:.2f}bp)/gap {gap:.2f}bp = **{rstar:.2%}**（恒等式，唯一产地在 market_neutral）。反解：{book:g}亿日建仓额、日均 {cpd:.2f} 只，需要吃掉 bar0 的 **{pi5:.2%}**（p25 流动性下 {pi5p25:.2%}；单票相当于日成交额的 {adv:.2f}%），判 **{verd}**；同口径下 10% 的参与率能撑 {c10:.2f}亿/日（中位流动性）、{c10m:.2f}亿（均值）。注意分母：bar0 **含** 09:25 竞价，所以真正需要的「竞价参与率」≥ {pi5:.2%}——要再除上竞价占首根 bar 的份额 θ，而 θ 本库测不出（没有 09:25 快照）；θ 越小这一格越紧，θ=0.4 时就是它的 2.5 倍。把同样 5 亿摊薄到 110 只/日（放弃 gap 条件，只作为分母敏感性）打平只需 {pi110:.2%}。首根 bar 内部：开盘→收盘中位 {ret:.1f}bp、振幅 {rng:.0f}bp、单一定价 {sing:.1%} —— 开盘价只在一瞬成立，那一瞬就是竞价（bar0 的 open 与日线 open 在 {oexact:.0%} 的 cell 上逐位相同，两条上游互不相干）。自带冲击的预算 {ibud:.1f}bp 本库测不出来（无委托队列），所以这一格能给的最强判据是「打平需要多少参与率」，不是「净收益是多少」。",
+  "reading_fields": {
+    "ccells": "coverage.cohort_cells",
+    "cdays": "coverage.cohort_days",
+    "cpd": "coverage.cohort_cells_per_day",
+    "pused": "coverage.partitions_used",
+    "ptot": "coverage.partitions",
+    "rsyms": "coverage.reference_symbols",
+    "ov": "coverage.cohort_minute_overlap",
+    "dcells": "coverage.direct_cells",
+    "ddays": "coverage.direct_days",
+    "dcov": "coverage.direct_coverage",
+    "dmed": "direct.share_amt.med",
+    "dp25": "direct.share_amt.p25",
+    "dp75": "direct.share_amt.p75",
+    "b3": "direct.by_gap_bin.le_m3.share_med",
+    "n3": "direct.by_gap_bin.le_m3.n",
+    "b32": "direct.by_gap_bin.m3_m2.share_med",
+    "n32": "direct.by_gap_bin.m3_m2.n",
+    "b21": "direct.by_gap_bin.m2_m1.share_med",
+    "n21": "direct.by_gap_bin.m2_m1.n",
+    "damt": "direct.day_amt_med_yi",
+    "pmed": "budget.direct.pool_med_yi",
+    "pmean": "budget.direct.pool_mean_yi",
+    "pp25": "budget.direct.pool_p25_yi",
+    "lmae": "transfer.model.lodo_mae_share",
+    "tmed": "transfer.used_med",
+    "diff": "transfer.vs_direct_pp",
+    "rd2": "verdict.R-D2_reading",
+    "cost": "budget.cost_bp",
+    "vwap": "budget.vwap_bp",
+    "gap": "budget.gap_bp",
+    "rstar": "budget.r_star",
+    "book": "budget.book_yi",
+    "pi5": "budget.direct.pi_at_5e8_med",
+    "pi5p25": "budget.direct.pi_req.5yi.p25",
+    "pi110": "budget.pi_at_5e8_med_110names",
+    "adv": "budget.adv_pct_at_5e8",
+    "verd": "verdict.R-D3_verdict_zh",
+    "c10": "budget.direct.cap_at_pi10_med_yi",
+    "c10m": "budget.direct.capacity.p10.mean_yi",
+    "ret": "path.b0_ret_bp.med",
+    "rng": "path.b0_range_bp_med",
+    "sing": "path.b0_single_price_share",
+    "oexact": "direct.open_vs_daily.exact_share",
+    "ibud": "budget.impact_budget_bp"
+  },
+  "elapsed_s": 13.5,
+  "reading": "cohort 2752 只-日 / 316 日、日均 8.71 只；参照类（19/21 个全日分区、40 只）与它的 (date,symbol) 交集是 0，所以份额不能从参照类直接借。实测补到 2752 只-日（100%、316 日）：bar0 成交额份额中位 5.50%（p25 3.96%、p75 7.58%），中位日成交额 14.31亿，bar0 成交额中位 0.848亿（均值 1.365亿、p25 0.417亿）。cohort 自己的三个缺口档：6.65%（gap≤−3%，n 1368）/ 4.90%（615）/ 4.30%（768）—— 缺口越深，首根 bar 占当日成交额的份额越高。迁移那条路（留一日误差 2.32%）给的是 4.96%，实测减迁移 +0.54pp ⇒ 实测量到的份额高于迁移值 -> 用全样本中位迁移是保守的。r* = (cost 20.00bp − vwap 6.43bp)/gap 115.05bp = **11.79%**（恒等式，唯一产地在 market_neutral）。反解：5亿日建仓额、日均 8.71 只，需要吃掉 bar0 的 **7.98%**（p25 流动性下 16.25%；单票相当于日成交额的 4.01%），判 **通过**；同口径下 10% 的参与率能撑 6.26亿/日（中位流动性）、10.08亿（均值）。注意分母：bar0 **含** 09:25 竞价，所以真正需要的「竞价参与率」≥ 7.98%——要再除上竞价占首根 bar 的份额 θ，而 θ 本库测不出（没有 09:25 快照）；θ 越小这一格越紧，θ=0.4 时就是它的 2.5 倍。把同样 5 亿摊薄到 110 只/日（放弃 gap 条件，只作为分母敏感性）打平只需 0.63%。首根 bar 内部：开盘→收盘中位 19.1bp、振幅 252bp、单一定价 2.4% —— 开盘价只在一瞬成立，那一瞬就是竞价（bar0 的 open 与日线 open 在 100% 的 cell 上逐位相同，两条上游互不相干）。自带冲击的预算 101.5bp 本库测不出来（无委托队列），所以这一格能给的最强判据是「打平需要多少参与率」，不是「净收益是多少」。"
+}

@@ -52,6 +52,13 @@ data/**
 data/.scratch/*
 !data/.scratch/pwin_variance.json
 !data/.scratch/hac_size.json
+#: 2026-11-11（D13d）：bar0 额度的**实测**证据。`_diag_l1_open_depth_result.json` 的
+#: 主口径（2,752 只-日的首根 bar 成交额）来自这份 67KB 缓存，由
+#: `scripts/fetch_l1_open_depth.py` 逐日可重拉（tdx，有频控）。不进版本控制就只剩
+#: 汇总分布，无法从零复算——与 .scratch 那两个锚点同一类。只放行这一个文件。
+!data/research/
+!data/research/l1_open_depth/
+!data/research/l1_open_depth/part.parquet
 #: 2026-11-08（13r）：同一课第三次。宽面前沿 / 流动性身份 / 宇宙缺口 / 生存偏差
 #: 四个产物支撑着产品决策，被 `data/.scratch/*` 一起挡在版本控制外——克隆仓库的人
 #: 拿得到引用它们的脚注，拿不到数。清单同时钉在
