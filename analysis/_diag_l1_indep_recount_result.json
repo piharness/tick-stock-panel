@@ -1,0 +1,34 @@
+{
+  "source": "data/kline_daily_enriched/date=*/part.parquet",
+  "method": "gap[d]=o[d+1]/c[d]-1, i1[d]=c[d+1]/o[d+1]-1, gap<=-1%, 无选股/池规模过滤",
+  "gap_max": -0.01,
+  "n_partitions": 367,
+  "n_dates": 367,
+  "n_symbols": 5581,
+  "tradable_cells": 2042646,
+  "n_cells_gap_pool": 239521,
+  "n_days_with_pool": 366,
+  "names_per_day_mean": 654.4,
+  "names_per_day_median": 397.0,
+  "names_per_day_p10": 211.0,
+  "names_per_day_max": 5097,
+  "i1_bp": {
+    "daily_equal_weight": 47.1,
+    "pooled_cell_weight": 44.8,
+    "unconditional": 11.7,
+    "daily_equal_weight_trim_best5pct": 30.9
+  },
+  "by_year": {
+    "2025": {
+      "days": 164,
+      "cells": 71212,
+      "i1_daily_equal_bp": 52.5
+    },
+    "2026": {
+      "days": 202,
+      "cells": 168309,
+      "i1_daily_equal_bp": 42.7
+    }
+  },
+  "elapsed_s": 5.5
+}

@@ -1,0 +1,83 @@
+{
+  "cohort": {
+    "n_cells": 2754,
+    "n_days": 316,
+    "n_symbols": 730,
+    "names_per_day_mean": 8.72,
+    "date_first": "2025-06-06",
+    "date_last": "2026-10-12",
+    "calendar_days": 367
+  },
+  "amount_cny": {
+    "median": 1432232500.0,
+    "p10": 413457150.0,
+    "p25": 763960400.0,
+    "p75": 2880357925.0,
+    "p90": 5117037710.0
+  },
+  "download": {
+    "req_full_span": 13870,
+    "req_entry_days_only": 11680,
+    "minutes_at_0p08s": 18.5,
+    "minutes_entry_only": 15.6,
+    "claimed_9min_assumes": "327 cohort x 20 names = 6540 req"
+  },
+  "capacity": [
+    {
+      "fund_m_cny": 200,
+      "per_name_cny": 22988506.0,
+      "part_full_med": 0.0161,
+      "part_full_p90": 0.0556,
+      "part_first_med": 0.456,
+      "part_first_p90": 1.5796,
+      "part_first_p10share_med": 1.0423,
+      "share_over_10pct_full": 0.038,
+      "share_over_10pct_first": 0.937
+    },
+    {
+      "fund_m_cny": 500,
+      "per_name_cny": 57471264.0,
+      "part_full_med": 0.0401,
+      "part_full_p90": 0.139,
+      "part_first_med": 1.14,
+      "part_first_p90": 3.9489,
+      "part_first_p10share_med": 2.6057,
+      "share_over_10pct_full": 0.167,
+      "share_over_10pct_first": 0.992
+    },
+    {
+      "fund_m_cny": 1000,
+      "per_name_cny": 114942529.0,
+      "part_full_med": 0.0803,
+      "part_full_p90": 0.278,
+      "part_first_med": 2.2799,
+      "part_first_p90": 7.8979,
+      "part_first_p10share_med": 5.2113,
+      "share_over_10pct_full": 0.405,
+      "share_over_10pct_first": 1.0
+    },
+    {
+      "fund_m_cny": 2000,
+      "per_name_cny": 229885057.0,
+      "part_full_med": 0.1605,
+      "part_full_p90": 0.556,
+      "part_first_med": 4.5599,
+      "part_first_p90": 15.7957,
+      "part_first_p10share_med": 10.4226,
+      "share_over_10pct_full": 0.677,
+      "share_over_10pct_first": 1.0
+    },
+    {
+      "fund_m_cny": 5000,
+      "per_name_cny": 574712644.0,
+      "part_full_med": 0.4013,
+      "part_full_p90": 1.39,
+      "part_first_med": 11.3997,
+      "part_first_p90": 39.4893,
+      "part_first_p10share_med": 26.0565,
+      "share_over_10pct_full": 0.916,
+      "share_over_10pct_first": 1.0
+    }
+  ],
+  "elapsed_s": 9.4
+}

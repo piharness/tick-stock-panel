@@ -1,0 +1,109 @@
+{
+  "seed": 20261111,
+  "cell": "top20 mom20, gap<=-1.0%, open[d+1]->close[d+1]",
+  "parity_vs_round5": {
+    "n_days": 316,
+    "n_cells": 2752,
+    "n_symbols": 730,
+    "names_per_day": 8.71,
+    "active_bp": 64.5,
+    "raw_bp": 121.5,
+    "per_trade_raw_bp": 118.9,
+    "uni_drift_bp": 9.7,
+    "gap_bench_bp": 57.0
+  },
+  "series": {
+    "raw": {
+      "mean_bp": 121.5,
+      "sd_bp": 343.2,
+      "t_iid": 6.29,
+      "t_nw5": 6.91,
+      "ci95_block20_bp": [
+        84.3,
+        154.4
+      ]
+    },
+    "active": {
+      "mean_bp": 64.5,
+      "t_iid": 4.22,
+      "ci95_block20_bp": [
+        31.1,
+        91.5
+      ]
+    },
+    "halves_raw_bp": [
+      132.2,
+      110.8
+    ],
+    "trim_best5pct_raw_bp": 82.3,
+    "span_trading_days": 367,
+    "span_years": 1.517,
+    "signal_days": 316,
+    "signal_days_per_year": 208.4,
+    "ann_on_round_capital": {
+      "raw_PL": {
+        "net_bp": 101.5,
+        "ann_simple_x_obs": 2.1147,
+        "ann_compound_realized": 6.2754,
+        "equity_multiple": 20.278
+      },
+      "active_attribution": {
+        "net_bp": 44.5,
+        "ann_simple_x_obs": 0.9275,
+        "ann_compound_realized": 1.3386,
+        "equity_multiple": 3.627
+      }
+    },
+    "ann_on_total_equity_inventory_equal": {
+      "raw_PL": 1.0574,
+      "active_attribution": 0.4637
+    }
+  },
+  "decomposition": {
+    "peer_drift_bp": 9.7,
+    "gap_reversal_bp": 47.2,
+    "momentum_premium_bp": 64.5,
+    "share_momentum": 0.531,
+    "universe_down_days": {
+      "n": 131,
+      "raw_bp": -3.6,
+      "active_bp": 67.8
+    },
+    "universe_up_days": {
+      "n": 185,
+      "raw_bp": 210.1,
+      "active_bp": 62.2
+    }
+  },
+  "amount_cny": {
+    "median": 1431295950.0,
+    "n": 2752
+  },
+  "capacity_vs_share": {
+    "s_point_3.52pct": {
+      "share": 0.0352,
+      "a_star_round_cny": 21938325.0,
+      "a_star_total_equity_cny": 43876649.0,
+      "annual_profit_raw_cny": 46392572.0,
+      "annual_profit_active_cny": 20348196.0
+    },
+    "s_p10_1.54pct": {
+      "share": 0.0154,
+      "a_star_round_cny": 9598017.0,
+      "a_star_total_equity_cny": 19196034.0,
+      "annual_profit_raw_cny": 20296750.0,
+      "annual_profit_active_cny": 8902336.0
+    },
+    "s_20pct": {
+      "share": 0.2,
+      "a_star_round_cny": 124649571.0,
+      "a_star_total_equity_cny": 249299143.0,
+      "annual_profit_raw_cny": 263594159.0,
+      "annual_profit_active_cny": 115614752.0
+    },
+    "share_implied_by_A_star_20m": 0.0321,
+    "full_day_denominator_a_star_round_cny": 623247857.0,
+    "full_day_overstatement": 28.4
+  },
+  "elapsed_s": 14.5
+}
