@@ -28,6 +28,14 @@
 - 另有全缺口池（无选股器）与按 gap 深度四档的同一组量，用于判断这是 cohort 特性还是结构性。
 
 产物 `_diag_l1_vwap_entry_result.json`。只读分区，不联网。
+
+**口径作废说明（2026-11-11，`_diag_l1_vwap_curvature.py`）**
+`gap_pool_unselected` 用的 gap 是 `raw_open / raw_close.shift(1) - 1`，会把**除权日**的
+自然下移当成低开（3,870 个 cell，占多出来的 4,077 里的 95%，它们的 `i1` 只有 −7.73bp），
+所以池的 **45.7bp / 243,584 cell / VWAP −0.3bp 已作废**；正确口径是「日历相邻 + 复权」，
+即 **47.10bp / 239,521 cell**，与 `_diag_l1_indep_recount.py` 的 ① 是同一个数。
+`robustness` 段的 `pen_over_i1` 是 `mean(pen)/mean(i1)`，**不是斜率**（真斜率见
+`_diag_l1_vwap_curvature.py` 的 `pen_slope`）。cohort 侧（121.5 / 6.4 / 115.1）不受影响。
 """
 from __future__ import annotations
 

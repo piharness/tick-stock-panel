@@ -1,0 +1,265 @@
+{
+  "purpose": "审计 ⑨ 的三处口径：gap 定义 / pen~i1 的斜率 / VWAP 均值的稳健性",
+  "cohort": {
+    "n_days": 316,
+    "n_cells": 2752
+  },
+  "gap_definition": {
+    "A_shift_raw": {
+      "tag": "原始 gap + 跨停牌（原脚本）",
+      "cells": 243598,
+      "days": 366,
+      "i1_daily_equal_bp": 45.75,
+      "i1_cell_equal_bp": 43.76
+    },
+    "B_shift_raw_in_band": {
+      "tag": "A 再过 in_band（原脚本产物里的池）",
+      "cells": 243584,
+      "days": 366,
+      "i1_daily_equal_bp": 45.75,
+      "i1_cell_equal_bp": 43.76
+    },
+    "D_shift_raw_no_exdiv": {
+      "tag": "A 去掉除权伪缺口、保留跨停牌",
+      "cells": 239728,
+      "days": 366,
+      "i1_daily_equal_bp": 47.1,
+      "i1_cell_equal_bp": 44.8
+    },
+    "C_cal_adj": {
+      "tag": "日历相邻 + 复权（indep_recount 口径）",
+      "cells": 239521,
+      "days": 366,
+      "i1_daily_equal_bp": 47.1,
+      "i1_cell_equal_bp": 44.79
+    },
+    "only_non_adjacent": {
+      "tag": "A 里跨停牌的那部分",
+      "cells": 249,
+      "days": 124,
+      "i1_daily_equal_bp": 21.88,
+      "i1_cell_equal_bp": 50.59
+    },
+    "only_ex_rights": {
+      "tag": "A 里被复权否掉的伪缺口",
+      "cells": 3870,
+      "days": 320,
+      "i1_daily_equal_bp": -7.73,
+      "i1_cell_equal_bp": -20.65,
+      "adj_factor_changed_share": 0.9938,
+      "adjf_ratio_median": 0.9784
+    },
+    "decomposition_bp": {
+      "total_A_minus_C": -1.35,
+      "ex_rights_leg": 1.35,
+      "non_adjacent_leg": 0.0
+    }
+  },
+  "pen_slope": {
+    "market_pooled": {
+      "slope": 0.658,
+      "intercept_bp": 5.6,
+      "n": 2000524
+    },
+    "market_within_day": {
+      "slope": 0.684,
+      "intercept_bp": 0.0,
+      "n": 2000524
+    },
+    "market_per_day_slope": {
+      "median": 0.701,
+      "p10": 0.657,
+      "p90": 0.733,
+      "days": 367
+    },
+    "gap_pool": {
+      "slope": 0.638,
+      "intercept_bp": 20.1,
+      "n": 239521,
+      "ratio_of_means_pen_over_i1": 1.086,
+      "retention_at_mean": -0.087,
+      "mean_i1_bp": 44.8
+    },
+    "cohort": {
+      "slope": 0.598,
+      "intercept_bp": 38.3,
+      "n": 2752,
+      "ratio_of_means_pen_over_i1": 0.919,
+      "retention_at_mean": 0.08,
+      "mean_i1_bp": 118.9
+    },
+    "gap_pool_by_year": {
+      "2025": {
+        "slope": 0.651,
+        "intercept_bp": 16.4,
+        "n": 70963,
+        "ratio_of_means_pen_over_i1": 0.885
+      },
+      "2026": {
+        "slope": 0.633,
+        "intercept_bp": 21.4,
+        "n": 168558,
+        "ratio_of_means_pen_over_i1": 1.259
+      }
+    }
+  },
+  "gap_pool_by_depth": [
+    {
+      "bucket": "q1",
+      "n": 59879,
+      "gap_bp": -400.0,
+      "open_to_close_bp": 90.9,
+      "open_to_close_median_bp": 50.0,
+      "vwap_to_close_bp": -4.1,
+      "vwap_to_close_median_bp": -18.0,
+      "open_to_vwap_bp": 91.4
+    },
+    {
+      "bucket": "q2",
+      "n": 59887,
+      "gap_bp": -196.0,
+      "open_to_close_bp": 36.9,
+      "open_to_close_median_bp": 17.6,
+      "vwap_to_close_bp": -8.6,
+      "vwap_to_close_median_bp": -18.0,
+      "open_to_vwap_bp": 43.1
+    },
+    {
+      "bucket": "q3",
+      "n": 59866,
+      "gap_bp": -142.0,
+      "open_to_close_bp": 26.1,
+      "open_to_close_median_bp": 10.6,
+      "vwap_to_close_bp": -7.5,
+      "vwap_to_close_median_bp": -12.7,
+      "open_to_vwap_bp": 31.9
+    },
+    {
+      "bucket": "q4",
+      "n": 59876,
+      "gap_bp": -111.0,
+      "open_to_close_bp": 25.1,
+      "open_to_close_median_bp": 12.3,
+      "vwap_to_close_bp": -4.8,
+      "vwap_to_close_median_bp": -9.0,
+      "open_to_vwap_bp": 28.5
+    }
+  ],
+  "outlier_sensitivity": {
+    "pool_before_screen": {
+      "i1_mean_bp": 43.8,
+      "i1_median_bp": 19.4,
+      "iv_mean_bp": 1028.01,
+      "iv_median_bp": -13.4,
+      "iv_winsor_mean_bp": -6.93,
+      "pen_mean_bp": 47.6,
+      "pen_median_bp": 23.2,
+      "pen_winsor_mean_bp": 46.5,
+      "max_abs_iv_bp": 236198323.0,
+      "iv_daily_equal_bp": 134.78,
+      "cells": 243598
+    },
+    "pool_after_screen": {
+      "i1_mean_bp": 43.8,
+      "i1_median_bp": 19.4,
+      "iv_mean_bp": -6.25,
+      "iv_median_bp": -13.4,
+      "iv_winsor_mean_bp": -6.96,
+      "pen_mean_bp": 47.7,
+      "pen_median_bp": 23.3,
+      "pen_winsor_mean_bp": 46.6,
+      "max_abs_iv_bp": 12561.0,
+      "iv_daily_equal_bp": -0.3,
+      "cells": 243584
+    },
+    "out_of_band_cells": {
+      "cells": 14,
+      "share": 5.7e-05,
+      "iv_mean_bp": 17995869.0,
+      "iv_max_bp": 236198323.0,
+      "mean_shift_due_to_screen_bp": 1034.3
+    },
+    "cohort": {
+      "i1_mean_bp": 118.9,
+      "i1_median_bp": 15.0,
+      "iv_mean_bp": 2.7,
+      "iv_median_bp": -24.3,
+      "iv_winsor_mean_bp": 1.73,
+      "pen_mean_bp": 109.3,
+      "pen_median_bp": 62.0,
+      "pen_winsor_mean_bp": 108.6,
+      "max_abs_iv_bp": 1812.0,
+      "iv_daily_equal_bp": 6.43,
+      "cells": 2752,
+      "out_of_band": 0
+    },
+    "note": "均值对 14 个越界 cell 的敏感度；中位与 1/99 缩尾给的是另一个数"
+  },
+  "minute_null": {
+    "coverage": {
+      "partitions": 21,
+      "symbol_days": 826,
+      "full_day_symbol_days": 747,
+      "truncated_dates": [
+        {
+          "date": "2026-10-08",
+          "bars_min": 73
+        },
+        {
+          "date": "2026-11-04",
+          "bars_min": 239
+        },
+        {
+          "date": "2026-11-05",
+          "bars_min": 167
+        }
+      ]
+    },
+    "all_symbol_days": {
+      "n": 826,
+      "amount_ratio_median_bp": 0.0,
+      "amount_ratio_mean_bp": -453.19,
+      "within_1bp_share": 0.9044
+    },
+    "corroboration": {
+      "n": 747,
+      "amount_ratio_median_bp": 0.0,
+      "amount_ratio_mean_bp": 0.0,
+      "within_1bp_share": 1.0,
+      "exact_volume_share": 0.6252,
+      "exact_amount_share": 0.0977,
+      "abs_amount_diff_median_cny": 300.0
+    },
+    "volume_centroid": {
+      "median": 0.4039,
+      "p10": 0.3257,
+      "p90": 0.4797
+    },
+    "s_first_bar": {
+      "median": 0.0352,
+      "p10": 0.0154,
+      "p90": 0.0754
+    },
+    "s_close_auction": {
+      "median": 0.0103,
+      "p10": 0.0047,
+      "p90": 0.0201
+    },
+    "implied_centroid": {
+      "n": 687,
+      "median_C_eff": 0.5719,
+      "median_C_minus_C_eff": 0.1519,
+      "share_C_eff_gt_C": 0.645,
+      "median_gap_up_days": 0.2266,
+      "median_gap_down_days": 0.1249,
+      "small_sample_slope": 0.576
+    },
+    "linear_path_null": {
+      "comment": "线性路径下 slope = 成交量质心；再叠加收盘竞价权重 w 后 = C*(1-w) + w",
+      "C_median": 0.4039,
+      "w_close_median": 0.0103,
+      "null_slope_with_auction": 0.41
+    }
+  },
+  "elapsed_s": 14.4
+}
