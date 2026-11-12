@@ -99,6 +99,8 @@ DEADLINE = "09:25:00"
 PROBE_TOL_S = 5
 #: 距 09:25:00 少于这么多秒的读点只能算、不能下单（不足以下单+回报）。
 ACTION_MIN_BUFFER_S = 30
+#: 少于这么多帧的一天不归档：那是 `--collect` 的定点快照，没有路径可算。
+MIN_ARCHIVE_FRAMES = 3
 
 #: 科创板 `[6]` 是股，其余是手；`b1v` 两种板都是手 ⇒ 虚拟匹配额统一 ×100。
 LOT = 100
@@ -206,7 +208,7 @@ def collect(label: str, out_dir: Path, workers: int = 16, batch: int = 80) -> in
 
 
 def burst(out_dir: Path, interval: float, until: str, workers: int = 16,
-          batch: int = 80, max_sweeps: int = 0) -> int:
+          batch: int = 80, max_sweeps: int = 0, since: str = "") -> int:
     """09:15–09:26 连续扫全市场，一次一轮，轮间隔 `interval` 秒。
 
     为什么要连续而不是三个定点：定点要求机器恰好在那一秒醒着（一天只有一次机会），
@@ -219,6 +221,11 @@ def burst(out_dir: Path, interval: float, until: str, workers: int = 16,
     syms = universe()
     stop = _sec(until)
     n = 0
+    if since:
+        from datetime import datetime as _dt
+        import time as _t
+        while _sec(_dt.now().strftime("%H:%M:%S")) < _sec(since):
+            _t.sleep(min(5.0, max(0.2, _sec(since) - _sec(_dt.now().strftime("%H:%M:%S")))))
     while True:
         t0 = time.time()
         now = datetime.now()
@@ -250,11 +257,30 @@ def archive(frames: list[dict], out_dir: Path, tag: str) -> Path:
                 "b1p": v.get("b1p"), "b1v": v.get("b1v"),
                 "a1p": v.get("a1p"), "a1v": v.get("a1v"),
             })
-    day = frames[-1]["ts"][:10]
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"{day}_{tag}.parquet"
-    pl.DataFrame(recs).write_parquet(out, compression="zstd")
-    print(f"归档 {len(recs)} 行 × {len(frames)} 帧 → {out}（{out.stat().st_size/1024:.0f} KB）")
+    df = pl.DataFrame(recs)
+    out = None
+    skipped = []
+    for day in sorted({r["ts"][:10] for r in recs}):
+        sub = df.filter(pl.col("ts").str.slice(0, 10) == day)
+        n_frame = sub["ts"].n_unique()
+        out = out_dir / f"{day}_{tag}.parquet"
+        # ① 单帧日不是 burst（是 `--collect` 的定点快照），归了也没路径可算；
+        # ② 归档只许变大：一次「输入只有 1 帧」的分析曾把 569 帧的归档覆盖成 5,532 行 × 1 帧。
+        # 帧不可回补，所以宁可留着旧的多，也不接受少（要换证据就换 tag，别覆盖）。
+        # 两种情况都只跳过这一天，不中断整批 —— 否则一天的问题会让后面的日子也不落盘。
+        if n_frame < MIN_ARCHIVE_FRAMES:
+            skipped.append(f"{day}: 只有 {n_frame} 帧")
+            continue
+        if out.exists():
+            old_rows = pl.read_parquet(out).height
+            if old_rows > sub.height:
+                skipped.append(f"{day}: 现有归档 {old_rows} 行 > 本次 {sub.height} 行")
+                continue
+        sub.write_parquet(out, compression="zstd")
+        print(f"归档 {sub.height} 行 × {n_frame} 帧 → {out.name}（{out.stat().st_size/1024:.0f} KB）")
+    for sk in skipped:
+        print(f"· 跳过归档 {sk}")
     return out
 
 
@@ -443,6 +469,7 @@ def main() -> int:
     ap.add_argument("--threads", type=int, default=16, help="并发请求数")
     ap.add_argument("--batch", type=int, default=80, help="单请求股票数")
     ap.add_argument("--until", default="09:26:00", help="burst 停在第几秒（HH:MM:SS）")
+    ap.add_argument("--since", default="", help="burst 从第几秒开始（空=立刻）")
     ap.add_argument("--archive", action="store_true", help="把帧落成 parquet（证据本体）")
     ap.add_argument("--label", default="", help="快照标签，如 092430")
     args = ap.parse_args()
@@ -451,7 +478,7 @@ def main() -> int:
         collect(args.label or datetime.now().strftime("%H%M"), COLLECT_DIR, args.threads, args.batch)
         return 0
     if args.burst:
-        burst(COLLECT_DIR, args.interval, args.until, args.threads, args.batch)
+        burst(COLLECT_DIR, args.interval, args.until, args.threads, args.batch, since=args.since)
         return 0
 
     frames = load(args.frames)
@@ -485,6 +512,11 @@ def main() -> int:
                 guard["misaligned"].append({"date": m["date"], "probe": t,
                                             "used_ts": pm["used_ts"],
                                             "offset_s": pm["offset_s"]})
+
+    if not all_rows:
+        # 空射程不是通过：输入里没有一天能配上 V_final 时，写盘就是把上一版证据清空。
+        raise SystemExit(f"0 对配对（帧 {len(frames)}、天 {len(days)}）—— 不写 {args.out.name}；"
+                         "先查输入是不是只有采集时的连续竞价帧")
 
     rank = summarize(all_rows, list(PROBES))
     sum_final = sum(r["auc_amt_wan"] for r in all_rows)
