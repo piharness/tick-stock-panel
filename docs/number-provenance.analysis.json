@@ -542,6 +542,66 @@
    "sha": "4b240217a8fa4e03"
   },
   {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "容量前沿：把「参与率破 10%」从\"要不要买 L2\"改写成\"权重怎么分\"。",
+   "where": "<module>",
+   "sha": "ab21e64adab5e31b"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "11-12 实盘是**等额**下单（~110 万/票 × 9 只 ≈ 988 万）。等额 + π≤10% 把总规模",
+   "where": "<module>",
+   "sha": "5fc8836fde804d71"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "锁死在 n·min_i(0.1·V_i) —— 最薄那只腿决定全体。集合竞价是单一价撮合、无穿档成本",
+   "where": "<module>",
+   "sha": "14be4b45f18e0d8c"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "2. `T_max(α)`：π_i ≤ 10% 下的当日可投总额。**两种 κ 假设并列**：",
+   "where": "<module>",
+   "sha": "4a44dc15364204a8"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "- `measured`：逐票 κ 从 11-12 实测横截面抽。**这才是「每票都过」的对象**。",
+   "where": "<module>",
+   "sha": "2bfde10865921ed8"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "最薄那只的 κ 比中位低 3–4 倍 ⇒ 用中位 κ 报出来的 T_max 被同一倍数高估。",
+   "where": "<module>",
+   "sha": "53df4ca417e6bc4c"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "首版的「1,540 万 / 2,950 万 / 2,000 万达标 71%」都是这个口径，已作废。",
+   "where": "<module>",
+   "sha": "f94bb4704f56d788"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "- κ 横截面形状**只借了 11-12 一天、20 只**（n_day=1）。它是量级校正，不是分布",
+   "where": "<module>",
+   "sha": "7e5e61efa4caf4a9"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "09:24 申报截止，已实测）⇒「每票都过 10%」只能靠 λ 定在 κ 的低分位，不能靠观测。",
+   "where": "<module>",
+   "sha": "40d45f9ebb6d3194"
+  },
+  {
+   "file": "analysis/_diag_l1_weight_frontier.py",
+   "text": "11-12 09:25:0x 实测，源 `qt.gtimg.cn`：竞价成交额 / 11-11 成交额。",
+   "where": "comment#1",
+   "sha": "bbe9a136ed950b38"
+  },
+  {
    "file": "analysis/_diag_probe_gp.py",
    "text": "装机的 1.2.2 实际是 `(stock_list, field_list, start_time, end_time)`，另一个 `by_date`",
    "where": "<module>",

@@ -294,6 +294,42 @@
  ],
  "frozen": [
   {
+   "file": "backend/app/decision/l1_cohort.py",
+   "text": "cohort 不是「20 只」，是「20 只里低开的那些」——实测 8.71 只/日。把「低开才买」",
+   "where": "<module>",
+   "sha": "8fddf48f2881aea1"
+  },
+  {
+   "file": "backend/app/decision/l1_cohort.py",
+   "text": "除权日两者分叉：此时 `raw_close × 0.99` 不等于复权阈值的折算式，本模块把这些",
+   "where": "<module>",
+   "sha": "b45898ec08623bcb"
+  },
+  {
+   "file": "backend/app/decision/l1_cohort.py",
+   "text": "开盘价本身是 tick 的整数倍（A 股 0.01，全样本 2,017,242 个 `raw_open` /",
+   "where": "_tick_floor",
+   "sha": "f114135ab43eb439"
+  },
+  {
+   "file": "backend/app/decision/l1_cohort.py",
+   "text": "第 3 位 ≥5 时把限价抬高一分，于是把 gap 是 −0.997% 的票也买进来。",
+   "where": "_tick_floor",
+   "sha": "e6ac3fe36a9cc4ba"
+  },
+  {
+   "file": "backend/app/decision/l1_cohort.py",
+   "text": "**0** 个；`round` 违反 **21,491** 个（占 1.07%）。落在 top20 名单上的那部分",
+   "where": "_tick_floor",
+   "sha": "58f1032d3519df98"
+  },
+  {
+   "file": "backend/app/decision/l1_cohort.py",
+   "text": "在 80 个交易日里多买了 11 个 cell，平均 −145bp，而同期 cohort +120bp。",
+   "where": "_tick_floor",
+   "sha": "f07c1761d304eeff"
+  },
+  {
    "file": "backend/app/decision/pwin.py",
    "text": "信息使用**。实测中 20 日动量策略就是这种情况——训练段 skill +4.45%，",
    "where": "<module>",
@@ -416,19 +452,19 @@
   {
    "file": "backend/app/decision/settle.py",
    "text": "LRV_hat → (2/3 + 1/(3H²))·LRV = 267/400·LRV = 0.6675·LRV (H = 20)",
-   "where": "comment#7",
+   "where": "comment#15",
    "sha": "f0dfe4e766844294"
   },
   {
    "file": "backend/app/decision/settle.py",
    "text": "也就是 `se` 恒为真值的 `sqrt(267/400) ≈ 0.817` 倍（`sqrt(2/3) = 0.8165` 只是",
-   "where": "comment#7",
+   "where": "comment#15",
    "sha": "22a09bde64df32b3"
   },
   {
    "file": "backend/app/decision/settle.py",
    "text": "更重的那一端；`n_eff = n·(se_iid/se)²` 被同一份偏差放大 1.5 倍。",
-   "where": "comment#7",
+   "where": "comment#15",
    "sha": "9f29a130438b8117"
   },
   {

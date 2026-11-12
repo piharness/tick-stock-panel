@@ -1,0 +1,616 @@
+{
+ "cohort": {
+  "cells": 2800,
+  "days": 320,
+  "date_first": "2025-06-06",
+  "date_last": "2026-10-16",
+  "names_per_day": 8.75,
+  "gap_to_panel_last_days": 19,
+  "note": "date = 入场日；20 日 fwd 过滤作用于信号日 ⇒ 入场日末日距 panel 末日 19 个交易日（信号日 20）。今日部分 bar 不进收益，只影响「昨日额」那条路"
+ },
+ "baseline_equal_weight": {
+  "mu_bp": 121.66,
+  "sd_bp": 342.8,
+  "IR": 5.522
+ },
+ "frontier_homogeneous_kappa": {
+  "a0": {
+   "alpha": 0.0,
+   "mu_bp": 121.66,
+   "sd_bp": 342.8,
+   "IR": 5.522,
+   "dIR": 0.0,
+   "eff_n": 8.75,
+   "dmu_vs_alpha0_bp": 0.0,
+   "tmax_wan": 561.7,
+   "tmax_p20_wan": 289.1,
+   "tmax_p10_wan": 178.4,
+   "pass_500w_pct": 56.9,
+   "pass_988w_pct": 21.6,
+   "pass_1000w_pct": 20.6,
+   "pass_2000w_pct": 3.4,
+   "pass_3000w_pct": 0.6,
+   "sd_ratio_vs_alpha0": 1.0
+  },
+  "a0p25": {
+   "alpha": 0.25,
+   "mu_bp": 122.28,
+   "sd_bp": 351.2,
+   "IR": 5.417,
+   "dIR": -0.105,
+   "eff_n": 8.37,
+   "dmu_vs_alpha0_bp": 0.62,
+   "tmax_wan": 774.5,
+   "tmax_p20_wan": 436.5,
+   "tmax_p10_wan": 283.3,
+   "pass_500w_pct": 74.1,
+   "pass_988w_pct": 36.2,
+   "pass_1000w_pct": 35.9,
+   "pass_2000w_pct": 7.2,
+   "pass_3000w_pct": 1.9,
+   "sd_ratio_vs_alpha0": 1.025
+  },
+  "a0p5": {
+   "alpha": 0.5,
+   "mu_bp": 122.33,
+   "sd_bp": 364.4,
+   "IR": 5.223,
+   "dIR": -0.299,
+   "eff_n": 7.46,
+   "dmu_vs_alpha0_bp": 0.67,
+   "tmax_wan": 1197.3,
+   "tmax_p20_wan": 665.3,
+   "tmax_p10_wan": 487.4,
+   "pass_500w_pct": 89.1,
+   "pass_988w_pct": 58.8,
+   "pass_1000w_pct": 58.4,
+   "pass_2000w_pct": 16.2,
+   "pass_3000w_pct": 4.4,
+   "sd_ratio_vs_alpha0": 1.063
+  },
+  "a0p75": {
+   "alpha": 0.75,
+   "mu_bp": 122.01,
+   "sd_bp": 380.8,
+   "IR": 4.984,
+   "dIR": -0.538,
+   "eff_n": 6.42,
+   "dmu_vs_alpha0_bp": 0.35,
+   "tmax_wan": 1836.8,
+   "tmax_p20_wan": 1046.7,
+   "tmax_p10_wan": 726.3,
+   "pass_500w_pct": 95.0,
+   "pass_988w_pct": 81.2,
+   "pass_1000w_pct": 80.6,
+   "pass_2000w_pct": 44.7,
+   "pass_3000w_pct": 18.8,
+   "sd_ratio_vs_alpha0": 1.111
+  },
+  "a1": {
+   "alpha": 1.0,
+   "mu_bp": 121.45,
+   "sd_bp": 398.9,
+   "IR": 4.737,
+   "dIR": -0.785,
+   "eff_n": 5.47,
+   "dmu_vs_alpha0_bp": -0.21,
+   "tmax_wan": 2949.6,
+   "tmax_p20_wan": 1579.3,
+   "tmax_p10_wan": 1040.9,
+   "pass_500w_pct": 98.1,
+   "pass_988w_pct": 90.6,
+   "pass_1000w_pct": 90.6,
+   "pass_2000w_pct": 70.6,
+   "pass_3000w_pct": 49.4,
+   "sd_ratio_vs_alpha0": 1.164
+  },
+  "a1p5": {
+   "alpha": 1.5,
+   "mu_bp": 120.1,
+   "sd_bp": 434.3,
+   "IR": 4.302,
+   "dIR": -1.219,
+   "eff_n": 4.1,
+   "dmu_vs_alpha0_bp": -1.56,
+   "tmax_wan": 2263.6,
+   "tmax_p20_wan": 1273.6,
+   "tmax_p10_wan": 855.8,
+   "pass_500w_pct": 97.2,
+   "pass_988w_pct": 86.2,
+   "pass_1000w_pct": 85.9,
+   "pass_2000w_pct": 57.2,
+   "pass_3000w_pct": 32.2,
+   "sd_ratio_vs_alpha0": 1.267
+  }
+ },
+ "frontier_measured_kappa": {
+  "a0": {
+   "alpha": 0.0,
+   "mu_bp": 121.66,
+   "sd_bp": 342.8,
+   "IR": 5.522,
+   "dIR": 0.0,
+   "eff_n": 8.75,
+   "dmu_vs_alpha0_bp": 0.0,
+   "tmax_wan": 408.1,
+   "tmax_p20_wan": 190.4,
+   "tmax_p10_wan": 115.6,
+   "pass_500w_pct": 40.2,
+   "pass_988w_pct": 12.6,
+   "pass_1000w_pct": 12.3,
+   "pass_2000w_pct": 1.7,
+   "pass_3000w_pct": 0.3,
+   "sd_ratio_vs_alpha0": 1.0
+  },
+  "a0p25": {
+   "alpha": 0.25,
+   "mu_bp": 122.28,
+   "sd_bp": 351.2,
+   "IR": 5.417,
+   "dIR": -0.105,
+   "eff_n": 8.37,
+   "dmu_vs_alpha0_bp": 0.62,
+   "tmax_wan": 525.0,
+   "tmax_p20_wan": 265.7,
+   "tmax_p10_wan": 171.8,
+   "pass_500w_pct": 52.7,
+   "pass_988w_pct": 19.0,
+   "pass_1000w_pct": 18.4,
+   "pass_2000w_pct": 2.9,
+   "pass_3000w_pct": 0.6,
+   "sd_ratio_vs_alpha0": 1.025
+  },
+  "a0p5": {
+   "alpha": 0.5,
+   "mu_bp": 122.33,
+   "sd_bp": 364.4,
+   "IR": 5.223,
+   "dIR": -0.299,
+   "eff_n": 7.46,
+   "dmu_vs_alpha0_bp": 0.67,
+   "tmax_wan": 679.5,
+   "tmax_p20_wan": 367.2,
+   "tmax_p10_wan": 244.5,
+   "pass_500w_pct": 66.6,
+   "pass_988w_pct": 28.9,
+   "pass_1000w_pct": 28.2,
+   "pass_2000w_pct": 5.3,
+   "pass_3000w_pct": 1.2,
+   "sd_ratio_vs_alpha0": 1.063
+  },
+  "a0p75": {
+   "alpha": 0.75,
+   "mu_bp": 122.01,
+   "sd_bp": 380.8,
+   "IR": 4.984,
+   "dIR": -0.538,
+   "eff_n": 6.42,
+   "dmu_vs_alpha0_bp": 0.35,
+   "tmax_wan": 869.3,
+   "tmax_p20_wan": 476.5,
+   "tmax_p10_wan": 333.4,
+   "pass_500w_pct": 78.6,
+   "pass_988w_pct": 41.9,
+   "pass_1000w_pct": 41.2,
+   "pass_2000w_pct": 10.2,
+   "pass_3000w_pct": 2.7,
+   "sd_ratio_vs_alpha0": 1.111
+  },
+  "a1": {
+   "alpha": 1.0,
+   "mu_bp": 121.45,
+   "sd_bp": 398.9,
+   "IR": 4.737,
+   "dIR": -0.785,
+   "eff_n": 5.47,
+   "dmu_vs_alpha0_bp": -0.21,
+   "tmax_wan": 1055.7,
+   "tmax_p20_wan": 582.9,
+   "tmax_p10_wan": 400.8,
+   "pass_500w_pct": 84.7,
+   "pass_988w_pct": 54.9,
+   "pass_1000w_pct": 53.8,
+   "pass_2000w_pct": 17.6,
+   "pass_3000w_pct": 6.1,
+   "sd_ratio_vs_alpha0": 1.164
+  },
+  "a1p5": {
+   "alpha": 1.5,
+   "mu_bp": 120.1,
+   "sd_bp": 434.3,
+   "IR": 4.302,
+   "dIR": -1.219,
+   "eff_n": 4.1,
+   "dmu_vs_alpha0_bp": -1.56,
+   "tmax_wan": 1232.9,
+   "tmax_p20_wan": 622.5,
+   "tmax_p10_wan": 430.8,
+   "pass_500w_pct": 86.7,
+   "pass_988w_pct": 60.8,
+   "pass_1000w_pct": 60.2,
+   "pass_2000w_pct": 27.1,
+   "pass_3000w_pct": 12.9,
+   "sd_ratio_vs_alpha0": 1.267
+  }
+ },
+ "homog_over_measured": {
+  "a0": 1.38,
+  "a0p25": 1.48,
+  "a0p5": 1.76,
+  "a0p75": 2.11,
+  "a1": 2.79,
+  "a1p5": 1.84
+ },
+ "price_of_capacity": [
+  {
+   "alpha": 0.5,
+   "mult_homog": 2.13,
+   "mult_measured": 1.67,
+   "dIR": -0.299,
+   "ir_per_double_homog": 0.274,
+   "ir_per_double_measured": 0.406
+  },
+  {
+   "alpha": 1.0,
+   "mult_homog": 5.25,
+   "mult_measured": 2.59,
+   "dIR": -0.785,
+   "ir_per_double_homog": 0.328,
+   "ir_per_double_measured": 0.572
+  }
+ ],
+ "gate80": {
+  "criterion": "pass_rate >= 80% ⇒ 可投规模 = T_max 的 20% 分位",
+  "by_alpha": {
+   "a0": {
+    "t80_wan": 190.4,
+    "IR": 5.522,
+    "dIR": 0.0
+   },
+   "a0p25": {
+    "t80_wan": 265.7,
+    "IR": 5.417,
+    "dIR": -0.105
+   },
+   "a0p5": {
+    "t80_wan": 367.2,
+    "IR": 5.223,
+    "dIR": -0.299
+   },
+   "a0p75": {
+    "t80_wan": 476.5,
+    "IR": 4.984,
+    "dIR": -0.538
+   },
+   "a1": {
+    "t80_wan": 582.9,
+    "IR": 4.737,
+    "dIR": -0.785
+   },
+   "a1p5": {
+    "t80_wan": 622.5,
+    "IR": 4.302,
+    "dIR": -1.219
+   }
+  },
+  "T_80_max_wan": 622.5,
+  "alpha_at_max": "a1p5",
+  "invested_wan": 988.0,
+  "invested_pass_pct_by_alpha": {
+   "a0": 12.6,
+   "a0p25": 19.0,
+   "a0p5": 28.9,
+   "a0p75": 41.9,
+   "a1": 54.9,
+   "a1p5": 60.8
+  }
+ },
+ "frontier_curve": {
+  "plane": "x = 可投规模（万元），y = 达标率（%）；只用实测 κ 口径",
+  "caps_wan": [
+   100,
+   200,
+   300,
+   400,
+   500,
+   600,
+   700,
+   800,
+   900,
+   988,
+   1200,
+   1500,
+   2000,
+   2500,
+   3000
+  ],
+  "pass_pct_by_alpha": {
+   "a0": {
+    "100": 91.8,
+    "200": 78.7,
+    "300": 64.2,
+    "400": 51.2,
+    "500": 40.2,
+    "600": 31.7,
+    "700": 24.8,
+    "800": 19.5,
+    "900": 15.4,
+    "988": 12.6,
+    "1200": 8.1,
+    "1500": 4.5,
+    "2000": 1.7,
+    "2500": 0.7,
+    "3000": 0.3
+   },
+   "a0p25": {
+    "100": 95.6,
+    "200": 87.0,
+    "300": 75.9,
+    "400": 63.8,
+    "500": 52.7,
+    "600": 42.9,
+    "700": 34.5,
+    "800": 28.1,
+    "900": 22.9,
+    "988": 19.0,
+    "1200": 12.1,
+    "1500": 7.0,
+    "2000": 2.9,
+    "2500": 1.3,
+    "3000": 0.6
+   },
+   "a0p5": {
+    "100": 98.2,
+    "200": 93.3,
+    "300": 85.6,
+    "400": 76.6,
+    "500": 66.6,
+    "600": 57.1,
+    "700": 47.9,
+    "800": 40.1,
+    "900": 33.5,
+    "988": 28.9,
+    "1200": 20.0,
+    "1500": 11.9,
+    "2000": 5.3,
+    "2500": 2.4,
+    "3000": 1.2
+   },
+   "a0p75": {
+    "100": 99.2,
+    "200": 96.7,
+    "300": 91.8,
+    "400": 85.9,
+    "500": 78.6,
+    "600": 70.9,
+    "700": 62.6,
+    "800": 54.7,
+    "900": 47.8,
+    "988": 41.9,
+    "1200": 30.9,
+    "1500": 20.2,
+    "2000": 10.2,
+    "2500": 5.3,
+    "3000": 2.7
+   },
+   "a1": {
+    "100": 99.4,
+    "200": 98.0,
+    "300": 94.2,
+    "400": 90.1,
+    "500": 84.7,
+    "600": 78.5,
+    "700": 71.7,
+    "800": 65.7,
+    "900": 59.5,
+    "988": 54.9,
+    "1200": 43.5,
+    "1500": 30.5,
+    "2000": 17.6,
+    "2500": 10.2,
+    "3000": 6.1
+   },
+   "a1p5": {
+    "100": 99.5,
+    "200": 98.3,
+    "300": 95.3,
+    "400": 91.5,
+    "500": 86.7,
+    "600": 81.2,
+    "700": 75.7,
+    "800": 70.0,
+    "900": 65.2,
+    "988": 60.8,
+    "1200": 51.5,
+    "1500": 40.2,
+    "2000": 27.1,
+    "2500": 18.5,
+    "3000": 12.9
+   }
+  },
+  "crossings": [],
+  "crossings_homogeneous": [],
+  "n_crossings": 0,
+  "n_crossings_homogeneous": 0,
+  "homog_note": "单 κ 口径同为 0 个交点，只是排序不同：那里 α=1 的 T_max 是 2949.6 万 > α=1.5 的 2263.6 万，实测口径反过来（1055.7 vs 1232.9 万）⇒ 换 κ 口径改变的是 α 的**排序**，不是交点位置；首版「α=1 是上界」正是这次排序位移的产物",
+  "pairwise_min_adv_pp": [
+   {
+    "pair": [
+     "a0",
+     "a0p25"
+    ],
+    "cap_wan": 2985.0,
+    "diff_pp": 0.249
+   },
+   {
+    "pair": [
+     "a0p25",
+     "a0p5"
+    ],
+    "cap_wan": 3000.0,
+    "diff_pp": 0.639
+   },
+   {
+    "pair": [
+     "a0p5",
+     "a0p75"
+    ],
+    "cap_wan": 100.0,
+    "diff_pp": 1.046
+   },
+   {
+    "pair": [
+     "a0p75",
+     "a1"
+    ],
+    "cap_wan": 100.0,
+    "diff_pp": 0.234
+   },
+   {
+    "pair": [
+     "a1",
+     "a1p5"
+    ],
+    "cap_wan": 225.0,
+    "diff_pp": -0.016
+   }
+  ],
+  "monotone_in_alpha": true,
+  "verdict": "六条曲线在 0.1%–99.9% 达标域内**互不相交**，且 α 越大一阶占优",
+  "note": "交点 = α 的切换门槛；无交点 ⇒ 规模轴不改变 α 的排序，取舍只发生在 IR × 容量的帕累托前沿上"
+ },
+ "headline": {
+  "mult_0_to_1_measured": 2.59,
+  "dir_0_to_1": -0.785,
+  "mult_1_to_1p5_measured": 1.17,
+  "dir_1_to_1p5": -0.434
+ },
+ "kappa": {
+  "source": "2026-11-12 09:25 实测 20 只（竞价额 / 11-11 成交额），n_day=1",
+  "observed_pct": {
+   "301413.SZ": 0.403,
+   "688286.SH": 0.479,
+   "688787.SH": 0.608,
+   "688836.SH": 0.682,
+   "688585.SH": 0.856,
+   "301313.SZ": 1.088,
+   "603278.SH": 1.162,
+   "002724.SZ": 1.236,
+   "300949.SZ": 1.256,
+   "688386.SH": 1.306,
+   "301502.SZ": 1.724,
+   "001219.SZ": 1.821,
+   "600261.SH": 1.904,
+   "000530.SZ": 2.192,
+   "605488.SH": 2.911,
+   "002708.SZ": 3.98,
+   "000678.SZ": 4.213,
+   "600715.SH": 5.609,
+   "002086.SZ": 11.185,
+   "600327.SH": 16.881
+  },
+  "median_pct": 1.515,
+  "min_pct": 0.403,
+  "max_pct": 16.881,
+  "min_over_median": 0.266,
+  "log_sd": 0.968,
+  "mc_min_9_pct": 0.479,
+  "mc_ratio": 0.316,
+  "assumption": "逐票 κ 与昨额独立；横截面形状借用单日 20 只，不是历史分布"
+ },
+ "today": {
+  "n_filled": 9,
+  "sum_yday_yi": 130.92,
+  "sum_auction_yi": 1.54,
+  "kappa_min_pct": 0.479,
+  "kappa_median_pct": 1.162,
+  "equal_weight_cap_wan": 262.1,
+  "capacity_weighted_cap_wan": 627.1,
+  "capacity_weighted_cap_wan_homog": 1521.3,
+  "invested_wan": 988.0,
+  "invested_over_equal_cap": 3.77,
+  "cap_by_alpha": {
+   "a0": {
+    "measured_kappa_wan": 262.1,
+    "homogeneous_kappa_wan": 539.6
+   },
+   "a0p5": {
+    "measured_kappa_wan": 389.4,
+    "homogeneous_kappa_wan": 870.3
+   },
+   "a1": {
+    "measured_kappa_wan": 627.1,
+    "homogeneous_kappa_wan": 1521.3
+   }
+  },
+  "rule_const_kappa": {
+   "lambda_pct": 12.0,
+   "total_wan": 1571.0,
+   "max_pi_pct": 25.1
+  },
+  "rule_min_kappa": {
+   "lambda_pct": 0.0479,
+   "total_wan": 627.0
+  },
+  "cap_kappa_known_wan": 1540.7,
+  "kappa_known": {
+   "cap_wan": 1540.7,
+   "over_feasible_wan": 2.46,
+   "arrival": "09:25:0x（竞价撮合后），晚于 09:24 申报截止",
+   "is_exante_feasible": false,
+   "what_l2_would_give": "κ_i 的历史面板 ⇒ 事前预测 κ̂_i ⇒ w ∝ κ̂_i·A_i",
+   "precondition": "κ_i 的票间持续性——未测",
+   "precondition_needs_l2": false,
+   "free_substitute": "测它不需要 L2——09:25 单点快照 qt.gtimg.cn 免费可拿（今日 20 只即此法）",
+   "decision": "L2 采购推迟到持续性测出之后，且可能永远不需要"
+  },
+  "kappa_vs_amount": {
+   "spearman": 0.215,
+   "log_corr": 0.189,
+   "note": "昨额不能代理 κ ⇒ w ∝ A^α 的效率损失是结构性的"
+  }
+ },
+ "reading_template": "cohort {cells} 只-日 / {days} 日，等额基线 {bmu}bp、IR {bir}。α 从 0 到 1，均值只从 {mu0}bp 变到 {mu1}bp（{dmu}bp），sd 从 {sd0} 升到 {sd1}（{sd_ratio}×）⇒ **容量的价格全部是分散度，不是 alpha 稀释**。单 κ 口径下 α=1 的 T_max 是 {tm_h1} 万、1,000 万达标率 {p_h1}%；把逐票 κ 换成 11-12 实测横截面（min / 中位 = {k_ratio}）后，同一个 α=1 只有 {tm_m1} 万、达标率 {p_m1}%——单 κ 高估 {mult}×。今日 {n_filled} 只实测：等额上界 {eq} 万、α=1 实测 {cw} 万（单 κ 口径 {cwh} 万），实际投 {inv} 万 = 等额上界的 {ratio}×。恒定 1.2% 规则总额 {rc_total} 万，最薄票 π 仍 {rc_pi}%；只有 λ=0.1·min(κ) 才能全员 ≤10%，总额 {rm_total} 万。⇒ 方向成立（破线是权重问题），但**容量是百万级不是 千万级**；κ 横截面只借了一天，这是量级校正，不是分布估计。若逐票 κ **当日**可知（w ∝ κ·A，即按竞价额加权），同一 10% 约束的上界是 {ck} 万、α 加权可实施口径的 {l2}×——但 κ 到 {karr}，**这个数是口径上界、不是 L2 的收益，当日在任何规模下都不可实施**。L2 真正能给的是 κ_i 的**历史面板** ⇒ 事前预测 κ̂_i ⇒ 才谈得上 w ∝ κ̂_i·A_i；其前置条件（κ_i 的票间持续性）**未测**，而{kfree} ⇒ **采购推迟，且可能永远不需要**。旁证：κ 与昨额 Spearman 仅 {sp}，昨额不能代理 κ。按 80% 达标门（可投规模 = T_max 的 20% 分位，不是 p50），α=1 只到 {t80a1} 万、α=1.5 到 {t80a15} 万；实盘 {inv} 万在 α=1 下达标率 {invp}% ⇒ 今日规模在验收门下不可行。**p50 与 p20 差 1.8 倍，两个数不许并排引用。**规模×达标率平面：{cross}——但{hnote}；α=0→1 用 {m01}× 容量换 {d01} 点 IR，α=1→1.5 再换 {m115}× 容量、再付 {d115} 点 ⇒ **规模轴不改变 α 的排序，真正的取舍在 IR × 容量的帕累托前沿上**，不在规模轴上。",
+ "reading_fields": {
+  "cells": "cohort.cells",
+  "days": "cohort.days",
+  "bmu": "baseline_equal_weight.mu_bp",
+  "bir": "baseline_equal_weight.IR",
+  "mu0": "frontier_homogeneous_kappa.a0.mu_bp",
+  "mu1": "frontier_homogeneous_kappa.a1.mu_bp",
+  "dmu": "frontier_homogeneous_kappa.a1.dmu_vs_alpha0_bp",
+  "sd0": "frontier_homogeneous_kappa.a0.sd_bp",
+  "sd1": "frontier_homogeneous_kappa.a1.sd_bp",
+  "sd_ratio": "frontier_homogeneous_kappa.a1.sd_ratio_vs_alpha0",
+  "tm_h1": "frontier_homogeneous_kappa.a1.tmax_wan",
+  "p_h1": "frontier_homogeneous_kappa.a1.pass_1000w_pct",
+  "k_ratio": "kappa.min_over_median",
+  "tm_m1": "frontier_measured_kappa.a1.tmax_wan",
+  "p_m1": "frontier_measured_kappa.a1.pass_1000w_pct",
+  "mult": "homog_over_measured.a1",
+  "n_filled": "today.n_filled",
+  "eq": "today.equal_weight_cap_wan",
+  "cw": "today.capacity_weighted_cap_wan",
+  "cwh": "today.capacity_weighted_cap_wan_homog",
+  "inv": "today.invested_wan",
+  "ratio": "today.invested_over_equal_cap",
+  "rc_total": "today.rule_const_kappa.total_wan",
+  "rc_pi": "today.rule_const_kappa.max_pi_pct",
+  "rm_total": "today.rule_min_kappa.total_wan",
+  "ck": "today.kappa_known.cap_wan",
+  "l2": "today.kappa_known.over_feasible_wan",
+  "karr": "today.kappa_known.arrival",
+  "kfree": "today.kappa_known.free_substitute",
+  "sp": "today.kappa_vs_amount.spearman",
+  "t80a1": "frontier_measured_kappa.a1.tmax_p20_wan",
+  "t80a15": "frontier_measured_kappa.a1p5.tmax_p20_wan",
+  "invp": "frontier_measured_kappa.a1.pass_988w_pct",
+  "cross": "frontier_curve.verdict",
+  "hnote": "frontier_curve.homog_note",
+  "m01": "headline.mult_0_to_1_measured",
+  "d01": "headline.dir_0_to_1",
+  "m115": "headline.mult_1_to_1p5_measured",
+  "d115": "headline.dir_1_to_1p5"
+ },
+ "reading": "cohort 2800 只-日 / 320 日，等额基线 121.66bp、IR 5.522。α 从 0 到 1，均值只从 121.66bp 变到 121.45bp（−0.21bp），sd 从 342.8 升到 398.9（1.164×）⇒ **容量的价格全部是分散度，不是 alpha 稀释**。单 κ 口径下 α=1 的 T_max 是 2949.6 万、1,000 万达标率 90.6%；把逐票 κ 换成 11-12 实测横截面（min / 中位 = 0.266）后，同一个 α=1 只有 1055.7 万、达标率 53.8%——单 κ 高估 2.79×。今日 9 只实测：等额上界 262.1 万、α=1 实测 627.1 万（单 κ 口径 1521.3 万），实际投 988.0 万 = 等额上界的 3.77×。恒定 1.2% 规则总额 1571.0 万，最薄票 π 仍 25.1%；只有 λ=0.1·min(κ) 才能全员 ≤10%，总额 627.0 万。⇒ 方向成立（破线是权重问题），但**容量是百万级不是 千万级**；κ 横截面只借了一天，这是量级校正，不是分布估计。若逐票 κ **当日**可知（w ∝ κ·A，即按竞价额加权），同一 10% 约束的上界是 1540.7 万、α 加权可实施口径的 2.46×——但 κ 到 09:25:0x（竞价撮合后），晚于 09:24 申报截止，**这个数是口径上界、不是 L2 的收益，当日在任何规模下都不可实施**。L2 真正能给的是 κ_i 的**历史面板** ⇒ 事前预测 κ̂_i ⇒ 才谈得上 w ∝ κ̂_i·A_i；其前置条件（κ_i 的票间持续性）**未测**，而测它不需要 L2——09:25 单点快照 qt.gtimg.cn 免费可拿（今日 20 只即此法） ⇒ **采购推迟，且可能永远不需要**。旁证：κ 与昨额 Spearman 仅 0.215，昨额不能代理 κ。按 80% 达标门（可投规模 = T_max 的 20% 分位，不是 p50），α=1 只到 582.9 万、α=1.5 到 622.5 万；实盘 988.0 万在 α=1 下达标率 54.9% ⇒ 今日规模在验收门下不可行。**p50 与 p20 差 1.8 倍，两个数不许并排引用。**规模×达标率平面：六条曲线在 0.1%–99.9% 达标域内**互不相交**，且 α 越大一阶占优——但单 κ 口径同为 0 个交点，只是排序不同：那里 α=1 的 T_max 是 2949.6 万 > α=1.5 的 2263.6 万，实测口径反过来（1055.7 vs 1232.9 万）⇒ 换 κ 口径改变的是 α 的**排序**，不是交点位置；首版「α=1 是上界」正是这次排序位移的产物；α=0→1 用 2.59× 容量换 −0.785 点 IR，α=1→1.5 再换 1.17× 容量、再付 −0.434 点 ⇒ **规模轴不改变 α 的排序，真正的取舍在 IR × 容量的帕累托前沿上**，不在规模轴上。"
+}

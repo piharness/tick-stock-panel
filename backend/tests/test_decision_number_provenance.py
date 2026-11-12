@@ -70,8 +70,8 @@ CFG = CHECKER.Config()
 #: 红。地板是「射程不许悄悄缩小」的那一侧：`--rebaseline` 会把不再扫描的文件的债务
 #: 整段删掉，而出题人看不见——只有这个数下降能被复算出来。
 REGISTRIES = (
-    (REGISTRY, CHECKER.SCOPE_GLOBS, 94),
-    (ANALYSIS_REGISTRY, ("analysis/*.py",), 106),
+    (REGISTRY, CHECKER.SCOPE_GLOBS, 100),
+    (ANALYSIS_REGISTRY, ("analysis/*.py",), 116),
 )
 
 
@@ -329,7 +329,7 @@ def test_renumbering_an_ordered_list_keeps_identity(tmp_path):
     assert CHECKER.check(tmp_path, reg, CFG).kinds() == {"STALE", "UNREGISTERED"}
 
 
-@pytest.mark.parametrize("globs, floor", ((CHECKER.SCOPE_GLOBS, 90), (("analysis/*.py",), 106)),
+@pytest.mark.parametrize("globs, floor", ((CHECKER.SCOPE_GLOBS, 90), (("analysis/*.py",), 116)),
                          ids=("default", "analysis"))
 def test_every_digit_in_the_repo_is_identity_bearing(globs, floor):
     """真仓库的断言行：每一位数都承重，一个都不能是哑的。
@@ -337,7 +337,7 @@ def test_every_digit_in_the_repo_is_identity_bearing(globs, floor):
     这条是主断言——「检查器不许悄悄放宽身份」的护栏。豁免必须恰好由 §章节号、
     v版本号与行首列表编号解释掉，多剔一种（例如把日期也剔了）就会红。
 
-    两个口径都跑：analysis 的 313 个承重数字（317 个原始数字 − 4 个文档坐标）
+    两个口径都跑：analysis 的 348 个承重数字（353 个原始数字 − 5 个文档坐标）
     以前一次都没被这条看过——身份规则是全局的，但**射程是每个口径自己的**。
     """
     lines = CHECKER.scan(REPO, CHECKER.Config(globs=globs))
@@ -366,20 +366,20 @@ def test_every_digit_in_the_repo_is_identity_bearing(globs, floor):
 
 
 def test_repo_census_matches_the_quoted_numbers():
-    """模块 docstring 里的 94 / 315 / 294 必须是**算出来的**，不是抄的。
+    """模块 docstring 里的 100 / 335 / 314 必须是**算出来的**，不是抄的。
 
-    检查器自己不进入扫描范围（否则「94 条」这条断言行会把 94 改成 95，形成自指），
+    检查器自己不进入扫描范围（否则「100 条」这条断言行会把 100 改成 101，形成自指），
     所以这一层只能由断言兜底：扫描口径一变，这里先红，docstring 才有机会同步。
     13n 的教训是——136 写在 docstring 与账本里，谁也没法验，包括作者。
 
-    `315 − 13 §/v 坐标 − 8 行首列表编号 = 294`：13q 之前那 8 个编号在身份里，
+    `335 − 13 §/v 坐标 − 8 行首列表编号 = 314`：13q 之前那 8 个编号在身份里，
     给 docstring 插一条列表项就会让后面 8 行一起假红。
     """
     lines = CHECKER.scan(REPO, CFG)
-    assert len(lines) == 94
-    assert sum(len(CHECKER.DIGITS.findall(ln.text)) for ln in lines) == 315
-    assert sum(len(CHECKER.digits(ln.text)) for ln in lines) == 294, \
-        "315 − 13 个文档坐标 − 8 个行首列表编号 = 294 个承重数字"
+    assert len(lines) == 100
+    assert sum(len(CHECKER.DIGITS.findall(ln.text)) for ln in lines) == 335
+    assert sum(len(CHECKER.digits(ln.text)) for ln in lines) == 314, \
+        "335 − 13 个文档坐标 − 8 个行首列表编号 = 314 个承重数字"
     groups = Counter((ln.file, ln.key) for ln in lines)
     assert sum(1 for n in groups.values() if n > 1) == 2, \
         "同指纹撞键组数变了，检查器 docstring 与账本 §9.41 四的 2 组要同步"
@@ -389,33 +389,33 @@ def test_repo_census_matches_the_quoted_numbers():
 
 
 def test_analysis_scope_census_is_the_quoted_debt():
-    """账本 §9.50 与两份测试 docstring 引的 **106 / 104 / 2 / 317 / 313** 必须算得出。
+    """账本 §9.50 与两份测试 docstring 引的 **116 / 114 / 2 / 353 / 348** 必须算得出。
 
-    这一层只能由断言兜底，原因与 94 那条相同：检查器自己不进入任何射程，所以它
-    docstring 里的数没有任何机制看得见。账本里「新增债务 106」也得与它同源——
-    `106 行 → 104 键`（`_diag_l1_kstar_condition.py` 两组撞键各占 2 行）正是
+    这一层只能由断言兜底，原因与 100 条那条相同：检查器自己不进入任何射程，所以它
+    docstring 里的数没有任何机制看得见。账本里「新增债务 116」也得与它同源——
+    `116 行 → 114 键`（`_diag_l1_kstar_condition.py` 两组撞键各占 2 行）正是
     「82 条封存折成 80 个键」的来源，逐键报 STALE 时不能拿行数当键数。
     """
     lines = CHECKER.scan(REPO, CHECKER.Config(globs=("analysis/*.py",)))
-    assert len(lines) == 106
-    assert len({ln.file for ln in lines}) == 16, "产出断言行的 analysis 文件数变了"
+    assert len(lines) == 116
+    assert len({ln.file for ln in lines}) == 17, "产出断言行的 analysis 文件数变了"
     groups = Counter((ln.file, ln.key) for ln in lines)
-    assert (len(groups), sum(1 for n in groups.values() if n > 1)) == (104, 2)
+    assert (len(groups), sum(1 for n in groups.values() if n > 1)) == (114, 2)
     # 射程是**单层** glob。`analysis/` 下出现子目录里的 `.py` 会被静默漏掉——
     # 这正是「射程把被测路径挡在外面」的那种绿，所以要有断言，而不是靠记得。
     assert not list((REPO / "analysis").glob("*/*.py")), (
         "analysis/ 出现子目录 .py，`analysis/*.py` 这条单层 glob 会漏掉它")
     reg = _registry(ANALYSIS_REGISTRY)
-    assert not reg["entries"] and len(reg["frozen"]) == 106
+    assert not reg["entries"] and len(reg["frozen"]) == 116
     rep = CHECKER.check(REPO, reg, CHECKER.Config(globs=("analysis/*.py",)))
-    assert (rep.anchored, rep.frozen, rep.failures) == (0, 106, [])
-    # 317 / 313 是**数字个数**，不是行数：行数守恒（106）而某一行悄悄多长出一个
+    assert (rep.anchored, rep.frozen, rep.failures) == (0, 116, [])
+    # 353 / 348 是**数字个数**，不是行数：行数守恒（116）而某一行悄悄多长出一个
     # 数字，前面的断言一条都不动。`test_every_digit_in_the_repo_is_identity_bearing`
     # 的 docstring 正在引这两个数，而那个 docstring 不在任何射程内——所以它必须
     # 在这里被算出来，否则就是「引用一个没人复算的读数」，与 §9.50 修的是同一个病。
     raw = sum(len(CHECKER.DIGITS.findall(ln.text)) for ln in lines)
     kept = sum(len(CHECKER.digits(ln.text)) for ln in lines)
-    assert (raw, kept, raw - kept) == (317, 313, 4), (
+    assert (raw, kept, raw - kept) == (353, 348, 5), (
         f"承重数字口径变了：原始 {raw} / 承重 {kept} / 文档坐标剔除 {raw - kept}")
 
 
@@ -607,6 +607,50 @@ def test_claimed_sign_must_match(tmp_path):
     # 登记表说 +4.19、产物也是 +4.19，但正文写 −4.19 ⇒ 只有漂移，没有数值错
     assert CHECKER.check(tmp_path, _reg(4.19, "data/.scratch/pos.json"),
                          CFG).kinds() == {"REGISTRY_DRIFT"}
+
+
+# --------------------------------------------------------------------------- #
+# 6 · 路径语法：产物里存在的写法，登记表必须寻得到
+# --------------------------------------------------------------------------- #
+
+def test_list_index_path_is_not_a_filter():
+    """`power.ks[3]` 是下标，不是「在 ks 上过滤 3」。
+
+    下标的三种失败原来各走一条不同的路：数值列表报「元素不是对象」，对象列表
+    直接 `ValueError: not enough values to unpack`——而 `_check_entry` 只捕
+    `PathError`，于是登记表里一个合法下标能把整次检查打成 traceback：不是红，
+    是崩。三者现在统一成 `PathError`。
+    """
+    doc = {"power": {"ks": [4.6, 5, 11, 25]}}
+    assert CHECKER.resolve(doc, "power.ks[3]") == [25]
+    assert CHECKER.resolve(doc, "power.ks[-1]") == [25]
+    # 对象列表的下标：这里原来抛的是未捕获的 ValueError
+    assert CHECKER.resolve({"rows": [{"a": 1}, {"a": 2}]}, "rows[0].a") == [1]
+    for bad in ("power.ks[9]", "power.ks[0].x", "power[0]"):
+        with pytest.raises(CHECKER.PathError):
+            CHECKER.resolve(doc, bad)
+
+
+def test_key_with_equals_is_addressable():
+    """`p=2%` 是产物的**键**，不是段语法错误。
+
+    `capacity_axis.pov_entry` 按参与率命名键，`_SEG` 不认 `=` 就永远寻不到；
+    而「寻不到」在判定层长得和「数不对」一样，都是 VALUE_MISMATCH——一个键名
+    写法能把一条真读数永远挡在锚定层之外，且看起来像数错了。
+    """
+    doc = {"capacity_axis": {"pov_entry": {"p=2%": {"participation": 0.02}}}}
+    assert CHECKER.resolve(doc, 'capacity_axis.pov_entry["p=2%"].participation') == [0.02]
+    assert CHECKER.resolve(doc, "capacity_axis.pov_entry.p=2%.participation") == [0.02]
+    with pytest.raises(CHECKER.PathError):
+        CHECKER.resolve(doc, 'capacity_axis.pov_entry["p=3%"].participation')
+
+
+def test_filter_without_value_is_a_path_error():
+    """过滤少写 `=值` ⇒ `PathError`。它必须落在判据层，不能冒成解包异常。"""
+    doc = {"rows": [{"id": 1}, {"id": 2}]}
+    assert CHECKER.resolve(doc, "rows[id=1]") == [{"id": 1}]
+    with pytest.raises(CHECKER.PathError):
+        CHECKER.resolve(doc, "rows[id].x")
 
 
 def test_missing_artifact_is_skip_not_failure(tmp_path):
