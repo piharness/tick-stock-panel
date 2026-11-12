@@ -59,6 +59,12 @@ data/.scratch/*
 !data/research/
 !data/research/l1_open_depth/
 !data/research/l1_open_depth/part.parquet
+#: 2026-11-12（D15）：集合竞价的**原始帧**是唯一证据 —— 竞价不可回补，删了就再也
+#: 算不出来（`_result.json` 只是它的派生表）。31 KB / 11,380 行，比汇总表更该随仓库走。
+#: 逐个文件放行、不加通配：每多一天都要在这里显式加一行，让「多了一份证据」必须被看见。
+!data/research/auction_indicative/
+!data/research/auction_indicative/frames/
+!data/research/auction_indicative/frames/2026-11-12_burst.parquet
 #: 2026-11-11：`curves.parquet`（2,752 格 × 240 根 ≈ 10 MB）**不进**版本控制。
 #: 它与 part.parquet 不同：part 是 67KB 的锚点，这是可重拉的批量缓存（**2,752 次
 #: HTTP 请求**、有频控；≈316 批 × 每批 ≤20 只，316 是**批**不是请求——本行初稿
