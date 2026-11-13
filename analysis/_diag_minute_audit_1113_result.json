@@ -1,0 +1,315 @@
+{
+  "window": {
+    "days": [
+      "2026-11-05",
+      "2026-11-06",
+      "2026-11-09",
+      "2026-11-10",
+      "2026-11-11",
+      "2026-11-12"
+    ]
+  },
+  "totals": {
+    "days": 6,
+    "label_bad": 0,
+    "money_bad": 1,
+    "gap_bad": 1,
+    "phantom": 0,
+    "block_1500": 9,
+    "daily_bad": 6,
+    "filler": 7
+  },
+  "days": [
+    {
+      "day": "2026-11-05",
+      "minute_partition": true,
+      "rows": 1336800,
+      "symbols": 5570,
+      "label_bad": 0,
+      "money_bad": 0,
+      "gap_bad": 0,
+      "phantom": 0,
+      "block_1500": 2,
+      "block_1500_detail": [
+        {
+          "symbol": "920553.BJ",
+          "close": 6.19,
+          "volume": 1130.0,
+          "resid_h": 318.66523626817445
+        },
+        {
+          "symbol": "920112.BJ",
+          "close": 13.83,
+          "volume": 2082.0,
+          "resid_h": 40.85177151120752
+        }
+      ],
+      "daily_bad": 1,
+      "daily_bad_detail": [
+        {
+          "symbol": "920553.BJ",
+          "low": 6.02,
+          "high": 6.23,
+          "p_avg": 5.937910720401872,
+          "dvol": 8759.0,
+          "damt": 5201016.0
+        }
+      ],
+      "filler": 0,
+      "money_bad_detail": [],
+      "gap_bad_detail": []
+    },
+    {
+      "day": "2026-11-06",
+      "minute_partition": true,
+      "rows": 1337280,
+      "symbols": 5572,
+      "label_bad": 0,
+      "money_bad": 0,
+      "gap_bad": 0,
+      "phantom": 0,
+      "block_1500": 1,
+      "block_1500_detail": [
+        {
+          "symbol": "920717.BJ",
+          "close": 6.29,
+          "volume": 14226.0,
+          "resid_h": 449.3751987281399
+        }
+      ],
+      "daily_bad": 1,
+      "daily_bad_detail": [
+        {
+          "symbol": "920717.BJ",
+          "low": 6.18,
+          "high": 6.43,
+          "p_avg": 6.166574829931973,
+          "dvol": 20580.0,
+          "damt": 12690811.0
+        }
+      ],
+      "filler": 0,
+      "money_bad_detail": [],
+      "gap_bad_detail": []
+    },
+    {
+      "day": "2026-11-09",
+      "minute_partition": true,
+      "rows": 1337280,
+      "symbols": 5572,
+      "label_bad": 0,
+      "money_bad": 1,
+      "gap_bad": 1,
+      "phantom": 0,
+      "block_1500": 1,
+      "block_1500_detail": [
+        {
+          "symbol": "920375.BJ",
+          "close": 5.76,
+          "volume": 4110.0,
+          "resid_h": 402.77777777777777
+        }
+      ],
+      "daily_bad": 0,
+      "daily_bad_detail": [],
+      "filler": 0,
+      "money_bad_detail": [
+        {
+          "symbol": "920375.BJ",
+          "bars": 240,
+          "m_all": 21594.0,
+          "dvol": 17593.0,
+          "e_all": 4001.0,
+          "m_can": 21594.0,
+          "e_can": 4001.0,
+          "a_all": 12328545.31665039,
+          "damt": 10256545.37
+        }
+      ],
+      "gap_bad_detail": [
+        {
+          "symbol": "920375.BJ",
+          "m_can": 21594.0,
+          "dvol": 17593.0,
+          "e_can": 4001.0,
+          "a_can": 12328545.31665039,
+          "damt": 10256545.37
+        }
+      ]
+    },
+    {
+      "day": "2026-11-10",
+      "minute_partition": true,
+      "rows": 1337040,
+      "symbols": 5571,
+      "label_bad": 0,
+      "money_bad": 0,
+      "gap_bad": 0,
+      "phantom": 0,
+      "block_1500": 1,
+      "block_1500_detail": [
+        {
+          "symbol": "920640.BJ",
+          "close": 24.8,
+          "volume": 7434.0,
+          "resid_h": 2204.7975806451614
+        }
+      ],
+      "daily_bad": 1,
+      "daily_bad_detail": [
+        {
+          "symbol": "920640.BJ",
+          "low": 24.65,
+          "high": 25.47,
+          "p_avg": 23.308216704187306,
+          "dvol": 33315.0,
+          "damt": 77651323.95
+        }
+      ],
+      "filler": 0,
+      "money_bad_detail": [],
+      "gap_bad_detail": []
+    },
+    {
+      "day": "2026-11-11",
+      "minute_partition": true,
+      "rows": 1337520,
+      "symbols": 5573,
+      "label_bad": 0,
+      "money_bad": 0,
+      "gap_bad": 0,
+      "phantom": 0,
+      "block_1500": 3,
+      "block_1500_detail": [
+        {
+          "symbol": "920375.BJ",
+          "close": 5.8,
+          "volume": 4143.0,
+          "resid_h": 428.03620689655173
+        },
+        {
+          "symbol": "920964.BJ",
+          "close": 4.56,
+          "volume": 2252.0,
+          "resid_h": 321.1933936403507
+        },
+        {
+          "symbol": "920059.BJ",
+          "close": 11.89,
+          "volume": 5680.0,
+          "resid_h": 71.02859545836837
+        }
+      ],
+      "daily_bad": 2,
+      "daily_bad_detail": [
+        {
+          "symbol": "920964.BJ",
+          "low": 4.54,
+          "high": 4.65,
+          "p_avg": 4.5152342590629635,
+          "dvol": 23585.0,
+          "damt": 10649180.0
+        },
+        {
+          "symbol": "920375.BJ",
+          "low": 5.72,
+          "high": 5.85,
+          "p_avg": 5.645494775996936,
+          "dvol": 18281.0,
+          "damt": 10320529.0
+        }
+      ],
+      "filler": 0,
+      "money_bad_detail": [],
+      "gap_bad_detail": []
+    },
+    {
+      "day": "2026-11-12",
+      "minute_partition": true,
+      "rows": 1339200,
+      "symbols": 5580,
+      "label_bad": 0,
+      "money_bad": 0,
+      "gap_bad": 0,
+      "phantom": 0,
+      "block_1500": 1,
+      "block_1500_detail": [
+        {
+          "symbol": "920375.BJ",
+          "close": 5.72,
+          "volume": 3146.0,
+          "resid_h": 283.4667832167832
+        }
+      ],
+      "daily_bad": 1,
+      "daily_bad_detail": [
+        {
+          "symbol": "920375.BJ",
+          "low": 5.7,
+          "high": 5.86,
+          "p_avg": 5.666793072558973,
+          "dvol": 16745.0,
+          "damt": 9489045.0
+        }
+      ],
+      "filler": 7,
+      "money_bad_detail": [],
+      "gap_bad_detail": []
+    }
+  ],
+  "external": {
+    "enabled": true,
+    "note": "5574 只",
+    "daily_mismatch": 4,
+    "min_all_mismatch": 5,
+    "min_can_mismatch": 5,
+    "rows": 33430,
+    "daily_bad_detail": [
+      {
+        "day": "2026-11-05",
+        "symbol": "920112.BJ",
+        "dvol": 7773.0,
+        "fvol": 5773.0,
+        "m_all": 7774.0,
+        "m_can": 7774.0
+      },
+      {
+        "day": "2026-11-05",
+        "symbol": "920553.BJ",
+        "dvol": 8759.0,
+        "fvol": 7759.0,
+        "m_all": 8760.0,
+        "m_can": 8760.0
+      },
+      {
+        "day": "2026-11-06",
+        "symbol": "920717.BJ",
+        "dvol": 20580.0,
+        "fvol": 6428.0,
+        "m_all": 20580.0,
+        "m_can": 20580.0
+      },
+      {
+        "day": "2026-11-12",
+        "symbol": "920375.BJ",
+        "dvol": 16745.0,
+        "fvol": 13745.0,
+        "m_all": 16746.0,
+        "m_can": 16746.0
+      }
+    ],
+    "missing": 0
+  },
+  "reading_template": "{days} 个交易日：标注异常 {label_bad} 处、金额异常 {money_bad} 处，其中 {phantom} 行是 13:00 幽灵（11:30 那根的副本）、{filler} 只是停牌合成网格；扣掉网格外行后仍对不上账的 {gap_bad} 处。另有 {block_1500} 根收盘 bar 的均价与收盘价不符（不进 OHLC 却进量额的成交），{daily_bad} 行日线自身的 amount/(volume·100) 已越出该行 low/high。",
+  "reading_fields": {
+    "days": "$totals.days",
+    "label_bad": "$totals.label_bad",
+    "money_bad": "$totals.money_bad",
+    "phantom": "$totals.phantom",
+    "filler": "$totals.filler",
+    "gap_bad": "$totals.gap_bad",
+    "block_1500": "$totals.block_1500",
+    "daily_bad": "$totals.daily_bad"
+  },
+  "reading": "6 个交易日：标注异常 0 处、金额异常 1 处，其中 0 行是 13:00 幽灵（11:30 那根的副本）、7 只是停牌合成网格；扣掉网格外行后仍对不上账的 1 处。另有 9 根收盘 bar 的均价与收盘价不符（不进 OHLC 却进量额的成交），6 行日线自身的 amount/(volume·100) 已越出该行 low/high。"
+}
