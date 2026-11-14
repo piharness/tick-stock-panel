@@ -29,8 +29,20 @@ SETTLEMENT_KIND = "TSP-DECISION-SETTLEMENT-v1"
 SYMBOL_RE = re.compile(r"^\d{6}\.(SH|SZ|BJ)$")
 CARD_ID_RE = re.compile(r"^dc-\d{4}-\d{2}-\d{2}-[0-9a-f]{10}$")
 
-MIN_HORIZON, MAX_HORIZON = 1, 250
+MIN_HORIZON, MAX_HORIZON = 0, 250
 MAX_PICKS = 100
+
+#: 撮合模式。它决定「成交了吗」这个问题的答案，所以属于承诺，必须进内容哈希。
+#:
+#: - `limit`   既有口径：开盘 ≤ 限价按开盘，盘中触及按限价，否则不成交；
+#: - `open_only` 只认集合竞价：开盘高于限价就当日不成交，**不许盘中补票**。
+#:
+#: 为什么需要第二种：L1 缺口反转的 edge 全部落在「开盘 → 收盘」这一段路径上
+#: （研究侧 121.5bp 对 6.4bp）。若允许盘中跌到限价再成交，实际买到的是
+#: 「高开、盘中回落」的另一批标的——那不是同一个策略，而且它恰好是亏的那一边。
+FILL_MODE_LIMIT = "limit"
+FILL_MODE_OPEN_ONLY = "open_only"
+FILL_MODES = (FILL_MODE_LIMIT, FILL_MODE_OPEN_ONLY)
 
 #: K3 要求每张卡必须齐全的字段（缺一 ⇒ 记录不完整 ⇒ 实验不成立）
 REQUIRED_PICK_FIELDS = ("symbol", "limit_price", "p_win")
@@ -116,8 +128,14 @@ def _canonical(payload: Any) -> bytes:
 
 
 def commitment(card: dict[str, Any]) -> dict[str, Any]:
-    """承诺部分：只有这些字段进内容哈希。"""
-    return {
+    """承诺部分：只有这些字段进内容哈希。
+
+    `fill_mode` 只在**非默认**时进哈希。原因不是"它不重要"——它决定成交判定，
+    当然属于承诺——而是账本只追加：历史卡里没有这个键，无条件加进去会让每一张
+    旧卡的 `verify_card` 重算失败，等于把既往承诺全部作废。默认档本来就等于旧
+    行为，省略它才是同一个承诺。
+    """
+    out: dict[str, Any] = {
         "kind": CARD_KIND,
         "as_of": str(card["as_of"]),
         "strategy_id": card.get("strategy_id"),
@@ -127,6 +145,10 @@ def commitment(card: dict[str, Any]) -> dict[str, Any]:
         "forecast": card.get("forecast") or {},
         "picks": normalize_picks(card.get("picks") or []),
     }
+    mode = card.get("fill_mode")
+    if mode not in (None, FILL_MODE_LIMIT):
+        out["fill_mode"] = str(mode)
+    return out
 
 
 def card_digest(card: dict[str, Any]) -> str:
@@ -155,14 +177,23 @@ def build_card(
     gates: dict[str, Any] | None = None,
     override_reason: str | None = None,
     created_at: str | None = None,
+    fill_mode: str = FILL_MODE_LIMIT,
 ) -> dict[str, Any]:
-    """构造并封卡；不落盘。重复调用同样入参得到同样 card_id。"""
+    """构造并封卡；不落盘。重复调用同样入参得到同样 card_id。
+
+    `horizon_sessions=0` 是合法值，含义是「入场日收盘出场」：结算里
+    `exit_i = entry_i + horizon`，所以 0 表示入场当天平仓（L1 的
+    「T+1 开盘买、T+1 收盘卖」）。它不等于「持有 1 天」——那是
+    `horizon_sessions=1`，出场在下一个交易日收盘，多隔一夜。
+    """
     try:
         date.fromisoformat(str(as_of))
     except ValueError as exc:
         raise ValueError(f"as_of 不是合法日期: {as_of!r}") from exc
     if not MIN_HORIZON <= int(horizon_sessions) <= MAX_HORIZON:
         raise ValueError(f"horizon_sessions 必须落在 [{MIN_HORIZON}, {MAX_HORIZON}]")
+    if str(fill_mode) not in FILL_MODES:
+        raise ValueError(f"fill_mode 必须是 {FILL_MODES} 之一: {fill_mode!r}")
     if not SYMBOL_RE.match(str(benchmark)):
         raise ValueError(f"benchmark 格式非法: {benchmark!r}")
     if override_reason is not None and len(override_reason.strip()) < 10:
@@ -176,6 +207,7 @@ def build_card(
         "account_id": account_id,
         "horizon_sessions": int(horizon_sessions),
         "benchmark": benchmark,
+        "fill_mode": str(fill_mode),
         "forecast": dict(forecast or {}),
         "picks": norm,
     }

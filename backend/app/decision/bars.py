@@ -13,8 +13,9 @@
 """
 from __future__ import annotations
 
+import logging
 import threading
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +27,81 @@ from app.tickflow.partitions import (
     locate_partition_dir,
 )
 
+logger = logging.getLogger(__name__)
+
 STOCK_ENRICHED = "kline_daily_enriched"
 INDEX_ENRICHED = "kline_index_enriched"
+
+
+class DuplicateBarsError(RuntimeError):
+    """同一交易日分区里同一个 symbol 出现多行 —— 下游按只-日求和会双计。
+
+    这条判据必须落在**读取时刻**, 不能等下游全 panel 拒绝:
+    `l1_cohort` 的重复判据只有在两份文件的 symbol 高度重叠时才响, 若多出来的
+    文件是一整份新快照(symbol 不重叠), 面板会静默多出几百只而名单照常出表。
+    """
+
+
+def _fmt_files(files: list[Path], dup_symbols: list[str]) -> str:
+    """失败路径专用: 逐文件列出**重复 symbol 的行数**, 用来指出哪份是闯入者。
+
+    必须按全部重复 symbol 统计, 不能只数消息里展示的那 6 只 —— 否则两个各含
+    5570 行的文件会显示成 "6 行", 读的人会以为文件本身只有 6 行。
+    """
+    parts: list[str] = []
+    for f in files:
+        try:
+            stat = f.stat()
+            n = (
+                pl.read_parquet(str(f), columns=["symbol"])
+                .filter(pl.col("symbol").is_in(dup_symbols))
+                .height
+                if dup_symbols
+                else 0
+            )
+            stamp = datetime.fromtimestamp(stat.st_mtime).strftime("%m-%d %H:%M:%S")
+            parts.append(f"{f.name}({stat.st_size / 1024 / 1024:.1f}MB, {stamp}) -> {n} 行重复")
+        except Exception as e:  # noqa: BLE001 — 诊断失败不该替换成另一个异常
+            parts.append(f"{f.name}(读取失败: {e})")
+    return "; ".join(parts)
+
+
+def _assert_unique_bars(
+    df: pl.DataFrame, *, table: str, day: str, part: Path, files: list[Path], by_date: bool,
+) -> None:
+    """(date,symbol) 在当日帧内必须唯一。干净路径只付一次 n_unique。"""
+    if df.height <= 1:
+        return
+
+    if by_date:
+        # 已 filter 到单一日期, symbol 唯一等价于 (date,symbol) 唯一, 省一次 struct。
+        dup_rows = df.height - df["symbol"].n_unique()
+    elif {"date", "symbol"} <= set(df.columns):
+        dup_rows = df.height - df.select(pl.struct(["date", "symbol"]).n_unique()).item()
+    else:
+        return
+    if dup_rows <= 0:
+        return
+
+    keys = ["date", "symbol"] if "date" in df.columns else ["symbol"]
+    dup_symbols = sorted(
+        set(df.filter(pl.struct(keys).is_duplicated())["symbol"].to_list())
+    )
+    sample = dup_symbols[:6]
+    detail = _fmt_files(files, dup_symbols)  # 只读一次盘: 失败路径也不重复付
+    logger.error(
+        "分区内 (date,symbol) 重复: table=%s day=%s dup=%d/%d symbols=%s files=[%s]",
+        table, day, dup_rows, df.height, sample, detail,
+    )
+    raise DuplicateBarsError(
+        f"{table} 的 {part.name} 里有 {dup_rows} 行重复 (共 {df.height} 行), "
+        f"涉及 {len(dup_symbols)} 个 symbol: {', '.join(sample)}"
+        f"{' …' if len(dup_symbols) > len(sample) else ''}。"
+        f"同一天同一只票被读两次会让下游按只-日双计。"
+        f"逐文件行数: {detail}。"
+        f"注意 *.parquet 会把 part.bak-*.parquet / part-stream-*.parquet 一并 concat,"
+        f"备份与 staging 文件不要落在 date= 目录里。"
+    )
 
 #: 除权事件表。全市场单文件，不是按日分区——它是**输入**（除权公告的落库结果），
 #: 不是派生列，所以不受「按日增量重算滞后」影响。`ex_factor` 是单事件的
@@ -90,17 +164,79 @@ def _day_frame(data_dir: Path, table: str, day: str, symbols: list[str] | None) 
     cols = [c for c in _BAR_COLS if c in have]
     lf = lf.select(cols)
     # 月分区里同 symbol 的其他交易日也在这个目录；日分区过滤等价且更稳。
-    if "date" in have:
+    by_date = "date" in have
+    if by_date:
         lf = lf.filter(pl.col("date") == target)
     if symbols is not None:
         lf = lf.filter(pl.col("symbol").is_in(symbols))
-    return lf.collect()
+    df = lf.collect()
+    # 唯一性判据放在这里而不是下游: 同一份分区被两个文件各写一遍时,
+    # 只有读取时刻知道"这一个分区里到底有几个文件、各含哪些行"。
+    _assert_unique_bars(
+        df, table=table, day=day, part=part, files=files, by_date=by_date,
+    )
+    return df
 
 
 def day_rows(data_dir: Path, day: str, symbols: list[str] | None = None,
              table: str = STOCK_ENRICHED) -> pl.DataFrame:
     """某交易日、若干标的的 bar；缺表/缺分区返回空表（不是异常）。"""
     return _day_frame(Path(data_dir), table, day, symbols)
+
+
+_TS_CACHE: dict[tuple[str, str, float], str | None] = {}
+_TS_LOCK = threading.Lock()
+
+
+def day_last_quote_ts(data_dir: Path, day: str,
+                      table: str = STOCK_ENRICHED) -> str | None:
+    """该日分区里 `quote_ts` 的最大值（本地 `HH:MM:SS`）；读不到返回 None。
+
+    它回答的是**这一批 bar 是什么时候的快照**，不是「哪一天」。日线分区在盘中
+    也会被实时路径写入：此时 `date` 已经是今天、行数齐、字段全、`(date,symbol)`
+    无重复，唯一能分开「盘中快照」与「收盘定稿」的就是这一列
+    （2026-11-13 实测 `quote_ts=10:42:47`，5,571 行看起来完全正常）。
+
+    **None 是三态里的第三态**，不是「盘中」也不是「已收盘」：分区缺、列缺、
+    整列为 null 都返回它（`date=2026-11-09` 与 `date=2026-11-10` 两个分区整列
+    为空）。调用方必须自己决定那一态怎么处理，不许在这里替它猜。
+
+    缓存键含分区 mtime：盘后重算会更新父目录 mtime，读到的自然是新快照。
+    """
+    try:
+        target = date.fromisoformat(day)
+    except ValueError:
+        return None
+    base = Path(data_dir) / table
+    part = locate_partition_dir(base, table, target)
+    if not part.is_dir():
+        return None
+    files = sorted(part.glob("*.parquet"))
+    if not files:
+        return None
+    try:
+        stamp = part.stat().st_mtime
+    except OSError:
+        stamp = 0.0
+    key = (str(part.resolve()), day, stamp)
+    with _TS_LOCK:
+        if key in _TS_CACHE:
+            return _TS_CACHE[key]
+
+    lf = pl.scan_parquet([str(f) for f in files],
+                         missing_columns="insert", extra_columns="ignore")
+    have = set(lf.collect_schema().names())
+    val: str | None = None
+    if "quote_ts" in have:
+        raw = lf.select(pl.col("quote_ts").max()).collect().item()
+        if raw is not None:
+            val = datetime.fromtimestamp(int(raw) / 1000).strftime("%H:%M:%S")
+    with _TS_LOCK:
+        # 只留最新一批：日线每天变，历史快照没有复用价值。
+        if len(_TS_CACHE) > 64:
+            _TS_CACHE.clear()
+        _TS_CACHE[key] = val
+    return val
 
 
 def bar_map(data_dir: Path, day: str, symbols: list[str] | None = None,
