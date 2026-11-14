@@ -78,8 +78,10 @@ async function request<T>(path: string, init?: RequestOptions): Promise<T> {
   }
   if (!res.ok) {
     let detail = ''
+    let code = ''
     try {
       const j = JSON.parse(await res.text())
+      code = typeof j.code === 'string' ? j.code : ''
       const raw = j.detail ?? j.message ?? ''
       if (Array.isArray(raw)) {
         // FastAPI 422 校验错误: [{type, loc, msg, input}, ...] → 取 msg 拼接
@@ -92,7 +94,10 @@ async function request<T>(path: string, init?: RequestOptions): Promise<T> {
     } catch { /* ignore */ }
     const msg = detail || `${res.status} ${res.statusText}`
     // 401 (未登录/会话过期) 不弹 toast — 由全局认证拦截器统一跳登录页, 避免刷屏
-    if (res.status !== 401 && !quiet) toast(msg, 'error')
+    // daily_integrity (409) 也不弹: 它是一个**状态**而不是一次失败, 顶部横幅
+    // 已经常驻说明; 轮询型接口每 2s 命中一次会把屏幕刷满同样的红条。
+    const stateOnly = code === 'daily_integrity'
+    if (res.status !== 401 && !stateOnly && !quiet) toast(msg, 'error')
     throw new ApiError(msg, res.status)
   }
   return (responseType === 'blob' ? res.blob() : res.json()) as Promise<T>
@@ -246,6 +251,30 @@ export interface AiStockReport {
 }
 
 // ===== Kline =====
+/**
+ * 分时接口返回空 rows 时的病因。前四档是「这次没拉到」(可重试), 后三档是
+ * 「这个源就给不出」(换源/换日才有意义)。混成一句「数据源未提供」的后果:
+ * 通道异常被当成能力缺失, 用户去配置里换源, 而正确动作是点重试。
+ */
+export type MinuteNoneReason =
+  | 'provider_call_failed'
+  | 'provider_unavailable'
+  | 'provider_no_dataset'
+  | 'provider_bad_datetime'
+  | 'no_minute_capability'
+  | 'provider_no_rows'
+  | 'no_rows'
+
+/** 该 reason 是否值得当场重试 (通道/依赖类) */
+export function minuteNoneRetryable(reason?: MinuteNoneReason): boolean {
+  return (
+    reason === 'provider_call_failed' ||
+    reason === 'provider_unavailable' ||
+    reason === 'provider_bad_datetime' ||
+    reason === 'no_rows'
+  )
+}
+
 export interface MinuteKlineRow {
   datetime: string
   /** 分钟开盘价; 部分数据源历史日无真实分钟 open, 为 null */
@@ -558,6 +587,40 @@ export const REGIME_STATE_COLORS: Record<RegimeState, string> = {
   weak: '#10b981',        // 绿(弱)
 }
 
+/** 参照系：某指标在近 N 个交易日里的位置，以及同类日子的次日表现。 */
+export interface RegimeContextMetric {
+  key: string
+  label: string
+  /** x=倍率（涨跌家数比） pct=小数制比例 int=家数 amount=元 score=分 */
+  unit: 'x' | 'pct' | 'int' | 'amount' | 'score'
+  value: number
+  /** 0-100：≤ 当日值的占比 */
+  pct_rank: number
+  p05: number | null
+  p50: number | null
+  p95: number | null
+  n: number
+}
+
+export interface RegimeContextAnalog {
+  label?: string
+  n: number
+  /** 次日全市场等权收益（bp）；样本不足时为 null */
+  mean_bp: number | null
+  hit: number | null
+  t: number | null
+}
+
+export interface RegimeContext {
+  as_of: string | null
+  window: number
+  n_history: number
+  state?: RegimeState | null
+  score?: number | null
+  metrics: RegimeContextMetric[]
+  analogs: Record<string, RegimeContextAnalog>
+}
+
 export interface RegimeRow {
   date: string
   state: RegimeState
@@ -805,6 +868,185 @@ export interface AuctionBenchmarkPayload {
   count?: number
   message?: string
   items?: AuctionBenchmarkItem[]
+}
+
+// ===== 对手盘模型 (博弈链路页) =====
+/** 证据强度：observed=本地直接可观测 | proxied=只有代理变量 | no_data=本地无此表 */
+export type EvidenceState = 'observed' | 'proxied' | 'no_data'
+
+export interface TableGameStat {
+  label: string
+  bp?: number | null          // 超额基点
+  pct?: number | null         // 百分数值（60.1 表示 60.1%）
+  pct_raw?: number | null     // 已带符号的百分数
+  n?: number
+  t?: number | null
+  note?: string               // 口径限制，例如「按席位昵称匹配，不是机构分类」
+}
+
+export interface TableGameObject {
+  id: string
+  name: string
+  group: string
+  capital: string        // 钱的来源
+  horizon: string        // 决策尺度
+  hard: string           // 什么情况下它**必须**交易
+  evidence: EvidenceState
+  trace: string          // 它在数据里留下的痕迹
+  lie: string            // 它会怎么把货交给你
+  stats: TableGameStat[]
+}
+
+export interface LedgerSplit { label: string; n: number; bp: number | null; t: number | null }
+
+/**
+ * 竞价缺口分档的结论。由服务端一次判完：前端只负责上色与措辞，不重算阈值。
+ *   take=档内正超额且显著 | weak=正但不显著 | avoid=负 | unbuyable=一字板买不进 | thin=样本不足
+ */
+export type GateVerdict = 'take' | 'weak' | 'avoid' | 'unbuyable' | 'thin'
+
+export interface LedgerGapHalf { label: string; n: number; bp: number | null; t: number | null }
+
+export interface LedgerGap {
+  label: string
+  n: number
+  bp: number | null
+  t: number | null
+  share_pct: number | null
+  verdict?: GateVerdict
+  /** 前后半段是否都同向且显著。null=窗口太短切不动两段 */
+  stable?: boolean | null
+  halves?: LedgerGapHalf[]
+}
+
+export interface LedgerHalf { label: string; n: number; bp: number | null; t: number | null; from: string; to: string }
+export interface SeatRow { seat: string; n: number; symbols: number; bp: number | null; t: number | null; net_med_yi: number }
+
+export interface TableGameLedger {
+  n_event: number
+  excess_bp: number | null
+  t: number | null
+  control_bp: number | null     // 非上榜股的匹配超额，自检项，应 ≈ 0
+  control_n?: number
+  hold2_bp: number | null
+  hold2_t?: number | null
+  hold2_n?: number
+  tradeable_bp: number | null   // 剔除 T+1 一字板后的可成交超额
+  tradeable_t?: number | null
+  tradeable_n?: number
+  median_gap_pct: number | null
+  splits: LedgerSplit[]
+  gap_buckets: LedgerGap[]
+  halves: LedgerHalf[]
+  seats: SeatRow[]
+  window_days: number
+}
+
+export interface InfoChainItem { at: string; layer: string; who: string; lag: string; note: string }
+export interface MissingTable { name: string; unlocks: string }
+
+export interface TableGameOverview {
+  as_of: string
+  window: { days: number; start: string | null; end: string | null }
+  objects: TableGameObject[]
+  ledger: TableGameLedger
+  retail: { n: number; under_pct: number; median_gap_pct: number } | null
+  info_chain: InfoChainItem[]
+  missing_tables: MissingTable[]
+}
+
+/** 规则四态：triggered=条件成立 | clear=不成立 | derived=算术推算 | no_data=本地无此表 */
+export type RuleState = 'triggered' | 'clear' | 'derived' | 'no_data'
+
+export interface BoardRule {
+  id: string
+  label: string
+  claim: string
+  state: RuleState
+  value?: number | string | null
+  unit?: string
+  detail?: string
+}
+
+export interface BoardEvent {
+  date: string
+  kind: string
+  actor: string
+  actor_label: string
+  title: string
+  detail: string
+  value?: number | null
+  seen_at: string
+  evidence: EvidenceState
+}
+
+export interface BoardMeta {
+  symbol: string
+  name: string | null
+  close: number | null
+  float_cap: number | null
+  cap_rank: number | null
+  roe: number | null
+  turnover_rate: number | null
+  amount: number | null
+}
+
+export interface TableGameBoard {
+  symbol: string
+  state: 'ok' | 'no_data' | 'not_in_universe'
+  as_of?: string
+  meta: BoardMeta
+  events: BoardEvent[]
+  rules: BoardRule[]
+}
+
+// ===== 扫描层（今天该看哪几只） =====
+
+/** 一个席位在这一只票上的净额，以及它自己的历史超额（n 未过门槛时为 null） */
+export interface ScanSeat {
+  seat: string
+  net_yi: number
+  bp: number | null
+  t: number | null
+  n: number | null
+}
+
+export interface ScanOwn {
+  n: number
+  bp: number | null
+  t: number | null
+  /** 单票历史样本是否够用（<20 时页面只能说「只能用全市场基准」） */
+  enough: boolean
+}
+
+export interface ScanName {
+  symbol: string
+  name: string | null
+  /** T 日涨跌幅，百分数原值（10.08 表示 +10.08%） */
+  chg_pct: number | null
+  net_yi: number | null
+  org_net_yi: number | null
+  hot_net_yi: number | null
+  buy_seats: ScanSeat[]
+  sell_seats: ScanSeat[]
+  own: ScanOwn
+}
+
+export interface TableGameScan {
+  as_of: string
+  /** 榜单日。与 as_of 不同时看 lag_days，不要自己按自然日相减 */
+  trade_date: string | null
+  state: 'ok' | 'stale' | 'no_data'
+  lag_days: number | null
+  counts: { total: number; positive: number; shown: number }
+  names: ScanName[]
+  gate: {
+    buckets: LedgerGap[]
+    median_gap_pct: number | null
+    n_event: number
+    tradeable_bp: number | null
+    window_days?: number
+  }
 }
 
 // ===== Strategy Engine =====
@@ -2437,6 +2679,8 @@ export interface Preferences {
   minute_batch_symbols: number
   /** 回测/优化 worker RSS 内存上限 (GiB), 0 = 不限制 (系统设置 → 性能与内存) */
   backtest_worker_rss_limit_gib: number
+  /** 本机允许填写的上限 (GiB): 容器内存的 60%, 由后端按 cgroup 算出 */
+  backtest_worker_rss_limit_max_gib: number
   limit_ladder_monitor_enabled: boolean
   depth_polling_interval: number
   depth_finalize_time: { hour: number; minute: number }
@@ -2842,17 +3086,25 @@ export type DecisionScore = {
   excess_se_hac?: number | null
   /** 与 `skill_lcb` 同口径的单侧 90% 下界——超额读数请看这个。 */
   excess_lcb_hac?: number | null
-  verdict: 'INSUFFICIENT' | 'BEATS_CONSTANT' | 'NO_INFORMATION'
+  /** 判决六态。与 `significance` 同轴：`BEATS_CONSTANT` 要求下界为正，
+   *  `UNKNOWN` 表示分数可读但样本不足以支撑任何结论。 */
+  verdict: 'INSUFFICIENT' | 'UNKNOWN' | 'BEATS_CONSTANT' | 'NO_INFORMATION'
+    | 'NOT_ESTABLISHED' | 'KILL'
   reason: string
   /** 按 p_win 出处分组：ledger（账本自举）/ prior（冷启动常数）/ unknown（人手填或旧记录）。
-   *  合并分数会被没有信息的那段稀释，所以后端同时给出拆分。 */
+   *  合并分数会被没有信息的那段稀释，所以后端同时给出拆分。
+   *  分组的判决走同一个谓词——组越小 `n_eff` 越低，它最容易假绿。 */
   by_source?: Record<string, {
     n: number
     days: number
     hit_rate: number
     brier: number
     skill: number | null
-    verdict: 'INSUFFICIENT' | 'BEATS_CONSTANT' | 'NO_INFORMATION'
+    skill_lcb?: number | null
+    n_eff?: number | null
+    verdict: 'INSUFFICIENT' | 'UNKNOWN' | 'BEATS_CONSTANT' | 'NO_INFORMATION'
+      | 'NOT_ESTABLISHED' | 'KILL'
+    reason?: string
   }>
 }
 
@@ -3510,6 +3762,11 @@ export const api = {
       rows: MinuteKlineRow[]
       /** local=完整; local_partial=本地有但不完整(见 expected/actual); live=源实时; none=无数据 */
       source?: 'local' | 'local_partial' | 'live' | 'none'
+      /**
+       * source=none 时的病因。拉取失败(可重试) 与 源确实没有这一天(重试无用)
+       * 都返回空 rows, 混成一句「数据源未提供」会把通道异常说成源的能力缺失。
+       */
+      reason?: MinuteNoneReason
       /** local_partial 时: 该交易日应有根数 / 实有根数 */
       expected?: number
       actual?: number
@@ -3770,6 +4027,9 @@ export const api = {
     return request<RegimeHistory>(`/api/regime/history${qs ? `?${qs}` : ''}`)
   },
   regimeLatest: () => request<{ row: RegimeRow | null }>('/api/regime/latest'),
+  /** 参照系：各指标历史分位 + 同类日子的次日表现 */
+  regimeContext: (window?: number) =>
+    request<RegimeContext>(`/api/regime/context${window ? `?window=${window}` : ''}`),
   regimeStates: (days = 60) => request<RegimeStates>(`/api/regime/states?days=${days}`),
   regimeCoverage: () => request<RegimeCoverage>('/api/regime/coverage'),
   regimeRecompute: (start?: string, end?: string) => {
@@ -4139,6 +4399,9 @@ export const api = {
   dataIntegrity: () => request<{
     report: IntegrityReport | null
     blocking_assets?: IntegrityAsset[]
+    /** 具体到「哪一天、哪一类、什么毛病」，横幅据此说清去修什么 */
+    blocking_entries?: IntegrityBlockingEntry[]
+    blocking_total?: number
     data_revisions?: DailyDataRevisions
   }>('/api/data/integrity'),
   scanDataIntegrity: (lookbackDays: number, assetTypes: IntegrityAsset[]) =>
@@ -4689,6 +4952,25 @@ export const api = {
   auctionBenchmark: (date?: string) =>
     request<AuctionBenchmarkPayload>(
       `/api/market-recap/auction-benchmark${date ? `?date=${encodeURIComponent(date)}` : ''}`,
+    ),
+
+  /** 对手盘模型：今日榜单 × 席位历史 × 明早的分档规则（先扫再深入） */
+  tableGameScan: (asOf?: string, limit = 12) =>
+    request<TableGameScan>(
+      `/api/table-game/scan?limit=${limit}${asOf ? `&as_of=${encodeURIComponent(asOf)}` : ''}`,
+    ),
+
+  /** 对手盘模型：12 个参与者对象 + 龙虎榜账本 + 信息到达链 */
+  tableGameOverview: (asOf?: string) =>
+    request<TableGameOverview>(
+      `/api/table-game/overview${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`,
+    ),
+
+  /** 对手盘模型：某只票的事件时间轴 + 九条常识的可观测判定 */
+  tableGameBoard: (symbol: string, asOf?: string, days = 60) =>
+    request<TableGameBoard>(
+      `/api/table-game/board?symbol=${encodeURIComponent(symbol)}`
+      + `${asOf ? `&as_of=${encodeURIComponent(asOf)}` : ''}&days=${days}`,
     ),
 
   reviewReportSave: (r: {
@@ -5258,6 +5540,15 @@ export type PipelineJobSummary = Omit<PipelineJob, 'log'>
 // ===== Data status =====
 export type IntegrityAsset = 'stock' | 'etf' | 'index'
 export type DailyDataRevisions = Partial<Record<IntegrityAsset, string>>
+
+/** 一条阻断计算的待修补记录（日K某一天某一类） */
+export interface IntegrityBlockingEntry {
+  asset_type: IntegrityAsset
+  day: string
+  kind: string
+  reason: string
+  needs_raw: boolean
+}
 
 export interface IntegrityReport {
   version: 1

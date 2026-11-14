@@ -60,8 +60,19 @@ const CHECK_META: Record<DecisionCheckStatus, { icon: typeof ShieldCheck; tone: 
 
 const VERDICT_LABEL: Record<string, string> = {
   INSUFFICIENT: '样本不足',
+  UNKNOWN: '不可判定',
   BEATS_CONSTANT: '跑赢常数基线',
   NO_INFORMATION: '无信息增量',
+  NOT_ESTABLISHED: '未成立',
+  KILL: '已证伪',
+}
+
+/** 判决的配色必须与语义同向：只有 `BEATS_CONSTANT` 是绿，只有 `KILL` 是红。
+ *  `NOT_ESTABLISHED` 走黄——它最容易被误读成「有戏」，而它恰恰是「还没测出来」。 */
+const VERDICT_TONE: Record<string, string> = {
+  BEATS_CONSTANT: 'bg-accent/10 text-accent',
+  KILL: 'bg-danger/10 text-danger',
+  NOT_ESTABLISHED: 'bg-warning/10 text-warning',
 }
 
 /** produce 结果的人话。门禁 STOP / 无证据都是诚实路径，不是错误。 */
@@ -313,9 +324,7 @@ export function Decision() {
             <Target className="h-3.5 w-3.5 text-accent" />
             <h2 className="text-xs font-medium text-foreground">校准</h2>
             <span className={cn('ml-auto rounded px-1.5 py-0.5 text-[10px]',
-              s?.verdict === 'BEATS_CONSTANT' ? 'bg-accent/10 text-accent'
-                : s?.verdict === 'NO_INFORMATION' ? 'bg-danger/10 text-danger'
-                  : 'bg-elevated text-muted')}>
+              VERDICT_TONE[s?.verdict ?? 'INSUFFICIENT'] ?? 'bg-elevated text-muted')}>
               {VERDICT_LABEL[s?.verdict ?? 'INSUFFICIENT']}
             </span>
           </div>
