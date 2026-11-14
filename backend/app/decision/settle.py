@@ -37,7 +37,10 @@ from typing import Any
 import polars as pl
 
 from app.decision import bars
+from app.market_time import cn_today
 from app.decision.ledger import (
+    FILL_MODE_LIMIT,
+    FILL_MODE_OPEN_ONLY,
     SETTLEMENT_KIND,
     append_settlements,
     load_cards,
@@ -80,6 +83,75 @@ def significance_of(skill_lcb: float | None, n_eff: int | None,
         return SIGNIFICANCE_UNKNOWN
     return SIGNIFICANCE_PASS if skill_lcb > 0 else SIGNIFICANCE_FAIL
 
+
+#: 判决五态。**分区**：互斥、穷尽，每一格都可达。
+#:
+#: 与 `significance_of()` 同轴是这一组存在的全部理由。在此之前判决只看
+#: `skill > 0` 这个点估计，而同一个函数并行算出的 `significance` 可以是
+#: UNKNOWN——真实的账本上出现过「点估计为正、下界为负、显著性不可判定、
+#: verdict 却写着跑赢」四个字段并列返回的情形。界面四个都返回，读者只会
+#: 读那个绿的。复现见 `tests/test_decision_verdict_partition.py`（那里每次
+#: 重算，不引用冻结的数值）。
+VERDICT_INSUFFICIENT = "INSUFFICIENT"
+VERDICT_UNKNOWN = "UNKNOWN"
+VERDICT_BEATS = "BEATS_CONSTANT"
+VERDICT_NO_INFORMATION = "NO_INFORMATION"
+VERDICT_NOT_ESTABLISHED = "NOT_ESTABLISHED"
+VERDICT_KILL = "KILL"
+
+
+def _pct(x: float | None) -> str:
+    return "n/a" if x is None else f"{x:+.2%}"
+
+
+def verdict_of(*, n: int, skill: float | None, skill_lcb: float | None,
+               n_eff: int | None, n_eff_reliable: bool | None,
+               baseline: str) -> tuple[str, str]:
+    """把分数折成**可执行**的判决，与 `significance_of()` 同轴。
+
+    分区（互斥、穷尽）：
+
+    | 条件 | 判决 | 下一步 |
+    |---|---|---|
+    | `n < MIN_N` | `INSUFFICIENT` | 继续攒样本 |
+    | 不可判定（`n_eff` 不足或不可靠） | `UNKNOWN` | 攒样本，**不许**当成绩引用 |
+    | `skill_lcb > 0` | `BEATS_CONSTANT` | 可引用为「跑赢常数」 |
+    | `skill_lcb ≤ 0` 且 `skill > 0` | `NOT_ESTABLISHED` | 未成立，不是已证伪 |
+    | `skill_lcb ≤ 0` 且 `skill < 0` | `KILL` | **已证伪**：停用或反转 |
+    | `skill_lcb ≤ 0` 且 `skill == 0` | `NO_INFORMATION` | 换预测器，不必停用策略 |
+
+    后三格必须分开。它们的分母相同、点估计相邻，但动作完全不同：
+    点估计为正而下界为负，是「还没测出来」；点估计为负，是「测出来是坏的」；
+    恰好等于基线，是「这个预测器没带来任何东西」——此时反转也没用，该换的是
+    预测器而不是方向。合成一格（比如都叫 `NO_INFORMATION`）会让这三种读数
+    共用同一个名字，然后被统一读成最轻的那个。
+    """
+    if n < MIN_N:
+        return VERDICT_INSUFFICIENT, f"已结算样本 {n} < {MIN_N}：先攒样本"
+    if significance_of(skill_lcb, n_eff, n_eff_reliable) == SIGNIFICANCE_UNKNOWN:
+        if n_eff is None:
+            return VERDICT_UNKNOWN, "等效独立样本不可得：分数可读，结论不可判定"
+        return VERDICT_UNKNOWN, (
+            f"等效独立样本 {n_eff} < {MIN_NEFF}（或不可靠）："
+            f"分数可读，结论不可判定")
+    if skill is None:
+        # 常数基线退化（样本同质）。此时 `skill_lcb` 也不会为正，走到这里
+        # 说明 `significance_of` 已经放行——那只能是分支写错了，不是读数。
+        return VERDICT_UNKNOWN, "常数基线退化：分数不可比，结论不可判定"
+    if skill_lcb is not None and skill_lcb > 0:
+        return VERDICT_BEATS, (
+            f"Brier skill {_pct(skill)}，下界 {_pct(skill_lcb)} > 0（基线 {baseline}）")
+    if skill < 0:
+        return VERDICT_KILL, (
+            f"Brier skill {_pct(skill)} < 0 且下界 {_pct(skill_lcb)} ≤ 0"
+            f"（基线 {baseline}）：已证伪，停用或反转")
+    if skill > 0:
+        return VERDICT_NOT_ESTABLISHED, (
+            f"点估计 {_pct(skill)} > 0 但下界 {_pct(skill_lcb)} ≤ 0"
+            f"（基线 {baseline}）：未成立，不是已证伪")
+    return VERDICT_NO_INFORMATION, (
+        f"Brier skill 恰好为 0（基线 {baseline}）：预测器无信息增量，换预测器")
+
 #: 先验强度：等价于 20 个虚拟样本。`pwin.DEFAULT_KAPPA` 与它同源——
 #: 展开基线与 p_win 必须用同一个收缩强度，否则两个数字不可比。
 DEFAULT_KAPPA = 20.0
@@ -105,14 +177,25 @@ P_CONST_MEDIAN = 0.5
 # ---------------------------------------------------------------------------
 
 
-def _fill(row: dict, limit: float) -> dict[str, Any]:
-    """单日限价撮合（与 `strategy/paper.py` 的开盘/限价口径一致）。"""
+def _fill(row: dict, limit: float, *, mode: str = FILL_MODE_LIMIT) -> dict[str, Any]:
+    """单日限价撮合（与 `strategy/paper.py` 的开盘/限价口径一致）。
+
+    `mode="open_only"` 取消「盘中触及按限价成交」那一支。它不是更严格的版本，
+    而是**另一个策略**：L1 的收益来自「低开后的日内修复」，能被盘中回落触发
+    的标的是「高开走弱」的那批，方向上正好相反。把两者混在一次统计里，会让
+    一个正期望策略看起来平庸——不是因为它错了，而是因为撮合口径把另一批
+    样本塞了进来。
+    """
     open_raw = bars.raw_open(row)
     low_raw = bars.raw_low(row)
     if open_raw is None:
         return {"status": "INVALID", "detail": "缺少可还原的不复权开盘价"}
     if open_raw <= limit + 1e-9:
         return {"status": "FILLED", "basis": "OPEN", "price": open_raw}
+    if mode == FILL_MODE_OPEN_ONLY:
+        return {"status": "NOT_FILLED", "basis": "OPEN_ONLY",
+                "detail": f"开盘 {open_raw:.2f} 高于限价 {limit:.2f}："
+                          f"open_only 只在集合竞价成交"}
     if low_raw is not None and low_raw <= limit + 1e-9:
         return {"status": "FILLED", "basis": "LIMIT", "price": limit}
     return {"status": "NOT_FILLED",
@@ -133,25 +216,38 @@ def _benchmark_ret(data_dir: Path, symbol: str, entry: str, exit_: str) -> float
     return (b / a - 1.0) if a > 0 else None
 
 
-def _median_ret(data_dir: Path, entry: str, exit_: str) -> float | None:
+def _median_ret(data_dir: Path, entry: str, exit_: str, *,
+                entry_price: str = "close") -> float | None:
     """同区间全市场收益中位数——`median` 口径的基准。
 
-    它是**可复算的**：收盘后拿当天全市场分区就能算出来，没有前视偏差。
+    `entry_price` 必须与被测收益的**入场价**一致：`close` 对应「上一日收盘买入」，
+    `open` 对应「当日开盘买入」。传错这一格会让基准整段错位，而且错得看不出来：
+    当 `entry == exit_`（L1 的 `horizon_sessions=0`）且用 `close` 时，
+    `close / close − 1` 恒为 0，基准退化成「涨没涨」，`median` 口径静默等价于
+    `abs` 口径——两种检验的结论从此混在一个分数里。
+
+    实测（2026-11-12）：全市场 `median(open→close)` 与同一天 `median(close→close)`
+    相差一整个数量级，后者恒为零。这不是精度问题。
+
     样本不足 100 只时返回 None（指数成分变动、分区缺失），调用方判未知。
     """
-    key = (str(Path(data_dir).resolve()), entry, exit_)
+    key = (str(Path(data_dir).resolve()), entry, exit_, entry_price)
     with _MEDIAN_LOCK:
         if key in _MEDIAN_CACHE:
             return _MEDIAN_CACHE[key]
     val: float | None = None
+    col = "open" if entry_price == "open" else "close"
     a = bars.day_rows(Path(data_dir), entry)
     b = bars.day_rows(Path(data_dir), exit_)
+    if "open" not in a.columns:
+        col = "close"          # 该表没有 open 列（指数）⇒ 退回收盘口径，由调用方标注
     if not a.is_empty() and not b.is_empty():
-        j = a.select(["symbol", "close"]).join(
-            b.select(["symbol", "close"]), on="symbol", suffix="_end")
-        j = j.filter((pl.col("close") > 0) & (pl.col("close_end") > 0))
+        left = a.select([pl.col("symbol"), pl.col(col).alias("px_in")])
+        right = b.select([pl.col("symbol"), pl.col("close").alias("px_out")])
+        j = left.join(right, on="symbol")
+        j = j.filter((pl.col("px_in") > 0) & (pl.col("px_out") > 0))
         if j.height >= 100:
-            val = float((j["close_end"] / j["close"] - 1.0).median())
+            val = float((j["px_out"] / j["px_in"] - 1.0).median())
     with _MEDIAN_LOCK:
         _MEDIAN_CACHE[key] = val
     return val
@@ -163,10 +259,52 @@ def _median_ret(data_dir: Path, entry: str, exit_: str) -> float | None:
 #: 在日志里长得一样。
 PENDING_NOT_DUE = "not_due"
 PENDING_ENTRY_MISSING = "entry_missing"
+PENDING_ENTRY_NOT_CLOSED = "entry_not_closed"
 PENDING_EXIT_MISSING = "exit_missing"
 PENDING_WINDOW_UNCOVERED = "window_uncovered"
 PENDING_REASONS = (PENDING_NOT_DUE, PENDING_ENTRY_MISSING,
-                   PENDING_EXIT_MISSING, PENDING_WINDOW_UNCOVERED)
+                   PENDING_ENTRY_NOT_CLOSED, PENDING_EXIT_MISSING,
+                   PENDING_WINDOW_UNCOVERED)
+
+#: 收盘判据。日线分区在盘中也会被实时路径写入，那时 `close` 是盘中价，
+#: 而行数、字段、`(date,symbol)` 唯一性全部正常——只有 `quote_ts` 能分开。
+CLOSE_HHMMSS = "15:00:00"
+
+
+def entry_session_state(data_dir: Path, entry: str) -> tuple[str, str]:
+    """入场日是不是**收盘之后**的数据。返回 `(state, 说明)`。
+
+    `state ∈ closed | intraday | unknown | future`。
+
+    **判据的顺序是「日期先于数据」，不是反过来。** 只看 `quote_ts` 会两头出错：
+    `date=2026-11-09` 与 `date=2026-11-10` 两个分区的该列**整列为空**，当盘中
+    拒绝会永久卡死两个合法交易日；而当已收盘放行，今天的盘中快照
+    （`date=2026-11-13` 的 `10:42:47`）就会混进账本。所以：
+
+    - 过去的交易日：分区不会再变，`quote_ts` **存在**且早于 15:00 才拒绝
+      （那是真脏数据，等下去也不会好）；`quote_ts` 缺失则放行。
+    - 今天：必须由 `quote_ts ≥ 15:00` 作证；缺失只能是 `unknown`，不放行。
+    - 未来：`future`，不放行。
+
+    这一支与 `_settle_pick` 里其他挂起态一样**不写盘**：它等的是收盘，
+    不是"再试一次就有"。
+    """
+    today = cn_today().isoformat()
+    ts = bars.day_last_quote_ts(data_dir, entry)
+    if entry < today:
+        if ts is not None and ts < CLOSE_HHMMSS:
+            return "intraday", (
+                f"entry={entry} 是过去的交易日，但分区 quote_ts={ts} 早于 "
+                f"{CLOSE_HHMMSS}：盘中快照残留，需重算该分区")
+        return "closed", "过去的交易日"
+    if entry == today:
+        if ts is None:
+            return "unknown", (
+                f"entry={entry} 是今天且 quote_ts 读不到：无法证明已收盘")
+        if ts >= CLOSE_HHMMSS:
+            return "closed", f"quote_ts={ts} ≥ {CLOSE_HHMMSS}"
+        return "intraday", f"quote_ts={ts} 早于 {CLOSE_HHMMSS}，是盘中快照"
+    return "future", f"entry={entry} 晚于今天"
 
 
 def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
@@ -192,7 +330,13 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
     row = bars.bar_map(data_dir, entry, [symbol]).get(symbol)
     if row is None:
         return PENDING_ENTRY_MISSING, None    # 入场日无行情：停牌或数据未到，等
-    fill = _fill(row, limit)
+    # 有 bar ≠ 能结算：盘中快照同样有 bar，行数齐全、字段完整。必须挡在撮合之前，
+    # 因为一旦按盘中价成交、写进账本，`done` 键就把它固化成"历史事实"了。
+    state, _why = entry_session_state(Path(data_dir), entry)
+    if state != "closed":
+        return PENDING_ENTRY_NOT_CLOSED, None
+    mode = str(card.get("fill_mode") or FILL_MODE_LIMIT)
+    fill = _fill(row, limit, mode=mode)
     meta = (card.get("forecast") or {}).get("pwin")
     meta = meta if isinstance(meta, dict) else {}
     base = {
@@ -204,6 +348,9 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
         "strategy_id": card.get("strategy_id"),
         "account_id": card.get("account_id"),
         "horizon_sessions": horizon,
+        #: 撮合口径随结算行落盘。事后比较「开盘成交」与「盘中补票」两批样本时，
+        #: 没有这一列就只能靠 strategy_id 猜——而同一策略可能两种口径都跑过。
+        "fill_mode": mode,
         "p_win": float(pick["p_win"]),
         "limit_price": limit,
         # p_win 的出处必须随结算一起落盘。否则事后无法区分「账本算的」
@@ -292,7 +439,10 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
 
     benchmark_ret = _benchmark_ret(data_dir, str(card.get("benchmark") or "000300.SH"),
                                    entry, exit_day)
-    median_ret = _median_ret(data_dir, entry, exit_day)
+    # 基准的入场价必须跟着成交价走：开盘成交 ⇒ 基准也用 open。
+    # 不跟着走的话，`horizon=0` 时 `close/close−1` 恒为 0，median 口径退化成 abs。
+    entry_px = "open" if str(fill.get("basis")) == "OPEN" else "close"
+    median_ret = _median_ret(data_dir, entry, exit_day, entry_price=entry_px)
     p = float(pick["p_win"])
     outcome = 1 if ret > 0 else 0
     brier = (p - outcome) ** 2
@@ -312,6 +462,10 @@ def _settle_pick(data_dir: Path, card: dict[str, Any], pick: dict[str, Any],
         "benchmark_ret": None if benchmark_ret is None else round(benchmark_ret, 6),
         "excess": None if benchmark_ret is None else round(ret - benchmark_ret, 6),
         "median_ret": None if median_ret is None else round(median_ret, 6),
+        #: 基准的入场价口径。缺这个键的旧行一律按 `close→close` 读——而 L1 的
+        #: 成交是 open，旧行的基准因此恒为 0（2026-11-13 发现并修正）。
+        #: 新行写明口径，让「两种 median 检验」在账本里可区分，不必读源码反推。
+        "median_basis": f"{entry_px}->close",
         "excess_med": None if median_ret is None else round(ret - median_ret, 6),
         "outcome_med": outcome_med,
         "outcome": outcome,
@@ -639,6 +793,56 @@ def _daily_clustered_lcb(settled: list[dict[str, Any]], outcomes: list[int],
     return lcb, (lcb / brier_const if brier_const > 0 else None), n_eff, lag, reliable
 
 
+def _scores(settled: list[dict[str, Any]], basis: str) -> dict[str, Any]:
+    """一组已结算行的分数与判决输入。**唯一**的 Brier / skill / n_eff 计算点。
+
+    `score()`（总分）与 `_breakdown()`（分组）都走这里。两地各写一份
+    `skill > 0` 的时候，同一个判决名会长出两个含义：总分说 UNKNOWN、
+    分组说 BEATS_CONSTANT，而读者无从判断哪一个是结论。分组尤其危险——
+    组越小 `n_eff` 越低，它反而是最容易被判成「跑赢」的那一格。
+    """
+    field = "outcome_med" if basis == BASIS_MEDIAN else "outcome"
+    n = len(settled)
+    outcomes = [int(r[field]) for r in settled]
+    hit = sum(outcomes) / n
+    brier = sum((float(r["p_win"]) - y) ** 2 for r, y in zip(settled, outcomes)) / n
+    logloss = sum(
+        -(y * math.log(min(max(float(r["p_win"]), _EPS), 1 - _EPS))
+          + (1 - y) * math.log(min(max(1 - float(r["p_win"]), _EPS), 1 - _EPS)))
+        for r, y in zip(settled, outcomes)
+    ) / n
+
+    # 三个基线回答三个不同的问题，不能互相替代：
+    #   random    p = 0.5       无信息基准（median 口径的「随机选股」）
+    #   clim      展开 climatology  决策时点可知的最优常数（**诚实基线**）
+    #   insample  样本内命中率      事后最优常数，恒 ≥ 任何常数预测器，只做诊断
+    brier_random = P_CONST_MEDIAN * (1 - P_CONST_MEDIAN)
+    brier_insample = sum((hit - y) ** 2 for y in outcomes) / n
+    clim = _expanding_climatology(settled, outcomes)
+    brier_clim = sum((c - y) ** 2 for c, y in zip(clim, outcomes)) / n
+
+    # abs 口径的分母必须是 clim，不是 insample：后者含未来信息，任何常数
+    # 预测器相对它都恒 ≤ 0（§9.3 的恒等式），那不是一个检验，是同义反复。
+    brier_const = brier_random if basis == BASIS_MEDIAN else brier_clim
+
+    skill = (1 - brier / brier_const) if brier_const > 0 else None
+    skill_vs_clim = (1 - brier / brier_clim) if brier_clim > 0 else None
+    # `skill_lcb` 必须和 `skill` 用**同一个分母**：median 口径的分母是常数 0.25，
+    # 所以逐日改善也要相对 0.5 算；abs 口径的分母是展开 climatology，逐日改善
+    # 就相对它算。混用会让下界和点估计回答两个不同的问题。
+    lcb_base = ([P_CONST_MEDIAN] * n if basis == BASIS_MEDIAN else clim)
+    lcb, skill_lcb, n_eff, hac_lag, n_eff_reliable = _daily_clustered_lcb(
+        settled, outcomes, lcb_base, brier_const)
+    return {
+        "n": n, "hit": hit, "brier": brier, "logloss": logloss,
+        "brier_random": brier_random, "brier_insample": brier_insample,
+        "brier_clim": brier_clim, "brier_const": brier_const,
+        "skill": skill, "skill_vs_clim": skill_vs_clim,
+        "excess_lcb_iid": lcb, "skill_lcb": skill_lcb,
+        "n_eff": n_eff, "hac_lag": hac_lag, "n_eff_reliable": n_eff_reliable,
+    }
+
+
 def _breakdown(settled: list[dict[str, Any]], basis: str, column: str,
                *, missing: str = "unknown") -> dict[str, dict[str, Any]]:
     """按 `column` 分组计分。
@@ -648,38 +852,32 @@ def _breakdown(settled: list[dict[str, Any]], basis: str, column: str,
     那句话——前者分不清是哪个预测器在得分，后者分不清有几分样本没算分红。
 
     `missing` 是给旧记录用的：那一列还不存在时不假装知道。
+
+    分组自己的判决也走 `verdict_of()`，不另写一份 `skill > 0`：分组是**诊断**
+    不是结论，而它的 `n_eff` 只会比总分更小——若它自己判「跑赢常数」，那正是
+    最小、最不独立的那一格在替整份账本下结论。
     """
-    field = "outcome_med" if basis == BASIS_MEDIAN else "outcome"
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in settled:
         groups.setdefault(str(row.get(column) or missing), []).append(row)
     out: dict[str, dict[str, Any]] = {}
+    baseline = "随机 0.5" if basis == BASIS_MEDIAN else "展开 climatology"
     for name, rows in sorted(groups.items()):
-        ys = [int(r[field]) for r in rows]
-        n = len(ys)
-        hit = sum(ys) / n
-        brier = sum((float(r["p_win"]) - y) ** 2 for r, y in zip(rows, ys)) / n
-        if basis == BASIS_MEDIAN:
-            const = P_CONST_MEDIAN * (1 - P_CONST_MEDIAN)
-        else:
-            # 同 `score()`：abs 口径的基线必须是展开 climatology。用该组自身的
-            # 命中率（样本内常数）会让 skill 恒 ≤ 0——分组越细，恒等式越明显。
-            clim = _expanding_climatology(rows, ys)
-            const = sum((c - y) ** 2 for c, y in zip(clim, ys)) / n
-        skill = (1 - brier / const) if const > 0 else None
-        if n < MIN_N:
-            verdict = "INSUFFICIENT"
-        elif skill is not None and skill > 0:
-            verdict = "BEATS_CONSTANT"
-        else:
-            verdict = "NO_INFORMATION"
+        s = _scores(rows, basis)
+        verdict, reason = verdict_of(
+            n=s["n"], skill=s["skill"], skill_lcb=s["skill_lcb"],
+            n_eff=s["n_eff"], n_eff_reliable=s["n_eff_reliable"],
+            baseline=baseline)
         out[name] = {
-            "n": n,
+            "n": s["n"],
             "days": len({str(r.get("as_of")) for r in rows}),
-            "hit_rate": round(hit, 4),
-            "brier": round(brier, 4),
-            "skill": None if skill is None else round(skill, 4),
+            "hit_rate": round(s["hit"], 4),
+            "brier": round(s["brier"], 4),
+            "skill": None if s["skill"] is None else round(s["skill"], 4),
+            "skill_lcb": None if s["skill_lcb"] is None else round(s["skill_lcb"], 4),
+            "n_eff": s["n_eff"],
             "verdict": verdict,
+            "reason": reason,
         }
     return out
 
@@ -712,7 +910,7 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
         "significant": False, "significance": SIGNIFICANCE_UNKNOWN, "days": 0,
         "n_eff": None, "hac_lag": None, "n_eff_reliable": False,
         "logloss": None, "ret_median": None, "excess_mean": None, "excess_lcb": None,
-        "verdict": "INSUFFICIENT", "reason": f"已结算样本 0 < {MIN_N}",
+        "verdict": VERDICT_INSUFFICIENT, "reason": f"已结算样本 0 < {MIN_N}",
         # 键集必须与下面的非空分支一致：一条空账本也要能安全地读同一批字段。
         "excess_se_hac": None, "excess_lcb_hac": None,
         "by_source": {}, "by_price_basis": {}, "n_non_event": 0,
@@ -720,41 +918,13 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
     if not settled:
         return empty
 
-    n = len(settled)
-    outcomes = [int(r[field]) for r in settled]
-    hit = sum(outcomes) / n
     # 一律重算：落盘的 `brier` / `logloss` 是 abs 口径的，median 口径必须按自己的
-    # 因变量重算，否则会把两套标签混进同一个分数里。
-    brier = sum((float(r["p_win"]) - y) ** 2 for r, y in zip(settled, outcomes)) / n
-    logloss = sum(
-        -(y * math.log(min(max(float(r["p_win"]), _EPS), 1 - _EPS))
-          + (1 - y) * math.log(min(max(1 - float(r["p_win"]), _EPS), 1 - _EPS)))
-        for r, y in zip(settled, outcomes)
-    ) / n
-
-    # 三个基线回答三个不同的问题，不能互相替代：
-    #   random    p = 0.5       无信息基准（median 口径的「随机选股」）
-    #   clim      展开 climatology  决策时点可知的最优常数（**诚实基线**）
-    #   insample  样本内命中率      事后最优常数，恒 ≥ 任何常数预测器，只做诊断
-    brier_random = P_CONST_MEDIAN * (1 - P_CONST_MEDIAN)
-    brier_insample = sum((hit - y) ** 2 for y in outcomes) / n
-    clim = _expanding_climatology(settled, outcomes)
-    brier_clim = sum((c - y) ** 2 for c, y in zip(clim, outcomes)) / n
-
-    # abs 口径的分母必须是 clim，不是 insample：后者含未来信息，任何常数
-    # 预测器相对它都恒 ≤ 0（§9.3 的恒等式），那不是一个检验，是同义反复。
-    brier_const = brier_random if basis == BASIS_MEDIAN else brier_clim
-
-    skill = (1 - brier / brier_const) if brier_const > 0 else None
-    skill_vs_clim = (1 - brier / brier_clim) if brier_clim > 0 else None
-    # `skill_lcb` 必须和 `skill` 用**同一个分母**：median 口径的分母是常数 0.25，
-    # 所以逐日改善也要相对 0.5 算；abs 口径的分母是展开 climatology，逐日改善
-    # 就相对它算。混用会让下界和点估计回答两个不同的问题。
-    lcb_base = ([P_CONST_MEDIAN] * n if basis == BASIS_MEDIAN else clim)
-    lcb, skill_lcb, n_eff, hac_lag, n_eff_reliable = _daily_clustered_lcb(
-        settled, outcomes, lcb_base, brier_const)
+    # 因变量重算，否则会把两套标签混进同一个分数里。计算本身在 `_scores()`——
+    # 总分与分组共用那一处，判决才不会长出两个定义。
+    s = _scores(settled, basis)
+    n, hit, brier, logloss = s["n"], s["hit"], s["brier"], s["logloss"]
     days = len({str(r.get("as_of")) for r in settled})
-    significance = significance_of(skill_lcb, n_eff, n_eff_reliable)
+    significance = significance_of(s["skill_lcb"], s["n_eff"], s["n_eff_reliable"])
 
     rets = sorted(float(r["exit"]["ret"]) for r in settled)
     median = rets[len(rets) // 2] if len(rets) % 2 else (
@@ -773,15 +943,9 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
     exc_hac = hac_lcb(exc_daily, _overlap_lag(settled)) if len(exc_daily) >= 2 else None
 
     baseline = "随机 0.5" if basis == BASIS_MEDIAN else "展开 climatology"
-    if n < MIN_N:
-        verdict, reason = "INSUFFICIENT", f"已结算样本 {n} < {MIN_N}"
-    elif skill is not None and skill > 0:
-        verdict, reason = "BEATS_CONSTANT", (
-            f"Brier skill {skill:+.2%} > 0（基线 {baseline}）")
-    else:
-        verdict, reason = "NO_INFORMATION", (
-            f"Brier skill {skill:+.2%} ≤ 0（基线 {baseline}）" if skill is not None
-            else "常数基线退化（样本同质）")
+    verdict, reason = verdict_of(
+        n=n, skill=s["skill"], skill_lcb=s["skill_lcb"],
+        n_eff=s["n_eff"], n_eff_reliable=s["n_eff_reliable"], baseline=baseline)
 
     return {
         "basis": basis,
@@ -791,17 +955,17 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
         "days": days,
         "hit_rate": round(hit, 4),
         "brier": round(brier, 4),
-        "brier_const": round(brier_const, 4),
-        "brier_random": round(brier_random, 4),
-        "brier_clim": round(brier_clim, 4),
-        "brier_insample": round(brier_insample, 4),
-        "skill": None if skill is None else round(skill, 4),
-        "skill_vs_clim": None if skill_vs_clim is None else round(skill_vs_clim, 4),
-        "skill_lcb": None if skill_lcb is None else round(skill_lcb, 4),
+        "brier_const": round(s["brier_const"], 4),
+        "brier_random": round(s["brier_random"], 4),
+        "brier_clim": round(s["brier_clim"], 4),
+        "brier_insample": round(s["brier_insample"], 4),
+        "skill": None if s["skill"] is None else round(s["skill"], 4),
+        "skill_vs_clim": None if s["skill_vs_clim"] is None else round(s["skill_vs_clim"], 4),
+        "skill_lcb": None if s["skill_lcb"] is None else round(s["skill_lcb"], 4),
         # 读数：下界为正吗。它不回答「这个下界可不可信」——那是 `significance`
         # 的事。两者分开，是因为它们的失败模式不一样：读数可能对但无意义，
         # 结论必须同时承担「测得出」和「测得准」。
-        "skill_lcb_positive": bool(skill_lcb is not None and skill_lcb > 0),
+        "skill_lcb_positive": bool(s["skill_lcb"] is not None and s["skill_lcb"] > 0),
         # 结论三态。`n_eff` 在这里只是标签的输入，不隐藏数字、不拦截请求。
         # `False` 不再同时表示「测过了，没有」和「测不了」。
         "significance": significance,
@@ -812,11 +976,11 @@ def score(rows: list[dict[str, Any]], *, strategy_id: str | None = None,
         # 等效独立样本数：`days` 是决策日数，`n` 是观测数，都不回答
         # 「有几个独立样本」。20 日持有期让相邻决策日重叠 19 天，
         # 386 条观测 / 40 天可能只值 1–2 个独立样本。
-        "n_eff": n_eff,
-        "hac_lag": hac_lag,
+        "n_eff": s["n_eff"],
+        "hac_lag": s["hac_lag"],
         # False ⇒ `n_eff` 是构造值（不重叠窗口数，MA(H−1) ⇒ n/H），不是估计值；
         # 此时任何基于下界的结论都只能读作「不可判定」。
-        "n_eff_reliable": n_eff_reliable,
+        "n_eff_reliable": s["n_eff_reliable"],
         "logloss": round(logloss, 4),
         "ret_median": round(median, 4),
         "excess_mean": round(sum(excess) / len(excess), 4) if excess else None,

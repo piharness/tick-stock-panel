@@ -452,10 +452,18 @@ def test_settle_concurrent_no_duplicate_rows(tmp_path: Path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _row(p: float, y: int, ret: float = 0.05, excess: float = 0.02) -> dict:
-    return {"outcome": y, "p_win": p, "brier": (p - y) ** 2,
-            "logloss": 0.0, "exit": {"ret": ret}, "excess": excess,
-            "fill": {"status": "FILLED"}, "strategy_id": "s1"}
+def _row(p: float, y: int, ret: float = 0.05, excess: float = 0.02,
+         day: str | None = None, outcome_med: int | None = None) -> dict:
+    """一行结算。`day` 缺省时不写 `as_of`——那会让整批并成 1 个决策日，
+    `n_eff` 退化，判决按设计只能是 UNKNOWN。要断言分数必须给日期。"""
+    row = {"outcome": y, "p_win": p, "brier": (p - y) ** 2,
+           "logloss": 0.0, "exit": {"ret": ret}, "excess": excess,
+           "fill": {"status": "FILLED"}, "strategy_id": "s1"}
+    if day is not None:
+        row["as_of"] = day
+    if outcome_med is not None:
+        row["outcome_med"] = outcome_med
+    return row
 
 
 def test_score_insufficient_below_min_n():
@@ -484,18 +492,43 @@ def test_score_splits_by_pwin_source():
 
 
 def test_score_beats_constant_when_forecast_is_sharper():
-    # 命中率 50%，但 p 在命中时高、未命中时低 ⇒ 有信息
-    rows = [_row(0.9, 1) for _ in range(8)] + [_row(0.1, 0) for _ in range(8)]
+    # 命中率 50%，但 p 在命中时高、未命中时低 ⇒ 有信息。
+    # 40 个决策日：`n_eff` 必须越过 MIN_NEFF，否则判决按设计拒绝下结论。
+    rows = ([_row(0.9, 1, day=f"2026-01-{i + 1:02d}") for i in range(20)]
+            + [_row(0.1, 0, day=f"2026-02-{i + 1:02d}") for i in range(20)])
     out = settle.score(rows)
-    assert out["n"] == 16 and out["hit_rate"] == pytest.approx(0.5)
+    assert out["n"] == 40 and out["hit_rate"] == pytest.approx(0.5)
     assert out["brier"] < out["brier_const"]
+    assert out["n_eff"] >= settle.MIN_NEFF
     assert out["skill"] > 0 and out["verdict"] == "BEATS_CONSTANT"
 
 
-def test_score_no_information_when_forecast_is_constant():
-    rows = [_row(0.5, 1) for _ in range(8)] + [_row(0.5, 0) for _ in range(8)]
+def test_score_without_enough_independent_days_is_unknown():
+    """同一批更锐利的预测，缩到 16 个决策日 ⇒ 点估计仍漂亮，判决必须是 UNKNOWN。
+
+    这是判决与显著性同轴之后唯一新增的行为：样本不够时不许下结论。旧实现
+    看 `skill > 0` 就判 BEATS_CONSTANT，于是 `n_eff=1` 的账本也能拿到结论。
+    """
+    rows = ([_row(0.9, 1, day=f"2026-01-{i + 1:02d}") for i in range(8)]
+            + [_row(0.1, 0, day=f"2026-01-{i + 9:02d}") for i in range(8)])
     out = settle.score(rows)
+    assert out["skill"] > 0.9
+    assert out["n_eff"] < settle.MIN_NEFF
+    assert out["verdict"] == "UNKNOWN"
+
+
+def test_score_no_information_when_forecast_is_constant():
+    """预测恒为 0.5 时 `skill` 恰好为 0——但只在 `median` 口径下精确成立。
+
+    `median` 的分母是常数 0.25，`p=0.5` 与基线逐位相等。`abs` 口径的分母是
+    展开 climatology：早期样本让它偏离 0.5，于是「恒定预测」反而显得比基线
+    更好。那是基线的性质，不是预测器的信息量——所以这一格必须用 median 钉。
+    """
+    rows = ([_row(0.5, 1, day=f"2026-01-{i + 1:02d}", outcome_med=1) for i in range(20)]
+            + [_row(0.5, 0, day=f"2026-02-{i + 1:02d}", outcome_med=0) for i in range(20)])
+    out = settle.score(rows, basis="median")
     assert out["skill"] == pytest.approx(0.0)
+    assert out["n_eff"] >= settle.MIN_NEFF
     assert out["verdict"] == "NO_INFORMATION"
 
 

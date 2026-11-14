@@ -41,8 +41,10 @@
 2. **三态**：`PASS / TRIGGERED / UNKNOWN`。`strict=True` 时 UNKNOWN 也阻断。
 3. **接线才算数**：`gates.py` 里出现的每条规则都真的读数据；读不到返回 UNKNOWN，不返回 PASS。
 4. **可证伪**：`Brier skill = 1 - brier / brier_const`。基线的取法决定这条路走不走得通
-   （见第 9 节）：`abs` 用同样本命中率——它含未来信息，任何常数 `p_win` 都恒不可超越；
-   `median` 用精确的 `0.5`，历史胜率才可能跑赢它。
+   （见第 9 节）：`abs` 用**展开 climatology**——第 d 天只用严格早于 d 的已结算样本估常数
+   （含 κ=20 收缩），决策时点可知，不含未来信息；`median` 用精确的 `0.5`。
+   两个都不是样本内命中率：对任意常数 `p`，`mean((p−y)²) ≥ mean((ȳ−y)²)`，
+   拿 `ȳ` 做分母会让任何常数预测器的 BSS 恒 ≤ 0——那是恒等式，不是检验。
 5. **失败关闭**：建卡时门禁为 STOP ⇒ HTTP 409；确需补登历史卡必须 `allow_stop=true` + ≥10 字理由，理由随卡存档。
 6. **只追加**：卡文件不覆盖（同 id 返回 `created: false`），结算写 `settlements.jsonl`；没有删除端点。
 
@@ -56,7 +58,9 @@
 | 超额 | 同区间基准（默认 `000300.SH`，`kline_index_enriched`） | 不比基准的收益不是 alpha |
 | **选股超额** | **`ret - 同日全市场收益中位数`** | **基线精确 50%，同日 pick 近似独立；剥离 beta** |
 | 到期日无行情 | 仍 `PENDING`，不拿旧价假装结算 | 停牌不是"没发生" |
-| 结论门槛 | 已结算 `n < 8` ⇒ `INSUFFICIENT`；`skill_lcb ≤ 0` ⇒ 不显著 | 小样本的 Brier 只是噪声 |
+| 结论门槛（`significance`） | 已结算 `n < MIN_N` ⇒ `INSUFFICIENT`；`n_eff < MIN_NEFF` 或不可靠 ⇒ 不显著 | 小样本的 Brier 只是噪声 |
+| **判决（`verdict`）** | `n < MIN_N` ⇒ `INSUFFICIENT`；`n_eff < MIN_NEFF`（或不可靠）⇒ `UNKNOWN`；`skill_lcb > 0` ⇒ `BEATS_CONSTANT`；`skill_lcb ≤ 0` 且 `skill > 0` ⇒ `NOT_ESTABLISHED`；`skill < 0` ⇒ `KILL`；`skill == 0` ⇒ `NO_INFORMATION` | **与 `significance` 同轴**——点估计为正而下界为负不是「有戏」，点估计为负才是「已证伪」，恰好等于基线是「换预测器」。三者下一步不同，不能共用一个名字 |
+| `verdict` 的唯一产地 | `settle.verdict_of()`；总分与 `by_source` 分组都调它 | 分组另写一份 `skill > 0`，会让 `n_eff` 最小的一组替整份账本下结论 |
 
 ## 5. 与 Capital-Console 的有意差异
 
@@ -75,7 +79,13 @@
 - [x] 缺 instruments 时 K2 判 `UNKNOWN`，`strict=True` 下阻断（`test_gate_k2_unknown_when_instruments_missing`）
 - [x] 同一批卡重复结算不重复写入（`test_settle_is_idempotent`）
 - [x] 复权因子 2 的场景下收益为 +10% 而非 +120%（`test_adjusted_return_removes_exrights_jump`）
-- [x] 常数预测的 skill = 0、判 `NO_INFORMATION`；样本 < 8 判 `INSUFFICIENT`
+- [x] 常数预测（`p ≡ 0.5`、`median` 口径）的 skill = 0、判 `NO_INFORMATION`；`n < MIN_N` 判 `INSUFFICIENT`
+- [x] `verdict` 与 `significance` 同轴：点估计再高，`n_eff < MIN_NEFF` 也只能是 `UNKNOWN`
+      （`test_high_skill_below_min_neff_cannot_beat_constant`）
+- [x] 六态是分区：互斥、穷尽、每格可达（`test_six_verdicts_are_all_reachable`）
+- [x] 分组判决走同一个谓词，不许比总分更乐观（`test_breakdown_verdict_shares_the_same_predicate`）
+- [x] 旧判据装回去必须让新用例变红——否则那条断言是恒真的
+      （`test_old_predicate_would_have_said_beats`）
 - [x] 真实数据只读验证：门禁 0.01s、常数基线 0.06s（6 个采样日 / 33,090 个观测，p0 = 35.69%）
 
 **已补上（2026-11-07 更新）**：「真实策略信号 → 卡」的自动生产者已实现——
