@@ -1,0 +1,221 @@
+{
+ "generated_at": "2026-11-15",
+ "anchor_end": "2026-11-06",
+ "stamp_periods": [
+  {
+   "from": "2005-01-24",
+   "to": "2007-05-29",
+   "round_trip_bp": 20.0
+  },
+  {
+   "from": "2007-05-30",
+   "to": "2008-04-23",
+   "round_trip_bp": 60.0
+  },
+  {
+   "from": "2008-04-24",
+   "to": "2008-09-18",
+   "round_trip_bp": 20.0
+  },
+  {
+   "from": "2008-09-19",
+   "to": "2023-08-27",
+   "round_trip_bp": 10.0
+  },
+  {
+   "from": "2023-08-28",
+   "to": "2099-12-31",
+   "round_trip_bp": 5.0
+  }
+ ],
+ "flat_cost_bp": 19.0,
+ "by_year": {
+  "2005": {
+   "gross_bp": 40.7,
+   "stamp_bp": 20.0,
+   "cost_bp": 34.0,
+   "net_bp": 6.7,
+   "net_flat19_bp": 21.7,
+   "bias_bp": -15.0
+  },
+  "2006": {
+   "gross_bp": 112.9,
+   "stamp_bp": 20.0,
+   "cost_bp": 34.0,
+   "net_bp": 78.9,
+   "net_flat19_bp": 93.9,
+   "bias_bp": -15.0
+  },
+  "2007": {
+   "gross_bp": 82.6,
+   "stamp_bp": 46.4,
+   "cost_bp": 60.4,
+   "net_bp": 22.1,
+   "net_flat19_bp": 63.6,
+   "bias_bp": -41.4
+  },
+  "2008": {
+   "gross_bp": 98.1,
+   "stamp_bp": 28.5,
+   "cost_bp": 42.5,
+   "net_bp": 55.6,
+   "net_flat19_bp": 79.1,
+   "bias_bp": -23.5
+  },
+  "2009": {
+   "gross_bp": 90.9,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 66.9,
+   "net_flat19_bp": 71.9,
+   "bias_bp": -5.0
+  },
+  "2010": {
+   "gross_bp": 83.3,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 59.3,
+   "net_flat19_bp": 64.3,
+   "bias_bp": -5.0
+  },
+  "2011": {
+   "gross_bp": 73.7,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 49.7,
+   "net_flat19_bp": 54.7,
+   "bias_bp": -5.0
+  },
+  "2012": {
+   "gross_bp": 91.1,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 67.1,
+   "net_flat19_bp": 72.1,
+   "bias_bp": -5.0
+  },
+  "2013": {
+   "gross_bp": 81.1,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 57.1,
+   "net_flat19_bp": 62.1,
+   "bias_bp": -5.0
+  },
+  "2014": {
+   "gross_bp": 63.5,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 39.5,
+   "net_flat19_bp": 44.5,
+   "bias_bp": -5.0
+  },
+  "2015": {
+   "gross_bp": 133.2,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 109.2,
+   "net_flat19_bp": 114.2,
+   "bias_bp": -5.0
+  },
+  "2016": {
+   "gross_bp": 57.2,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 33.2,
+   "net_flat19_bp": 38.2,
+   "bias_bp": -5.0
+  },
+  "2017": {
+   "gross_bp": 47.6,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 23.6,
+   "net_flat19_bp": 28.6,
+   "bias_bp": -5.0
+  },
+  "2018": {
+   "gross_bp": 79.8,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 55.8,
+   "net_flat19_bp": 60.8,
+   "bias_bp": -5.0
+  },
+  "2019": {
+   "gross_bp": 117.0,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 93.0,
+   "net_flat19_bp": 98.0,
+   "bias_bp": -5.0
+  },
+  "2020": {
+   "gross_bp": 128.5,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 104.5,
+   "net_flat19_bp": 109.5,
+   "bias_bp": -5.0
+  },
+  "2021": {
+   "gross_bp": 101.4,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 77.4,
+   "net_flat19_bp": 82.4,
+   "bias_bp": -5.0
+  },
+  "2022": {
+   "gross_bp": 100.1,
+   "stamp_bp": 10.0,
+   "cost_bp": 24.0,
+   "net_bp": 76.1,
+   "net_flat19_bp": 81.1,
+   "bias_bp": -5.0
+  },
+  "2023": {
+   "gross_bp": 141.5,
+   "stamp_bp": 8.3,
+   "cost_bp": 22.3,
+   "net_bp": 119.2,
+   "net_flat19_bp": 122.5,
+   "bias_bp": -3.3
+  },
+  "2024": {
+   "gross_bp": 107.4,
+   "stamp_bp": 5.0,
+   "cost_bp": 19.0,
+   "net_bp": 88.4,
+   "net_flat19_bp": 88.4,
+   "bias_bp": 0.0
+  },
+  "2025": {
+   "gross_bp": 139.1,
+   "stamp_bp": 5.0,
+   "cost_bp": 19.0,
+   "net_bp": 120.1,
+   "net_flat19_bp": 120.1,
+   "bias_bp": 0.0
+  },
+  "2026": {
+   "gross_bp": 114.6,
+   "stamp_bp": 5.0,
+   "cost_bp": 19.0,
+   "net_bp": 95.6,
+   "net_flat19_bp": 95.6,
+   "bias_bp": 0.0
+  }
+ },
+ "summary": {
+  "mean_gross_bp": 94.8,
+  "mean_net_by_year_bp": 68.1,
+  "mean_net_flat19_bp": 75.8,
+  "understatement_bp": 7.6,
+  "years_negative_by_year": [],
+  "years_negative_flat": [],
+  "thinnest_year": "2005",
+  "thinnest_net_bp": 6.7
+ },
+ "note": "预注册的 19bp 是**当前**准入门槛，不改；本表只给历史净收益。两者口径不同：门槛回答「现在值不值得做」，本表回答「当年实际赚了多少」。"
+}
