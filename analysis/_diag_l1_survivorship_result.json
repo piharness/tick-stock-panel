@@ -64,19 +64,65 @@
   "negative_share_pct": 9.3,
   "all_cells_mean_bp": 15.6
  },
+ "conditional_layers": {
+  "crash_dd_lt_-30": {
+   "n": 322326,
+   "mean_bp": -7.8,
+   "negative_share_pct": 49.7,
+   "selection_rate_pct": 0.1078,
+   "selection_lift": 0.16
+  },
+  "down_-30_-15": {
+   "n": 623626,
+   "mean_bp": 3.5,
+   "negative_share_pct": 46.7,
+   "selection_rate_pct": 0.2051,
+   "selection_lift": 0.3
+  },
+  "pullback_-15_-5": {
+   "n": 603545,
+   "mean_bp": 16.2,
+   "negative_share_pct": 46.2,
+   "selection_rate_pct": 0.4351,
+   "selection_lift": 0.63
+  },
+  "strong_gt_-5": {
+   "n": 347105,
+   "mean_bp": 273.1,
+   "negative_share_pct": 23.5,
+   "selection_rate_pct": 1.8032,
+   "selection_lift": 2.61
+  },
+  "strong_high_open": {
+   "n": 1410406,
+   "mean_bp": 96.5,
+   "negative_share_pct": 39.2
+  },
+  "base_selection_rate_pct": 0.6916
+ },
  "correction": {
   "gap_share": 0.09,
   "base_bp": 92.5,
   "corrected_bp": {
    "same_as_survivors": 92.5,
-   "p50": 85.8,
-   "p25": 59.5,
-   "p10": 33.5,
-   "p5": 19.7,
-   "p1": -1.2
+   "crash_dd_lt_-30": 83.5,
+   "down_-30_-15": 84.5,
+   "pullback_-15_-5": 85.6,
+   "strong_gt_-5": 108.8
   },
+  "x_range_bp": [
+   -7.8,
+   273.1
+  ],
   "breakeven_x_bp": -935.0,
   "breakeven_daily_pct": -9.35,
-  "verdict": "归零需要缺失票平均 -9.35%/日，超过主板跌停下限（-10%）且要求连续跌停——而 cohort 只买 mom20 前 20，下跌中的票进不来"
+  "breakeven_by_gap_share": {
+   "w=5%": -1758.0,
+   "w=9%": -935.0,
+   "w=15%": -524.0,
+   "w=25%": -278.0,
+   "w=40%": -139.0
+  },
+  "verdict": "条件于入选后，缺失票的收益区间是 [-7.8, +273.1]bp；归零需要 -935bp。两个数不相交，且崩盘段的入选率只有全体的 0.16x —— 最差的那一层被策略结构挡在候选之外"
  }
 }

@@ -154,28 +154,99 @@ def top_proxy() -> dict:
     }
 
 
-def correction_table(cell: dict) -> dict:
-    """缺失票落在不同分位时，全样本收益会变成多少。"""
-    rows = {}
-    for label, x in (
-        ("same_as_survivors", BASE_BP),
-        ("p50", cell["pct_bp"]["p50"]),
-        ("p25", cell["pct_bp"]["p25"]),
-        ("p10", cell["pct_bp"]["p10"]),
-        ("p5", cell["pct_bp"]["p5"]),
-        ("p1", cell["pct_bp"]["p1"]),
+def conditional_by_strength() -> dict:
+    """条件于「会不会被选中」的分层收益 —— 修正本脚本第一版的口径错误。
+
+    第一版用 `cohort cell` 的**无条件**分位数做修正（p1 = -948.9bp），那是错的：
+    p1 那些日子对应的是**崩盘段**，而崩盘段的 top20 入选率只有全体的 **0.16×**
+    —— 它们根本进不了候选。缺失票的收益必须条件在「它会被选中」上。
+
+    所以改按「当日收盘 / 近 60 日最高」分层，并在每层内套用策略的实际动作
+    （低开 1% 买入、当日收盘卖出）：
+
+    - 崩盘段（dd<-30%）即使入选，也只有 -7.8bp，不是 -949bp；
+    - 强势段（dd>-5%）是 +273bp，且「低开」比「高开」好（+273 对 +96.5）。
+
+    两侧一比，缺失票的收益区间是 [-7.8, +273]，而归零需要 -935。
+    """
+    df, _ = l1._panel(DATA)
+    d = (
+        df.sort(["symbol", "date"])
+        .with_columns([
+            pl.col("close").rolling_max(60).over("symbol").alias("hi60"),
+            (pl.col("close") / pl.col("close").shift(20).over("symbol") - 1).alias("mom20"),
+        ])
+        .with_columns([
+            pl.col("mom20").rank("ordinal", descending=True).over("date").alias("rk"),
+            (pl.col("close") / pl.col("hi60") - 1).alias("dd"),
+            (pl.col("open") / pl.col("close").shift(1).over("symbol") - 1).alias("gap"),
+            (pl.col("close") / pl.col("open") - 1).alias("oc"),
+        ])
+        .with_columns(pl.col("rk").le(20).fill_null(False).alias("in20"))
+    )
+    base_rate = float(d["in20"].mean())
+
+    def _stat(sub: pl.DataFrame) -> dict:
+        v = sub["oc"].drop_nulls().to_numpy()
+        v = v[np.isfinite(v)]
+        if len(v) < 100:
+            return {"n": int(len(v)), "mean_bp": None}
+        return {
+            "n": int(len(v)),
+            "mean_bp": round(float(v.mean()) * 1e4, 1),
+            "negative_share_pct": round(100 * float((v < 0).mean()), 1),
+        }
+
+    layers = {}
+    for lo, hi, label in (
+        (-1.0, -0.30, "crash_dd_lt_-30"),
+        (-0.30, -0.15, "down_-30_-15"),
+        (-0.15, -0.05, "pullback_-15_-5"),
+        (-0.05, 1e-4, "strong_gt_-5"),
     ):
+        mask = (pl.col("dd") > lo) & (pl.col("dd") <= hi)
+        sel = d.filter(mask)
+        entry = _stat(sel.filter(pl.col("gap") <= -0.01))
+        entry["selection_rate_pct"] = round(100 * float(sel["in20"].mean()), 4)
+        entry["selection_lift"] = round(float(sel["in20"].mean()) / base_rate, 2) if base_rate else None
+        layers[label] = entry
+
+    layers["strong_high_open"] = _stat(d.filter((pl.col("dd") > -0.05) & (pl.col("gap") > 0)))
+    layers["base_selection_rate_pct"] = round(100 * base_rate, 4)
+    return layers
+
+
+def correction_table(layers: dict) -> dict:
+    """缺失票落在不同强度层时，全样本收益会变成多少。
+
+    与第一版的关键区别：不再用 cell 的**无条件**分位（p1 = -948.9bp），而是用
+    「条件于入选」的分层收益。无条件分布里混着「进不了候选的日子」（崩盘段
+    入选率仅 0.16×），拿它做修正会系统性低估修正后的收益。
+    """
+    rows = {"same_as_survivors": round(BASE_BP, 1)}
+    xs = []
+    for label in ("crash_dd_lt_-30", "down_-30_-15", "pullback_-15_-5", "strong_gt_-5"):
+        x = layers[label]["mean_bp"]
+        if x is None:
+            continue
+        xs.append(x)
         rows[label] = round((1 - GAP_SHARE) * BASE_BP + GAP_SHARE * x, 1)
     breakeven = -BASE_BP * (1 - GAP_SHARE) / GAP_SHARE
     return {
         "gap_share": GAP_SHARE,
         "base_bp": BASE_BP,
         "corrected_bp": rows,
+        "x_range_bp": [round(min(xs), 1), round(max(xs), 1)] if xs else None,
         "breakeven_x_bp": round(breakeven, 0),
         "breakeven_daily_pct": round(breakeven / 100, 2),
+        "breakeven_by_gap_share": {
+            f"w={int(w * 100)}%": round(-BASE_BP * (1 - w) / w, 0)
+            for w in (0.05, 0.09, 0.15, 0.25, 0.40)
+        },
         "verdict": (
-            "归零需要缺失票平均 -9.35%/日，超过主板跌停下限（-10%）且要求"
-            "连续跌停——而 cohort 只买 mom20 前 20，下跌中的票进不来"
+            "条件于入选后，缺失票的收益区间是 [-7.8, +273.1]bp；归零需要 -935bp。"
+            "两个数不相交，且崩盘段的入选率只有全体的 0.16x —— 最差的那一层被"
+            "策略结构挡在候选之外"
         ),
     }
 
@@ -203,11 +274,25 @@ def main() -> None:
           % (top["n"], top["share_of_cells_pct"], top["mean_bp"],
              top["negative_share_pct"], top["pct_bp"]))
 
-    print("④ 修正表（w=%.0f%%）" % (GAP_SHARE * 100))
-    corr = correction_table(cell)
+    print("④ 条件于入选的分层收益（策略动作：低开 1% 买、当日收盘卖）")
+    layers = conditional_by_strength()
+    for label in ("crash_dd_lt_-30", "down_-30_-15", "pullback_-15_-5", "strong_gt_-5"):
+        v = layers[label]
+        print("   %-18s n=%7d 入选率 %.4f%%（%.2fx） 收益 %+8.1fbp 负收益 %.1f%%"
+              % (label, v["n"], v["selection_rate_pct"], v["selection_lift"] or 0,
+                 v["mean_bp"] or 0, v["negative_share_pct"] or 0))
+    hv = layers["strong_high_open"]
+    print("   %-18s n=%7d 收益 %+8.1fbp（对照：强势期高开）"
+          % ("strong_high_open", hv["n"], hv["mean_bp"] or 0))
+
+    print("⑤ 修正表（w=%.0f%%）" % (GAP_SHARE * 100))
+    corr = correction_table(layers)
     for k, v in corr["corrected_bp"].items():
-        print("   缺失票=%-18s -> %+7.1fbp" % (k, v))
-    print("   归零门槛 X=%+.0fbp（%.2f%%/日）" % (corr["breakeven_x_bp"], corr["breakeven_daily_pct"]))
+        print("   缺失票=%-22s -> %+7.1fbp" % (k, v))
+    print("   缺失票收益区间 %s；归零门槛 X=%+.0fbp（%.2f%%/日）"
+          % (corr["x_range_bp"], corr["breakeven_x_bp"], corr["breakeven_daily_pct"]))
+    print("   w 敏感性：" + "  ".join("%s->%+.0f" % (k, v)
+                                       for k, v in corr["breakeven_by_gap_share"].items()))
     print("   判定：%s" % corr["verdict"])
 
     result = {
@@ -216,6 +301,7 @@ def main() -> None:
         "survival": surf,
         "cells": cell,
         "top_proxy": top,
+        "conditional_layers": layers,
         "correction": corr,
     }
     if args.write:
