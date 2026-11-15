@@ -235,7 +235,10 @@ def correction_table(layers: dict) -> dict:
     return {
         "gap_share": GAP_SHARE,
         "base_bp": BASE_BP,
-        "corrected_bp": rows,
+        #: 量级参考，不是结论：它用全期一个 w，会把 2009 的损失和早期年份的
+        #: 正贡献互相抵消。结论看 `year_by_year`（逐年 w）。保留它只为说明
+        #: 「即使按最粗的口径算，也不会归零」。
+        "illustrative_bp": rows,
         "x_range_bp": [round(min(xs), 1), round(max(xs), 1)] if xs else None,
         "breakeven_x_bp": round(breakeven, 0),
         "breakeven_daily_pct": round(breakeven / 100, 2),
@@ -244,9 +247,9 @@ def correction_table(layers: dict) -> dict:
             for w in (0.05, 0.09, 0.15, 0.25, 0.40)
         },
         "verdict": (
-            "条件于入选后，缺失票的收益区间是 [-7.8, +273.1]bp；归零需要 -935bp。"
-            "两个数不相交，且崩盘段的入选率只有全体的 0.16x —— 最差的那一层被"
-            "策略结构挡在候选之外"
+            "条件于入选后，缺失票的收益区间是 [-7.8, +273.1]bp（逐年最差 2009 为"
+            " -161.4bp）；归零需要 -935bp。两个区间不相交，且崩盘段的入选率只有"
+            "全体的 0.16x —— 最差的那一层被策略结构挡在候选之外"
         ),
     }
 
@@ -343,8 +346,15 @@ def year_by_year() -> dict:
             "delta_bp": round(corrected - base, 1),
         }
     worst = min(out.items(), key=lambda kv: kv[1]["corrected_bp"]) if out else None
+    mean_raw = sum(v["cohort_bp"] for v in out.values()) / len(out) if out else None
+    mean_cor = sum(v["corrected_bp"] for v in out.values()) / len(out) if out else None
     return {
         "by_year": out,
+        #: 与 mean_corrected_bp **同口径**的未修正均值（年等权）。对外说「修正了
+        #: 百分之几」必须拿这两个数相除：`cells.mean_bp` 是日等权、`BASE_BP`
+        #: 是 cell 等权，与年等权均值不是同一个东西，相除会凭空造出 1–2pp。
+        "mean_raw_bp": round(mean_raw, 1) if mean_raw is not None else None,
+        "delta_pct": round(100 * (mean_cor - mean_raw) / mean_raw, 1) if mean_raw else None,
         "worst_year": worst[0] if worst else None,
         "worst_corrected_bp": worst[1]["corrected_bp"] if worst else None,
         "n_years_negative": sum(1 for v in out.values() if v["corrected_bp"] <= 0),
@@ -388,7 +398,7 @@ def main() -> None:
 
     print("⑤ 修正表（w=%.0f%%）" % (GAP_SHARE * 100))
     corr = correction_table(layers)
-    for k, v in corr["corrected_bp"].items():
+    for k, v in corr["illustrative_bp"].items():
         print("   缺失票=%-22s -> %+7.1fbp" % (k, v))
     print("   缺失票收益区间 %s；归零门槛 X=%+.0fbp（%.2f%%/日）"
           % (corr["x_range_bp"], corr["breakeven_x_bp"], corr["breakeven_daily_pct"]))
@@ -401,9 +411,10 @@ def main() -> None:
     for y, v in yby["by_year"].items():
         print("   %s  cohort %+7.1f  缺口 %4.1f%%  最差层 %+8.1f  ->  %+7.1fbp（%+.1f）"
               % (y, v["cohort_bp"], v["gap_pct"], v["worst_layer_bp"], v["corrected_bp"], v["delta_bp"]))
-    print("   最差年份 %s -> %+.1fbp；翻负年份 %d 个；逐年均值 %+.1fbp"
-          % (yby["worst_year"], yby["worst_corrected_bp"], yby["n_years_negative"],
-             yby["mean_corrected_bp"]))
+    print("   最差年份 %s -> %+.1fbp；翻负年份 %d 个"
+          % (yby["worst_year"], yby["worst_corrected_bp"], yby["n_years_negative"]))
+    print("   逐年均值 %+.1f -> %+.1fbp（%+.1f%%，同口径年等权）"
+          % (yby["mean_raw_bp"], yby["mean_corrected_bp"], yby["delta_pct"]))
 
     result = {
         "generated_at": "2026-11-15",
