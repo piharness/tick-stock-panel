@@ -480,8 +480,13 @@ def _tick_floor(price, tick: float = 0.01):
     实测（全样本 2,010,921 个可判定 cell，除权日另计）：`floor` 的谓词违反
     **0** 个；`round` 违反 **21,491** 个（占 1.07%）。落在 top20 名单上的那部分
     在 80 个交易日里多买了 11 个 cell，平均 −145bp，而同期 cohort +120bp。
+
+    最后那一步 `np.round(..., 2)` **不是**四舍五入限价——它作用在已经落到
+    tick 上的值，只消除二进制乘法的尾数噪声：`1304 * 0.01` 在 IEEE 里是
+    `13.040000000000001`，而这个数会进 JSON、进 API、进前端，让「同一份名单」
+    与历史卡永远差 1e-15 而无法逐位对拍。tick 若是 0.001，小数位必须同步改。
     """
-    return np.floor(price / tick + 1e-9) * tick
+    return np.round(np.floor(price / tick + 1e-9) * tick, 2)
 
 
 def _limit_price(prev_raw, gap_max: float = L1_GAP_MAX):

@@ -113,7 +113,19 @@
    盘后管道 Step 2.9 + `POST /api/decision/produce` 手动触发；门禁 STOP 只跳过
    不越权（定时任务无 `allow_stop` 特权），无证据不编 p_win（`skipped_no_evidence`）。
    默认关，须显式开启 `decision_auto` 偏好。
-3. **组合层**：把 `sizing.py` 的 E[log] 仓位接到 `paper` 的下单金额上，但必须先有
+3. ~~**「今天买哪几只」没有唯一答案**~~ → 已实现 `app/decision/slate.py`
+   （每日名单）。在此之前有 5 条产名单链路（Screener / 卡 / L1 / Battle / 看板）、
+   7 套截断常量、`mom20` 四份实现，而**决策卡页面看不到标的**（「标的」列
+   是数量）。现在：盘后管道 Step 2.9 先产 `slate-<as_of>.json`，卡从它取 picks
+   （`producer._l1_picks` 只读磁盘），`GET /api/decision/slate` 只读返回，
+   Decision 页有「今日名单」表与下钻。
+   - `status`（成不成立）与 `stale`（新不新鲜）是两根轴，`ready + stale` 合法；
+   - `stale` 在**读取时刻**重算，不信文件里的 `stale_at_build`；
+   - `top_n` 对 L1 不可配（`invalid_top_n`），改它等于换策略；
+   - 判据：`test_producer_card_picks_equal_slate_rows`（构造性相等）、
+     `test_staleness_is_recomputed_at_read_time`（变异检验 3/3 被杀）、
+     `test_real_slate_tracks_latest_complete_session`（真数据锚）。
+4. **组合层**：把 `sizing.py` 的 E[log] 仓位接到 `paper` 的下单金额上，但必须先有
    `n ≥ 8` 且 `significant=true` 的校准证据。
 
 ---

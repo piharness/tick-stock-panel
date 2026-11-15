@@ -7,7 +7,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { api, type DecisionAutoConfig, type DecisionOverview, type Preferences } from '@/lib/api'
+import { api, type DecisionAutoConfig, type DecisionOverview, type DecisionSlateResponse, type Preferences } from '@/lib/api'
 import { toast } from '@/components/Toast'
 import { Decision } from './Decision'
 
@@ -46,6 +46,41 @@ const autoConfig: DecisionAutoConfig = {
   basis: 'median', account_id: 'default', allow_prior: false,
 }
 
+/** 一份「名单就绪但落后两个交易日」的响应。
+ *
+ *  这个 fixture 刻意让 `stale_at_build=false` 与 `stale=true` 并存：
+ *  页面必须读后者。写盘那一刻它确实是最新的——今天再看就旧了，
+ *  把旧结论当结论返回，等于让停滞永远沉默。 */
+const slateResponse: DecisionSlateResponse = {
+  slate: {
+    schema_revision: 1,
+    as_of: '2026-11-11',
+    entry_date: null,
+    strategy_id: 'l1_gap_reversal',
+    status: 'ready',
+    top_n: 20,
+    n_rows: 1,
+    rows: [{
+      symbol: '600519.SH', rank: 1, mom20_pct: 12.34, prev_close_raw: 100.0,
+      limit_price: 99.0, gap_threshold_pct: -1.0, day_amount_yi: 2.1,
+      tradable: true, in_card: true, p_win: 0.47,
+      card_limit_price: 99.0, limit_mismatch: false,
+    }],
+    truncation: { top_n: 20, rule: 'mom20 rank <= 20', source: 'l1_cohort.L1_TOP_N' },
+    caliber: {},
+    panel_since: '2026-09-01',
+    warnings: [],
+    stale_at_build: false,
+    lag_sessions_at_build: 0,
+    expected_as_of_at_build: '2026-11-11',
+    built_at: '2026-11-11T16:00:00+08:00',
+    expected_as_of: '2026-11-13',
+    lag_sessions: 2,
+    stale: true,
+  },
+  card: null,
+}
+
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.spyOn(api, 'decisionOverview').mockResolvedValue(overview)
@@ -56,6 +91,8 @@ beforeEach(() => {
     { strategies: [{ id: 'trend_breakout', name: '趋势突破' }] } as unknown as Awaited<ReturnType<typeof api.strategyList>>)
   vi.spyOn(api, 'updateDecisionAutoConfig').mockResolvedValue(autoConfig)
   vi.spyOn(api, 'decisionProduce').mockResolvedValue({ status: 'created', card_id: 'card_test' })
+  // 名单面板的依赖：不 mock 会在 jsdom 里发真请求
+  vi.spyOn(api, 'decisionSlate').mockResolvedValue(slateResponse)
   host = document.createElement('div')
   document.body.appendChild(host)
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -205,4 +242,24 @@ it('立即生产：调 produce 端点，created 时提示卡号且算成功', as
   expect(api.decisionProduce).toHaveBeenCalled()
   expect(toast).toHaveBeenCalledWith(expect.stringContaining('已发卡'), 'success')
   expect(toast).toHaveBeenCalledWith(expect.stringContaining('card_test'), 'success')
+})
+
+it('名单落后时显示落后天数——status=ready 不许盖住 stale', async () => {
+  // 11-15 的现场：卡有效、页面显示「已封存 10 张卡」，但名单停在两个交易日前。
+  // 「有效」和「最新」是两根轴，合并任何一根都会让停滞变成沉默。
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('今日名单')
+  expect(text).toContain('600519.SH')
+  expect(text).toContain('名单就绪')
+  expect(text).toContain('落后 2 个交易日')
+  expect(text).toContain('2026-11-13')  // 行情已到的日期必须出现在告警里
+})
+
+it('名单不存在时说的是「还没生成」，不是「加载中」', async () => {
+  vi.mocked(api.decisionSlate).mockRejectedValue(new Error('名单不存在'))
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('名单还没生成')
+  expect(text).toContain('Step 2.9')
 })

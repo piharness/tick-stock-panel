@@ -26,6 +26,7 @@ from app.decision import bars, pwin as pwin_mod
 from app.decision import gates as gates_mod
 from app.decision import ledger, producer as producer_mod, settle as settle_mod
 from app.decision import l1_cohort as l1_cohort_mod
+from app.decision import slate as slate_mod
 from app.decision.l1_cohort import L1_TOP_N
 
 router = APIRouter(prefix="/api/decision", tags=["decision"])
@@ -141,6 +142,87 @@ def overview(request: Request, as_of: str | None = Query(default=None)) -> dict[
         "score_median": settle_mod.score(rows, pending=pending,
                                          basis=settle_mod.BASIS_MEDIAN),
     }
+
+
+def _attach_card_to_slate(data_dir: Path, slate: dict[str, Any]) -> dict[str, Any] | None:
+    """把「同日同策略的卡」投影到名单行上。**join，不是第二产地。**
+
+    卡的 picks 本来就是从这份名单取的（`producer._l1_picks` 只读磁盘）。
+    所以限价不一致只可能有一件事：名单在卡封存之后被重算过。`limit_mismatch`
+    就是为了让这件事显形——而不是让页面同时展示两个价格、读者自己发现。
+    """
+    try:
+        cards = ledger.load_cards(data_dir)
+    except ledger.LedgerCorruptError:
+        # 账本残缺不该让名单也读不出来：名单是行情事实，与账本可信度无关。
+        return None
+    as_of = str(slate.get("as_of") or "")
+    sid = str(slate.get("strategy_id") or "")
+    matched = [
+        c for c in cards
+        if str(c.get("as_of") or "") == as_of and str(c.get("strategy_id") or "") == sid
+    ]
+    if not matched:
+        return None
+    card = matched[-1]
+    by_symbol = {str(p.get("symbol")): p for p in card.get("picks") or []}
+    mismatched: list[str] = []
+    in_card = 0
+    for row in slate.get("rows") or []:
+        pick = by_symbol.get(str(row.get("symbol")))
+        row["in_card"] = pick is not None
+        row["p_win"] = None if pick is None else pick.get("p_win")
+        row["card_limit_price"] = None if pick is None else pick.get("limit_price")
+        row["limit_mismatch"] = None
+        if pick is None:
+            continue
+        in_card += 1
+        try:
+            same = abs(float(row["limit_price"]) - float(pick["limit_price"])) <= 1e-6
+        except (KeyError, TypeError, ValueError):
+            same = False
+        row["limit_mismatch"] = not same
+        if not same:
+            mismatched.append(str(row.get("symbol")))
+    ok, why = ledger.verify_card(card)
+    return {
+        "card_id": card.get("card_id"),
+        "as_of": card.get("as_of"),
+        "strategy_id": card.get("strategy_id"),
+        "picks": len(card.get("picks") or []),
+        "in_card": in_card,
+        "horizon_sessions": card.get("horizon_sessions"),
+        "gates_decision": (card.get("gates") or {}).get("decision"),
+        "verified": ok,
+        "verify_reason": why,
+        "limit_mismatches": mismatched,
+    }
+
+
+@router.get("/slate")
+def get_slate(request: Request, as_of: str | None = Query(default=None)) -> dict[str, Any]:
+    """每日名单 —— 唯一产地的只读出口。
+
+    **只读磁盘，不重算**：名单是盘后管道的产物。HTTP 层重算会让「页面看到的」
+    与「决策卡承诺的」变成两份，而这正是收敛要消灭的东西。
+
+    新鲜度在这里**重新计算**（`annotate_staleness`），不信文件里的
+    `stale_at_build`：昨天写的文件今天一定旧了，把它返回成 `stale=false`
+    等于让陈旧永远沉默。2026-11-15 的现场是 enriched 已到 11-13、最新卡
+    停在 11-11，而页面显示「已封存 10 张卡」——没有任何一处报警。
+
+    `as_of` 缺省读最新一份；指定日期但文件不存在返回 404，不降级到最新。
+    """
+    data_dir = _data_dir(request)
+    slate = slate_mod.read_slate(data_dir, as_of)
+    if slate is None:
+        where = f"as_of={as_of}" if as_of else "最新"
+        raise HTTPException(
+            status_code=404,
+            detail=f"名单不存在（{where}）：盘后管道尚未生成，或该日无收盘数据",
+        )
+    slate = slate_mod.annotate_staleness(data_dir, slate)
+    return {"slate": slate, "card": _attach_card_to_slate(data_dir, slate)}
 
 
 @router.get("/cards")

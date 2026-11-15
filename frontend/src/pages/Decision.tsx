@@ -9,11 +9,11 @@
  * 计分卡只在已结算样本 >= 8 时给结论；样本不足时显示 INSUFFICIENT，
  * 不展示"看起来不错"的数字。
  */
-import { useCallback, useMemo } from 'react'
+import { Fragment, useCallback, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   RefreshCw, Loader2, ShieldCheck, ShieldAlert, ShieldQuestion,
-  ScrollText, Target, ArrowRight, Bot,
+  ScrollText, Target, ArrowRight, Bot, AlertTriangle, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import {
   api,
@@ -24,6 +24,8 @@ import {
   type DecisionOverview,
   type DecisionProduceSummary,
   type DecisionScore,
+  type DecisionSlate,
+  type DecisionSlateCard,
 } from '@/lib/api'
 import { toast } from '@/components/Toast'
 import { QK } from '@/lib/queryKeys'
@@ -86,6 +88,12 @@ const PRODUCE_STATUS_LABEL: Record<DecisionProduceSummary['status'], string> = {
   no_strategy: '未绑定策略：只结算，不发卡',
   no_engine: '策略引擎未初始化，未发卡',
   scan_failed: '策略扫描失败',
+  // 名单没成立的五种病因：各自可诊断，不许合并成「失败」。
+  empty: '名单当日 0 只，未发卡',
+  skipped_not_closed: '名单数据未收盘，未发卡',
+  skipped_no_data: '无行情分区，未发卡',
+  invalid_top_n: '名单口径非法（top_n 不可配），未发卡',
+  failed: '名单生成失败，未发卡',
 }
 
 function pct(v: number | null | undefined, digits = 2): string {
@@ -161,6 +169,16 @@ export function Decision() {
     staleTime: 60_000,
   })
 
+  // 每日名单：唯一产地的只读视图。`retry:false` —— 名单没生成是正常状态
+  // （盘后管道还没跑），重试三次只会把「没有」变成「加载中」。
+  const slateQ = useQuery({
+    queryKey: ['decision', 'slate'],
+    queryFn: () => api.decisionSlate(),
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: 30_000,
+  })
+
   const saveAuto = useMutation({
     mutationFn: (patch: Partial<DecisionAutoConfig>) => api.updateDecisionAutoConfig(patch),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: QK.preferences }) },
@@ -231,7 +249,7 @@ export function Decision() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { void overview.refetch(); void score.refetch() }}
+            onClick={() => { void overview.refetch(); void score.refetch(); void slateQ.refetch() }}
             className="flex items-center gap-1 rounded-btn border border-border bg-surface px-2.5 py-1.5 text-xs text-secondary transition-colors hover:bg-elevated hover:text-foreground"
           >
             <RefreshCw className={cn('h-3.5 w-3.5', overview.isFetching && 'animate-spin')} /> 刷新
@@ -265,6 +283,15 @@ export function Decision() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {(gate?.checks ?? []).map(c => <GateCheckCard key={c.id} check={c} />)}
       </div>
+
+      {/* 今日名单：唯一产地的只读视图。卡与它逐位相等是构造性的，
+          所以这里看到的就是「今天该挂哪几张单」。 */}
+      <SlatePanel
+        slate={slateQ.data?.slate}
+        card={slateQ.data?.card}
+        failed={slateQ.isError}
+        error={slateQ.error instanceof Error ? slateQ.error.message : undefined}
+      />
 
       <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* 决策卡 */}
@@ -500,5 +527,216 @@ export function Decision() {
         )}
       </section>
     </div>
+  )
+}
+
+/** 名单状态的文案与配色。`ready` 是唯一「可以直接照着挂单」的状态，
+ *  其余四种都是「为什么没有名单」——它们不该被同一个灰色 badge 盖住。 */
+const SLATE_STATUS_LABEL: Record<DecisionSlate['status'], { label: string; tone: string }> = {
+  ready: { label: '名单就绪', tone: 'bg-accent/10 text-accent' },
+  empty: { label: '当日 0 只', tone: 'bg-warning/10 text-warning' },
+  skipped_not_closed: { label: '数据未收盘', tone: 'bg-warning/10 text-warning' },
+  skipped_no_data: { label: '无行情分区', tone: 'bg-danger/10 text-danger' },
+  invalid_top_n: { label: '口径非法', tone: 'bg-danger/10 text-danger' },
+  failed: { label: '生成失败', tone: 'bg-danger/10 text-danger' },
+}
+
+function fix(v: number | null | undefined, digits = 2): string {
+  if (v == null || Number.isNaN(v)) return '—'
+  return v.toFixed(digits)
+}
+
+/**
+ * 今日名单 —— 「今天买哪几只」的唯一可见入口。
+ *
+ * 三件事在这一块里同时成立，缺一条这个面板就会骗人：
+ *  1. 名单与决策卡逐位相等（后端构造性保证，不是对拍出来的）；
+ *  2. 落后就红：`stale` 由 API 在读取时刻重算，不听文件里的旧结论；
+ *  3. 没有名单要说清是哪一种「没有」——未收盘、无分区、口径非法、生成失败
+ *     是四种不同的病因，压成一个空表就等于让它们都无法诊断。
+ */
+function SlatePanel({ slate, card, failed, error }: {
+  slate?: DecisionSlate
+  card?: DecisionSlateCard | null
+  failed: boolean
+  error?: string
+}) {
+  const [open, setOpen] = useState<string | null>(null)
+  const meta = slate ? SLATE_STATUS_LABEL[slate.status] : undefined
+  const ready = slate?.status === 'ready' || slate?.status === 'empty'
+
+  return (
+    <section className="mt-3 rounded-card border border-border bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-xs font-medium text-foreground">今日名单</h2>
+          {slate?.as_of && (
+            <span className="font-mono text-[11px] text-muted">
+              {slate.as_of}
+              {slate.entry_date
+                ? ` → ${slate.entry_date} 开盘挂单`
+                : ' → 次日挂单（日历未落盘）'}
+            </span>
+          )}
+          {slate && ready && (
+            <span className="font-mono text-[11px] text-secondary">
+              {slate.n_rows} / {slate.top_n} 只
+            </span>
+          )}
+          {card && (
+            <span className="font-mono text-[10px] text-muted">
+              卡 {card.card_id.slice(0, 14)}… · 在卡 {card.in_card}/{card.picks}
+              {card.verified ? ' · 哈希校验通过' : ' · 哈希校验未通过'}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {slate && slate.stale && (
+            <span className="flex items-center gap-1 rounded bg-danger/10 px-1.5 py-0.5 text-[10px] text-danger">
+              <AlertTriangle className="h-3 w-3" /> 落后 {slate.lag_sessions} 个交易日
+            </span>
+          )}
+          {meta && (
+            <span className={cn('rounded px-1.5 py-0.5 text-[10px]', meta.tone)}>
+              {meta.label}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {slate && slate.stale && (
+        <div className="mx-3 mt-2 rounded border border-danger/40 bg-danger/10 px-2.5 py-2 text-[11px] leading-relaxed text-danger">
+          名单停在 <code className="font-mono">{slate.as_of ?? '—'}</code>，行情已到{' '}
+          <code className="font-mono">{slate.expected_as_of}</code>。
+          {card
+            ? '这张卡仍是有效的承诺，但它承诺的不是最新一天。'
+            : '这段时间没有对应的决策卡。'}
+          {' '}先查盘后管道 Step 2.9（决策账本）有没有成功。
+        </div>
+      )}
+
+      {!slate ? (
+        <div className="px-3 py-6 text-center text-[11px] text-muted">
+          {failed
+            ? `名单还没生成${error ? `（${error}）` : ''}。盘后管道 Step 2.9 跑完后，这里会出现当天名单。`
+            : '加载名单…'}
+        </div>
+      ) : !ready ? (
+        <div className="px-3 py-6 text-center">
+          <p className="text-xs text-secondary">这份名单没有成立。</p>
+          <p className="mx-auto mt-1 max-w-lg text-[11px] leading-relaxed text-muted">
+            {slate.reason ?? slate.warnings[0] ?? '没有记录原因——这本身是缺陷'}
+          </p>
+        </div>
+      ) : slate.rows.length === 0 ? (
+        <div className="px-3 py-6 text-center">
+          <p className="text-xs text-secondary">当日 0 只满足条件。</p>
+          <p className="mx-auto mt-1 max-w-lg text-[11px] leading-relaxed text-muted">
+            「0 只」是名单成立的结果，不是管道没跑：全市场 mom20 排名里没有可挂单的标的。
+          </p>
+        </div>
+      ) : (
+        <table className="w-full text-left text-[11px]">
+          <thead className="text-muted">
+            <tr className="border-b border-border">
+              <th className="w-8 px-3 py-1.5 font-medium">#</th>
+              <th className="px-2 py-1.5 font-medium">代码</th>
+              <th className="px-2 py-1.5 text-right font-medium">昨收</th>
+              <th className="px-2 py-1.5 text-right font-medium">挂单限价</th>
+              <th className="px-2 py-1.5 text-right font-medium">mom20</th>
+              <th className="px-2 py-1.5 text-right font-medium">成交额</th>
+              <th className="px-2 py-1.5 text-center font-medium">在卡内</th>
+              <th className="w-6 px-3 py-1.5" />
+            </tr>
+          </thead>
+          <tbody>
+            {slate.rows.map(row => {
+              const expanded = open === row.symbol
+              return (
+                <Fragment key={row.symbol}>
+                  <tr
+                    onClick={() => setOpen(expanded ? null : row.symbol)}
+                    className="cursor-pointer border-b border-border/60 hover:bg-elevated/60"
+                  >
+                    <td className="px-3 py-1.5 font-mono text-muted">{row.rank}</td>
+                    <td className="px-2 py-1.5 font-mono text-foreground">{row.symbol}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-secondary">{fix(row.prev_close_raw)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-medium text-foreground">{fix(row.limit_price)}</td>
+                    <td className={cn('px-2 py-1.5 text-right font-mono',
+                      (row.mom20_pct ?? 0) >= 0 ? 'text-danger' : 'text-accent')}>
+                      {row.mom20_pct == null ? '—' : `${fix(row.mom20_pct, 1)}%`}
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono text-muted">
+                      {row.day_amount_yi == null ? '—' : `${fix(row.day_amount_yi)} 亿`}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      {/* 不用 ✓：本页把 ✓ 保留给「门禁通过」（见 weakSample
+                          那条文案闸的断言 `not.toContain('✓')`）。同一符号
+                          两种语义，那条闸就会静默失效。 */}
+                      {row.in_card
+                        ? <span className="text-accent">卡内</span>
+                        : <span className="text-muted">—</span>}
+                    </td>
+                    <td className="px-3 py-1.5 text-muted">
+                      {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    </td>
+                  </tr>
+                  {expanded && (
+                    <tr className="border-b border-border/60 bg-elevated/40">
+                      <td colSpan={8} className="px-3 py-2">
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] sm:grid-cols-4">
+                          <div>
+                            <dt className="text-muted">限价口径</dt>
+                            <dd className="font-mono text-secondary">
+                              floor({fix(row.prev_close_raw)} × 0.99, 0.01) = {fix(row.limit_price)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted">成交条件</dt>
+                            <dd className="text-secondary">
+                              次日开盘 ≤ {fix(row.limit_price)}（低开 ≥ {fix(Math.abs(row.gap_threshold_pct), 1)}%）
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted">当日可成交</dt>
+                            <dd className={row.tradable ? 'text-accent' : 'text-warning'}>
+                              {row.tradable ? '有有效开盘价' : '无有效开盘（停牌或缺数据）'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted">卡内 p_win</dt>
+                            <dd className="font-mono text-secondary">
+                              {row.p_win == null ? '—' : `${fix(row.p_win * 100, 2)}%`}
+                            </dd>
+                          </div>
+                        </dl>
+                        {row.limit_mismatch && (
+                          <p className="mt-1.5 text-[11px] text-danger">
+                            卡的限价 {fix(row.card_limit_price)} 与名单 {fix(row.limit_price)} 不一致：
+                            名单在封卡之后被重算过，这份承诺与当前名单已经不是同一件事。
+                          </p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {slate && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-2 text-[10px] text-muted">
+          <span>截断：{slate.truncation.rule ?? '—'}</span>
+          <span>面板起点 {slate.panel_since ?? '—'}</span>
+          <span>结构 v{slate.schema_revision}</span>
+          <span className="font-mono">生成于 {slate.built_at?.slice(0, 19).replace('T', ' ') ?? '—'}</span>
+          {slate.warnings.map((w, i) => (
+            <span key={i} className="text-warning">· {w}</span>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }

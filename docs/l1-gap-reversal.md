@@ -45,21 +45,59 @@
 
 ## 4. 每日流程
 
+盘后管道 Step 2.9 先产一份**每日名单**（daily slate），再结算到期卡、按配置发卡。
+名单是「今天买哪几只」的唯一产地，决策卡从它取 picks（不是各算一遍）：
+
 ```bash
-# 15:05 后，收盘数据定版
-curl 'http://localhost:3018/api/decision/l1/candidates?as_of=2026-11-11'
+# 15:35 盘后管道跑完（或手动 POST /api/decision/produce）
+curl 'http://localhost:3018/api/decision/slate'
 
-# 次日 9:20–9:25：按 candidates[].limit_price 挂限价买单
-#             （集合竞价单一价撮合，挂高于限价的价格会以开盘价成交）
-
-# 次日 15:05 后结算（open_only 判定 + 当日收盘出场）
-curl -X POST 'http://localhost:3018/api/decision/settle'
+# 指定某一天（文件不存在返回 404，不降级到最新）
+curl 'http://localhost:3018/api/decision/slate?as_of=2026-11-13'
 ```
 
-建卡走既有 `POST /api/decision/cards`，传
+响应里 `slate.rows[].limit_price` 就是次日集合竞价的挂单价。三个字段不要混读：
+
+- `status`：名单**成不成立**（`ready` / `empty` / `skipped_not_closed` /
+  `skipped_no_data` / `invalid_top_n` / `failed`）；
+- `stale` + `lag_sessions`：名单**新不新鲜**，在**读取时刻**重算，
+  不信文件里的 `stale_at_build`；
+- `card`：同日同策略的卡，`rows[].in_card` / `p_win` / `limit_mismatch` 由它投影而来。
+
+`ready + stale` 是合法状态：名单有效，但它落后了。两者合并成一个字段，
+就会出现「落后两个交易日」被读成「没问题」——2026-11-15 的现场正是如此
+（enriched 到 11-13、最新卡停在 11-11，页面照常显示「已封存 10 张卡」）。
+
+产物：`data/user_data/daily_slate/slate-<as_of>.json`。**HTTP 层不重算**，
+重算会让「页面看到的」与「卡承诺的」变成两份，这正是收敛要消灭的东西。
+
+调试单策略（不落盘、不进账本）：
+
+```bash
+curl 'http://localhost:3018/api/decision/l1/candidates?as_of=2026-11-13'
+```
+
+自动发卡不需要手动建卡：`decision_auto_strategy_id=l1_gap_reversal` 时，卡从
+同一份名单取 picks，逐位相等是构造性的（`test_producer_card_picks_equal_slate_rows`）。
+`top_n` 不是显示参数——L1 的 20 只是研究口径，传别的值会得到 `invalid_top_n`，
+而不是被夹紧或按更少的只数发卡（`test_rejects_non_l1_top_n`）。
+
+手动补登某天的卡仍走 `POST /api/decision/cards`，传
 `{"as_of": "...", "strategy_id": "l1_gap_reversal", "horizon_sessions": 0,
 "fill_mode": "open_only", "picks": [...]}`。`picks[].p_win` 必须显式给
 （`auto_pwin` 在账本没有历史时会 409，这是失败关闭，不是 bug）。
+
+**跨版本一致性**（唯一能回答「换了产地之后历史名单有没有被改过」的判据）：
+
+```bash
+python analysis/_verify_slate_vs_cards.py --check
+# 2026-11-15: 10 张卡 / 0 张分叉（逐位相同，含顺序与限价）
+```
+
+它拿今天的产地重算每张历史卡那天的名单。修改 `mom20` 窗口、rank 方向或
+限价取整都会让它变红，而单测 `test_producer_card_picks_equal_slate_rows`
+不会——那条只证明新卡从名单取 picks。红了先去 `docs/` 登记「哪一天起不同、
+为什么」，不要改期望值。
 
 ## 5. 已知未验证项（按重要性）
 

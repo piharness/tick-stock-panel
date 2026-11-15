@@ -26,7 +26,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from app.decision import bars, l1_cohort, ledger, pwin as pwin_mod, settle as settle_mod
+from app.decision import (
+    bars,
+    l1_cohort,
+    ledger,
+    pwin as pwin_mod,
+    settle as settle_mod,
+    slate as slate_mod,
+)
 from app.decision.gates import GateResult, evaluate as evaluate_gates
 
 logger = logging.getLogger(__name__)
@@ -317,58 +324,112 @@ def scan_picks(
     return picks, meta
 
 
-def _l1_picks(data_dir: Path, cfg: dict[str, Any], as_of: str | None
-              ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any] | None]:
-    """L1 的候选与扫描元数据。返回 `(picks, scan_meta, error)`。
+def _refresh_slate(data_dir: Path, as_of: str | None) -> dict[str, Any]:
+    """盘后刷新「每日名单」——**与自动发卡开关无关**。
 
-    **必须挡住盘中**：`candidates()` 用的是 `as_of` 当天分区的 `close`，
-    而日线分区在盘中也会被实时路径写入（2026-11-13 的 `quote_ts` 是 10:42）。
-    拿它算出的 mom20 排名是「截至此刻」的排名，不是收盘排名；卡一旦封存，
-    这条错名单就是永久证据。所以先判 `as_of` 是不是收盘数据。
+    名单回答「今天买哪几只」，发卡回答「敢不敢为它签名」。把前者绑在后者
+    的开关上，会让关掉自动发卡的用户连名单都看不到（默认配置正是关闭）。
+    所以这一步在 `cfg["enabled"]` 判断之前。
+
+    软失败不打断管道：宁可这次没有名单，也不要整条盘后管道缺一天。
+    `build_slate` 自己已把「数据未收盘 / 缺分区 / 口径非法」变成带 reason 的
+    结构，这里兜的只是它没预料到的异常。
     """
-    if not as_of:
-        return [], {}, {"status": "no_as_of", "reason": "没有 as_of 日期，无法取候选"}
-    state, why = settle_mod.entry_session_state(data_dir, as_of)
-    if state != "closed":
-        return [], {}, {
-            "status": "skipped_not_closed",
-            "reason": f"as_of={as_of} 不是收盘数据（{why}）：盘中名义的名单不是收盘名单",
-        }
     try:
-        cand = l1_cohort.candidates(data_dir, as_of, top_n=cfg["top_n"])
-    except ValueError as exc:
-        return [], {}, {"status": "scan_failed", "reason": str(exc)}
-    picks = cand.get("candidates") or []
+        built = slate_mod.build_slate(data_dir, as_of)
+        path = slate_mod.write_slate(data_dir, built)
+    except Exception as exc:  # noqa: BLE001 - 软失败由调用方兜
+        logger.warning("decision slate failed: %s", exc)
+        return {"status": slate_mod.STATUS_FAILED,
+                "reason": f"{type(exc).__name__}: {exc}", "written": False}
+    out = slate_mod.summary(built)
+    out["written"] = path is not None
+    logger.info("decision slate: %s as_of=%s rows=%s",
+                out.get("status"), out.get("as_of"), out.get("n_rows"))
+    return out
+
+
+def _l1_picks(data_dir: Path, as_of: str | None
+              ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any] | None]:
+    """L1 的 picks 从**刚落盘的名单**读回，不再自己算一遍。
+
+    `(picks, scan_meta, error)`。三个理由必须走磁盘：
+
+    1. `rows` 与 `card.picks` 的逐位相等从此是**构造性**的，不靠对拍测试；
+    2. 名单没落盘（写失败/结构版本不认）时，卡也不该发——承诺不能指向一份
+       读者拿不到的名单；
+    3. `as_of` 用名单里的值，不用调用方传的 `today`：两者不一致时，
+       卡必须记录它实际承诺的那一天。
+
+    盘中数据仍要在这里再挡一次：`build_slate` 会返回 `skipped_not_closed`，
+    这里把它原样上报，不降级造卡。
+    """
+    slate = slate_mod.read_slate(Path(data_dir), as_of) if as_of else \
+        slate_mod.read_slate(Path(data_dir))
+    if slate is None:
+        return [], {}, {
+            "status": "scan_failed",
+            "reason": "每日名单未落盘：无法从同一份名单发卡（先看管道 slate 日志）",
+        }
+    if slate.get("status") not in slate_mod.READY_STATES:
+        return [], {}, {
+            "status": str(slate.get("status") or "scan_failed"),
+            "reason": str(slate.get("reason") or "名单未成立"),
+        }
+
+    picks = slate_mod.picks_from_slate(slate)
+    rows = slate.get("rows") or []
     meta = {
         "source": "l1_cohort",
         #: `produce_card` 从 scan_meta 取 as_of；缺了它就是 KeyError。
-        "as_of": cand.get("as_of") or as_of,
-        "entry_date": cand.get("entry_date"),
-        "top_n": cfg["top_n"],
-        "gap_threshold_pct": picks[0].get("gap_threshold_pct") if picks else None,
+        #: 取名单的值，不取 today——卡承诺的是名单那一天。
+        "as_of": slate.get("as_of"),
+        "entry_date": slate.get("entry_date"),
+        "top_n": slate.get("top_n"),
+        "gap_threshold_pct": rows[0].get("gap_threshold_pct") if rows else None,
         "n_candidates": len(picks),
-        "caliber": cand.get("caliber"),
-        "warnings": cand.get("warnings") or [],
+        "caliber": slate.get("caliber"),
+        "warnings": slate.get("warnings") or [],
+        # 名单的身份进 forecast ⇒ 进承诺哈希：同一 as_of 换了一份名单
+        # （结构版本、截断、构建时刻）就是另一张卡。
+        "slate": {
+            "schema_revision": slate.get("schema_revision"),
+            "status": slate.get("status"),
+            "n_rows": slate.get("n_rows"),
+            "stale_at_build": slate.get("stale_at_build"),
+            "built_at": slate.get("built_at"),
+        },
     }
     return picks, meta, None
 
 
 def run_decision_stage(repo: Any, engine: Any | None = None,
                        *, today: Any = None) -> dict[str, Any]:
-    """盘后管道阶段入口：先结算到期卡，再按配置自动发卡。软失败由调用方兜。
+    """盘后管道阶段入口：先刷新名单，再结算到期卡，最后按配置自动发卡。
 
-    顺序刻意是 **先结算后发卡**：今天结算落库的行里出场日早于今天的
-    才对今天的卡可见（§9.8），先结算让 p_win 用上最新到期的证据。
+    顺序是三条独立的因果，不是三段可以互换的代码：
+
+    1. **名单**不依赖账本，也不依赖发卡开关——它只依赖收盘数据。所以排第一，
+       且 `disabled` 时照样执行。
+    2. **结算先于发卡**：今天结算落库的行里出场日早于今天的才对今天的卡可见
+       （§9.8），先结算让 p_win 用上最新到期的证据。
+    3. **发卡**是唯一可被配置关闭的一步。
+
+    软失败由调用方兜；残缺账本（fail-closed）上抛。
     """
     from app.services import preferences
 
     cfg = preferences.get_decision_auto_config()
-    if not cfg["enabled"]:
-        return {"status": "disabled"}
     data_dir = Path(repo.store.data_dir)
     # settle 的 as_of 是 ISO 串；管道传进来的是 date，统一在这里折叠。
     as_of_str = (today.isoformat() if hasattr(today, "isoformat") else str(today)) \
         if today is not None else None
+
+    # Step 0: 每日名单（唯一产地）。关掉自动发卡也要有名单。
+    slate_summary = _refresh_slate(data_dir, as_of_str)
+
+    if not cfg["enabled"]:
+        return {"status": "disabled", "slate": slate_summary}
 
     settle_summary: dict[str, Any] = {}
     try:
@@ -379,17 +440,18 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
 
     if not cfg["strategy_id"]:
         return {"status": "no_strategy", "settle": settle_summary,
+                "slate": slate_summary,
                 "reason": "decision_auto_strategy_id 未配置：只结算，不发卡"}
 
     fill_mode = str(cfg.get("fill_mode") or ledger.FILL_MODE_LIMIT)
     if cfg["strategy_id"] == l1_cohort.L1_STRATEGY_ID:
-        # L1 的候选不是策略引擎的产物：`l1_cohort.candidates()` 直接给带限价的
-        # 清单，只用 as_of 之前的数据。这条分支存在的唯一理由是让「证据最硬的
-        # 那条腿」进同一个账本，而不是另建一套生产者。
-        picks, scan_meta, why = _l1_picks(data_dir, cfg, as_of_str)
+        # L1 的候选不是策略引擎的产物：它来自刚落盘的每日名单。
+        # 这条分支存在的唯一理由是让「证据最硬的那条腿」进同一个账本，
+        # 而不是另建一套生产者——名单已经是唯一产地，这里只做读取。
+        picks, scan_meta, why = _l1_picks(data_dir, slate_summary.get("as_of"))
         if why is not None:
             return {"status": why["status"], "settle": settle_summary,
-                    "reason": why["reason"]}
+                    "slate": slate_summary, "reason": why["reason"]}
         # L1 的成交口径是策略定义的一部分，不受配置影响：`candidates()` 输出的
         # 就是「开盘 ≤ 限价才买」。用 limit 口径结算等于换了策略（多出来的那批
         # 是「高开走弱」），所以这里不接受配置覆盖。
@@ -397,13 +459,14 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
     else:
         if engine is None:
             return {"status": "no_engine", "settle": settle_summary,
+                    "slate": slate_summary,
                     "reason": "策略引擎未初始化：只结算，不发卡"}
         try:
             picks, scan_meta = scan_picks(
                 repo, engine, cfg["strategy_id"], today, top_n=cfg["top_n"])
         except ValueError as exc:
             return {"status": "scan_failed", "settle": settle_summary,
-                    "reason": str(exc)}
+                    "slate": slate_summary, "reason": str(exc)}
 
     summary = produce_card(
         data_dir,
@@ -419,6 +482,9 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
     )
     summary["settle"] = settle_summary
     summary["strategy_id"] = cfg["strategy_id"]
+    # 名单的身份跟着结果一起回传：同一 as_of 的卡有没有对应的名单，
+    # 在管道日志里要一眼可判，而不是去翻目录。
+    summary["slate"] = slate_summary
 
     # 最后一米：建卡之后把它变成订单。默认关（`decision_auto_execute`），
     # 因为这是第一个动资金的步骤。软失败不打断管道——账单缺一天可以补，

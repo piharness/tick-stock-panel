@@ -250,6 +250,49 @@ export interface AiStockReport {
   created_at: string
 }
 
+/** 简称轨迹：观测到的事实，不是公告（改名落在 (after, before] 之间）。 */
+export interface StockNameHistory {
+  symbol: string
+  observations: { date: string; name: string }[]
+  bands: { name: string; first_seen: string; last_seen: string; n: number }[]
+  changes: { from: string; to: string; after: string; before: string; gap_days: number | null }[]
+  renamed: boolean
+  /** 维表当前简称（独立来源，不参与观测合并） */
+  current: string | null
+  source: 'dragon_tiger_snapshots'
+  snapshots: number
+}
+
+/** 个股分析图表的取数结果：本地段 + （必要时）上游前复权段，分段标注来源。 */
+export interface ChartSegment {
+  start: string
+  end: string
+  source: 'local' | 'upstream'
+  n: number
+}
+
+export interface ChartSeries extends KlineDailyResponse {
+  /** 维表里有没有这只票（区分"票不存在"与"这段没K线"） */
+  known?: boolean
+  segments?: ChartSegment[]
+  coverage?: {
+    local_first: string | null
+    local_last: string | null
+    requested_start: string
+    requested_end: string
+  }
+  upstream?: {
+    attempted: boolean
+    fetched_rows?: number
+    first?: string | null
+    last?: string | null
+    error?: string | null
+    clamped?: boolean
+    elapsed_ms?: number
+    cached?: boolean
+  }
+}
+
 // ===== Kline =====
 /**
  * 分时接口返回空 rows 时的病因。前四档是「这次没拉到」(可重试), 后三档是
@@ -339,6 +382,8 @@ export interface KlineDailyResponse {
   stock_info?: { name?: string; total_shares?: number; float_shares?: number; ext?: Record<string, unknown> }
   rows: KlineRow[]
   source?: string
+  /** 本地读失败时后端改为上游实时拉取，并把这个原因带回来（不是"慢"，是读了另一份口径） */
+  degraded_reason?: string
 }
 
 export interface KlineDailyLatestResponse {
@@ -3032,15 +3077,32 @@ export type DecisionAutoConfig = {
   allow_prior: boolean
 }
 
-/** `POST /api/decision/produce` 的返回。`status != 'created'` 时看 `reason`。 */
+/** `POST /api/decision/produce` 的返回。`status != 'created'` 时看 `reason`。
+ *
+ *  后半段（`empty` / `skipped_not_closed` / …）是**名单**的状态被透传上来：
+ *  名单没成立时卡也不发，且原因要能被读出来。把它们压成 `scan_failed`
+ *  会让「数据没收盘」和「代码炸了」变成同一句话。 */
 export type DecisionProduceSummary = {
   status: 'created' | 'skipped_gate' | 'skipped_no_picks' | 'skipped_no_evidence'
     | 'exists' | 'disabled' | 'no_strategy' | 'no_engine' | 'scan_failed'
+    | 'empty' | 'skipped_not_closed' | 'skipped_no_data' | 'invalid_top_n' | 'failed'
   reason?: string
   card_id?: string
   gates?: DecisionGates
   settle?: { cards: number; written: number; pending: number }
   strategy_id?: string
+  /** 本次运行的每日名单摘要（不含 rows）。 */
+  slate?: {
+    as_of: string | null
+    entry_date: string | null
+    strategy_id: string
+    status: string
+    n_rows: number | null
+    stale_at_build: boolean | null
+    lag_sessions_at_build: number | null
+    reason?: string | null
+    written?: boolean
+  }
 }
 
 export type DecisionScore = {
@@ -3134,12 +3196,86 @@ export type DecisionOverview = {
   score_median?: DecisionScore
 }
 
+/** 每日名单的一行（`GET /api/decision/slate`）。
+ *
+ *  `limit_price` 是**集合竞价挂单价**（`floor(raw_close × 0.99, 0.01)`），
+ *  不是收盘价：开盘 ≤ 它才算低开够深、才该成交。 */
+export type DecisionSlateRow = {
+  symbol: string
+  rank: number
+  mom20_pct: number | null
+  prev_close_raw: number | null
+  limit_price: number
+  gap_threshold_pct: number
+  day_amount_yi: number | null
+  tradable: boolean
+  /** 以下字段由 API 从当日卡 join 而来；没有卡时为 null。 */
+  in_card?: boolean
+  p_win?: number | null
+  card_limit_price?: number | null
+  /** 名单与卡的限价不一致 ⇒ 名单在封卡之后被重算过。 */
+  limit_mismatch?: boolean | null
+}
+
+export type DecisionSlateStatus =
+  | 'ready' | 'empty' | 'skipped_not_closed'
+  | 'skipped_no_data' | 'invalid_top_n' | 'failed'
+
+export type DecisionSlate = {
+  schema_revision: number
+  as_of: string | null
+  entry_date: string | null
+  strategy_id: string
+  status: DecisionSlateStatus
+  top_n: number
+  n_rows: number
+  rows: DecisionSlateRow[]
+  truncation: { top_n: number; rule: string | null; source: string | null }
+  caliber: Record<string, unknown>
+  panel_since: string | null
+  warnings: string[]
+  stale_at_build: boolean | null
+  lag_sessions_at_build: number | null
+  expected_as_of_at_build: string | null
+  built_at: string
+  first_built_at?: string
+  reason?: string
+  /** 以下三项在**读取时刻**重算，不听 `stale_at_build`：
+   *  昨天写的文件今天一定旧了，把旧结论返回出去等于让停滞永远沉默。 */
+  expected_as_of: string
+  lag_sessions: number
+  stale: boolean
+}
+
+export type DecisionSlateCard = {
+  card_id: string
+  as_of: string
+  strategy_id: string | null
+  picks: number
+  in_card: number
+  horizon_sessions: number
+  gates_decision: DecisionGateDecision | null
+  verified: boolean
+  verify_reason: string | null
+  limit_mismatches: string[]
+}
+
+export type DecisionSlateResponse = {
+  slate: DecisionSlate
+  card: DecisionSlateCard | null
+}
+
 export const api = {
   // ===== 决策账本 =====
   decisionOverview: (asOf?: string) =>
     request<DecisionOverview>(`/api/decision/overview${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`),
   decisionCards: (limit = 50) =>
     request<{ total: number; cards: DecisionCardSummary[] }>(`/api/decision/cards?limit=${limit}`),
+  /** 每日名单 —— 唯一产地的只读出口。HTTP 层不重算，只读盘后管道落的那一份。 */
+  decisionSlate: (asOf?: string) =>
+    request<DecisionSlateResponse>(
+      `/api/decision/slate${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`,
+    ),
   decisionSettle: () =>
     request<{ cards: number; considered: number; written: number; pending: number; not_filled: number }>(
       '/api/decision/settle',
@@ -4875,6 +5011,20 @@ export const api = {
   // ===== 个股分析 =====
   stockAnalysisLevels: (symbol: string, days = 120) =>
     request<StockLevels>(`/api/stock-analysis/levels?symbol=${encodeURIComponent(symbol)}&days=${days}`),
+
+  /** 简称轨迹（龙虎榜快照里的历史简称观测）。没有证据时返回空 bands。 */
+  stockAnalysisNameHistory: (symbol: string) =>
+    request<StockNameHistory>(`/api/stock-analysis/name-history?symbol=${encodeURIComponent(symbol)}`),
+
+  /**
+   * 长区间日K：本地优先，本地没有的头部用上游**前复权**补齐（只读，不落盘）。
+   * 返回 segments 标明哪一段来自哪里 —— 图上必须能看出"这一段是临时取来的"。
+   */
+  stockAnalysisHistory: (symbol: string, start: string, end: string) =>
+    request<ChartSeries>(
+      `/api/stock-analysis/history?symbol=${encodeURIComponent(symbol)}`
+      + `&start_date=${start}&end_date=${end}`,
+    ),
 
   stockAnalysisReportsList: () =>
     request<{ reports: AiStockReport[] }>('/api/stock-analysis/reports'),

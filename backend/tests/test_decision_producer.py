@@ -343,14 +343,21 @@ def test_settle_refuses_entry_that_is_not_closed(tmp_path: Path, monkeypatch):
 
 
 def test_stage_disabled_by_default(tmp_path: Path, monkeypatch):
-    """默认关闭：决策自动发卡必须显式开启（污染校准的代价由用户承担）。"""
+    """默认关闭：决策自动发卡必须显式开启（污染校准的代价由用户承担）。
+
+    但**名单不受开关影响**：`slate` 必须照常出现。把「今天买哪几只」绑在
+    「敢不敢签名」的开关上，会让默认配置的用户连名单都看不到——
+    名单是市场事实，发卡才是承诺。
+    """
     from app.services import preferences
 
     monkeypatch.setattr(preferences, "get_decision_auto_config",
                         lambda: _prefs())
     repo = KlineRepository(DataStore(tmp_path))
     out = producer.run_decision_stage(repo, engine=None)
-    assert out == {"status": "disabled"}
+    assert out["status"] == "disabled"
+    assert out["slate"]["status"] == "skipped_no_data"  # 空目录：没有分区
+    assert ledger.load_cards(tmp_path) == []
 
 
 def test_stage_settles_without_strategy(tmp_path: Path, monkeypatch):
