@@ -125,8 +125,12 @@ it('有效样本不足时 skill 降级为「不可判定」，但数字仍然显
       brier: 0.2004,
       brier_const: 0.25,
       skill: 0.3316,
-      verdict: 'BEATS_CONSTANT',
-      reason: 'Brier skill +33.16% > 0（基线 随机 0.5）',
+      // 不许写成 `BEATS_CONSTANT`：那是 3ca7e765 之前的状态（判决只看点估计、
+      // 显著性只看下界，两根轴独立返回）。后端现在由 `verdict_of()` 单点产出，
+      // `UNKNOWN` 时 verdict 只能是 `UNKNOWN`——把不可能组合留在 fixture 里，
+      // 等于给「回退到旧口径」留了一条绿灯。
+      verdict: 'UNKNOWN',
+      reason: '等效独立样本 1 < 30（或不可靠）：分数可读，结论不可判定',
     },
   }
   vi.mocked(api.decisionOverview).mockResolvedValue(settled)
@@ -169,6 +173,10 @@ it('median 口径：不可判定打问号，不能借 ✓ 冒充结论', async (
   const text = host.textContent ?? ''
   expect(text).toContain('33.0% ?')
   expect(text).not.toContain('✓')
+  // n_eff=1 时 51.6% 的命中率不许被写成「跑赢」：数字可读，结论不可判定。
+  // 后端 verdict 已经与显著性同轴（3ca7e765），前端这层是文案闸——
+  // 否则读者只记住那个「跑赢」。
+  expect(text).not.toContain('跑赢')
 })
 
 it('自动发卡开关：显示绑定策略，点击即 PUT enabled（部分更新）', async () => {

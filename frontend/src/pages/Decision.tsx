@@ -397,7 +397,11 @@ export function Decision() {
               </div>
               <dl className="mt-1 space-y-0.5 text-[10px]">
                 {([
-                  ['跑赢中位数', pct(sm.hit_rate)],
+                  // `UNKNOWN` 时不许出现「跑赢」：n_eff=10 的 51.6% 命中率被写成
+                  // 「跑赢中位数」，正是六态判决要拦的那种误读——数字可读，
+                  // 结论不可判定。这条路只有 `PASS` 才配用「跑赢」这个词。
+                  [sm.significance === 'PASS' ? '跑赢中位数' : '高于中位数占比',
+                    pct(sm.hit_rate)],
                   ['样本 / 决策日', `${sm.n} / ${sm.days ?? 0}`],
                   // 与 abs 口径同源：`n_eff` 由 score() 一并返回，不是另算一套。
                   ['skill 的有效样本', sm.n_eff == null ? '—' : String(sm.n_eff)],
