@@ -870,7 +870,7 @@ export function Screener() {
     <>
       <PageHeader
         title="策略"
-        subtitle="基于本地 enriched 表 · 毫秒级 SQL"
+        subtitle="基于本地 enriched 表 · 毫秒级 SQL · 研究工具：每日可执行名单见「决策账本」"
         right={
           /* 工具栏 10 组控件总宽会超过标题栏 (窄屏实测溢出 148px)。
              不能靠 overflow-x-auto + 隐藏滚动条 —— 那样右侧按钮被静默裁掉,
