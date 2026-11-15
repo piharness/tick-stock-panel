@@ -168,7 +168,9 @@ def test_candidates_do_not_read_future_rows(l1, monkeypatch) -> None:
     full = l1.candidates(DATA, as_of)
     df, _ = l1._panel(DATA)
     trimmed = df.filter(pl.col("date") <= as_of)
-    monkeypatch.setattr(l1, "_panel", lambda _d: (trimmed, l1._to_mats(trimmed)))
+    # 签名带 `files=`（候选走窄窗）。少了 `**_kw` 这条测试会 TypeError，
+    # 把「未来函数检查」变成「函数签名变了」的假红。
+    monkeypatch.setattr(l1, "_panel", lambda _d, **_kw: (trimmed, l1._to_mats(trimmed)))
     cut = l1.candidates(DATA, as_of)
 
     assert [c["symbol"] for c in cut["candidates"]] == [
@@ -177,6 +179,46 @@ def test_candidates_do_not_read_future_rows(l1, monkeypatch) -> None:
     assert [c["limit_price"] for c in cut["candidates"]] == [
         c["limit_price"] for c in full["candidates"]
     ]
+
+
+def test_candidates_window_is_equivalent(l1, monkeypatch) -> None:
+    """窄窗名单必须与全量**逐位相同** —— 否则「省时间」就是「换策略」。
+
+    三个 `as_of` 覆盖最近、一个月前、半年前。风险只有一个：`shift(20)` 数的是
+    **行**，窗口太短时稀疏标的的 mom20 会变 None（或取到更早的价），名单随之漂移。
+    实测 21 行就够，`_CANDIDATE_WINDOW` 取 45 留余量。
+
+    全量那一遍读 15,294,109 行（9p 上约 46s），此后三个 `as_of` 共用缓存。
+    """
+    targets = ("2026-11-11", "2026-10-15", "2026-06-30")
+    narrow = {d: l1.candidates(DATA, d) for d in targets}
+
+    monkeypatch.setattr(l1, "_CANDIDATE_WINDOW", 100_000)  # 等价于全历史
+    full = {d: l1.candidates(DATA, d) for d in targets}
+
+    for d in targets:
+        assert narrow[d]["candidates"] == full[d]["candidates"], (
+            f"{d} 的候选在窄窗与全量之间不一致：窗口不足以复原 mom20")
+        assert narrow[d]["n_candidates"] == full[d]["n_candidates"]
+    # 窗口确实起作用了，不是两边都读了全量
+    assert narrow[targets[0]]["panel_since"] > full[targets[0]]["panel_since"]
+
+
+def test_candidates_calendar_is_not_the_panel(l1) -> None:
+    """`entry_date` 与「是否最新」必须来自真实日历，不是 panel 的尾部。
+
+    裁剪后 panel 的最后一天恒等于 `as_of`。若用 `dates[-1]` 判断，非最新的
+    as_of 会被写成 `entry_date=None`，而最新的 as_of 会永远报「次日未落盘」——
+    两条都是把真实告警变成常量。
+    """
+    cases = {"2026-11-11": ("2026-11-12", False, True),
+             "2026-11-13": (None, True, False)}
+    for as_of, (entry, next_warning, stale_warning) in cases.items():
+        out = l1.candidates(DATA, as_of)
+        assert out["entry_date"] == entry, (
+            f"{as_of} 的 entry_date={out['entry_date']}，期望 {entry}")
+        assert any("次日分区尚未落盘" in w for w in out["warnings"]) is next_warning
+        assert any("不是最新分区" in w for w in out["warnings"]) is stale_warning
 
 
 def test_candidates_limit_price_is_raw_close_times_threshold(l1) -> None:

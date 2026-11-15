@@ -50,9 +50,18 @@ import polars as pl
 
 from app.decision import bars
 from app.parquet import scan_enriched_parquet
+from app.tickflow.partitions import iter_partition_dirs, parse_partition_range
 
 #: 策略身份。账本按这个 id 分组 p_win，不同口径的胜率不可混算。
 L1_STRATEGY_ID = "l1_gap_reversal"
+
+#: 实盘候选的读取窗口（交易日）。`mom20` 只需要 21 行，取两倍余量吸收稀疏标的
+#: 与停牌缺口；实测 21 就与全量名单逐位一致（见 `test_candidates_window_is_equivalent`）。
+#:
+#: 为什么要裁：全量 `_panel` 在 9p 上 `collect` 15,294,109 行要 29.2s，加上
+#: `_to_mats` 8.7s 与 `_top_picks` 2.6s，冷启动 46s。而实盘只问「今天买哪几只」，
+#: 不需要 2005 年以来的每一行。
+_CANDIDATE_WINDOW = 45
 
 #: 与 `analysis/asymmetry_probe.py::N_STOCK` / `_diag_l1_vwap_curvature.py` 同值。
 L1_TOP_N = 20
@@ -93,8 +102,53 @@ _CACHE_LOCK = threading.Lock()
 _CACHE: dict[tuple[str, float], tuple[pl.DataFrame, _Mats]] = {}
 
 
-def _panel(data_dir: Path) -> tuple[pl.DataFrame, _Mats]:
-    """读 enriched 日线并网格化。按 (目录, mtime) 缓存一次。
+def _window(data_dir: Path, as_of: str, days: int) -> tuple[str, list[Path]]:
+    """`as_of` 及其之前 `days` 个交易日所对应的分区文件。
+
+    返回 `(since, files)`：`since` 是窗口第一天的 ISO 日期，用于记录口径；
+    `files` 直接交给 `_panel`，省掉一次全表枚举。
+
+    只按分区目录名的区间上界筛选（enriched 是日分区，名即日期）。目录名排序
+    与日期排序一致，所以取尾部即可，不需要把 5,309 个目录全解析一遍日期集合。
+    """
+    base = Path(data_dir) / bars.STOCK_ENRICHED
+    parts: list[tuple[Any, Path]] = []
+    for part in iter_partition_dirs(base):
+        rng = parse_partition_range(part.name)
+        if rng is None or rng[1].isoformat() > as_of:
+            continue
+        parts.append((rng[0], part))
+    if not parts:
+        return as_of, []
+    tail = parts[-days:] if len(parts) > days else parts
+    since = tail[0][0].isoformat()
+    files = [f for _, p in sorted(tail, key=lambda x: x[1].name) for f in sorted(p.glob("*.parquet"))]
+    return since, files
+
+
+def _next_session(data_dir: Path, as_of: str) -> str | None:
+    """`as_of` 之后最近的已落盘交易日；没有则 None。
+
+    存在的理由是**窄窗不能替代日历**：裁剪后 `dates[-1]` 恒等于 `as_of`，
+    用 panel 自己的日期列表判断「次日分区是否落盘」会永远说「还没落盘」，
+    把一条真实告警变成常量。
+    """
+    base = Path(data_dir) / bars.STOCK_ENRICHED
+    for part in iter_partition_dirs(base):
+        rng = parse_partition_range(part.name)
+        if rng is None:
+            continue
+        if rng[0].isoformat() > as_of:
+            return rng[0].isoformat()
+    return None
+
+
+def _panel(data_dir: Path, *, files: list[Path] | None = None) -> tuple[pl.DataFrame, _Mats]:
+    """读 enriched 日线并网格化。全量按 (目录, mtime) 缓存一次。
+
+    `files` 非空时只读这些分区，**不进缓存**：它便宜（45 天约 1% 的行），
+    而 `_CACHE.clear()` 只留一份 —— 与全量共用会互相踢掉，让「先看板再回测」
+    变成两次 29s。
 
     缓存键用目录 mtime 而不是日期列表：新增一个 `date=` 子目录会更新父目录
     mtime，而列出 370 个子目录在 9p 挂载上要 stat 370 次（实测秒级）。
@@ -108,12 +162,13 @@ def _panel(data_dir: Path) -> tuple[pl.DataFrame, _Mats]:
     except OSError:
         stamp = 0.0
     key = (resolved, stamp)
-    with _CACHE_LOCK:
-        hit = _CACHE.get(key)
-    if hit is not None:
-        return hit
+    if files is None:
+        with _CACHE_LOCK:
+            hit = _CACHE.get(key)
+        if hit is not None:
+            return hit
 
-    lf = scan_enriched_parquet(base)
+    lf = scan_enriched_parquet(base if files is None else [str(f) for f in files])
     have = set(lf.collect_schema().names())
     missing = [c for c in _NEED_COLS if c not in have]
     if missing:
@@ -129,9 +184,10 @@ def _panel(data_dir: Path) -> tuple[pl.DataFrame, _Mats]:
     df = df.sort(["symbol", "date"])
 
     mats = _to_mats(df)
-    with _CACHE_LOCK:
-        _CACHE.clear()  # 只留最新一份：日线每天变，旧网格没有复用价值
-        _CACHE[key] = (df, mats)
+    if files is None:
+        with _CACHE_LOCK:
+            _CACHE.clear()  # 只留最新一份：日线每天变，旧网格没有复用价值
+            _CACHE[key] = (df, mats)
     return df, mats
 
 
@@ -303,19 +359,27 @@ def candidates(
 
     **只用到 `as_of` 为止的数据**（`require_next=False`）。不预测会不会低开——
     那是 9:25 才发生的事，由 `settle._fill(open_only)` 判定。
+
+    读取窗口是 `as_of` 前 `_CANDIDATE_WINDOW` 个交易日，不是全历史：`mom20`
+    只要 21 行，而全量面板冷启动 46s。窗口边界由 `test_candidates_window_is_equivalent`
+    与全量逐位对拍钉住——**改了窗口或改了 `shift` 的口径，那条测试会红**。
     """
     if require_next:
         raise ValueError("candidates() 是实盘口径，不接受 require_next=True")
-    df_all, m = _panel(data_dir)
+    since, files = _window(data_dir, as_of, _CANDIDATE_WINDOW)
+    df_all, m = _panel(data_dir, files=files)
     dates = m.dates
     if as_of not in set(dates):
         raise ValueError(f"{as_of} 不是已落盘的交易日（缺分区或非交易日）")
+    latest = bars.latest_session(data_dir, bars.STOCK_ENRICHED)
+    nxt = _next_session(data_dir, as_of)
 
     df = df_all.filter(pl.col("date") <= as_of)
     picks = _top_picks(df, top_n=top_n, require_next=require_next)
     chosen = picks.get(as_of, [])
     if not chosen:
-        return _empty(as_of, dates, top_n=top_n, gap_max=gap_max, reason="no_ranking")
+        return _empty(as_of, nxt, top_n=top_n, gap_max=gap_max,
+                      reason="no_ranking", panel_since=since)
 
     i0 = dates.index(as_of)
     s_map = {s: i for i, s in enumerate(m.symbols)}
@@ -360,18 +424,23 @@ def candidates(
             }
         )
 
-    nxt = dates[i0 + 1] if i0 + 1 < len(dates) else None
     return {
         "as_of": as_of,
         #: 下一交易日。`None` = 次日分区还没落盘（收盘后立刻调用时如此）。
+        #: 来自 `_next_session()` 而不是 panel 的日期序列：裁剪后 `dates[-1]`
+        #: 恒等于 `as_of`，用它判断会把这条永远写成 `None`。
         "entry_date": nxt,
         "strategy_id": L1_STRATEGY_ID,
+        #: 本次读取的面板起点。写进响应是因为「窗口」也是口径的一部分：
+        #: 同样的名单若由全历史算出，说明窗口不构成约束；若由 45 天算出，
+        #: 读者需要知道它没见过更早的数据。
+        "panel_since": since,
         "top_n": top_n,
         "gap_max": gap_max,
         "n_candidates": len(out),
         "candidates": out,
         "caliber": _caliber(gap_max),
-        "warnings": _warnings(dates, i0, out, d_idx),
+        "warnings": _warnings(as_of, latest, nxt, out, d_idx),
     }
 
 
@@ -446,13 +515,13 @@ def _caliber(gap_max: float) -> dict[str, Any]:
     }
 
 
-def _empty(as_of: str, dates: list[str], *, top_n: int, gap_max: float,
-           reason: str) -> dict[str, Any]:
-    i0 = dates.index(as_of) if as_of in dates else -1
+def _empty(as_of: str, entry_date: str | None, *, top_n: int, gap_max: float,
+           reason: str, panel_since: str | None = None) -> dict[str, Any]:
     return {
         "as_of": as_of,
-        "entry_date": dates[i0 + 1] if 0 <= i0 < len(dates) - 1 else None,
+        "entry_date": entry_date,
         "strategy_id": L1_STRATEGY_ID,
+        "panel_since": panel_since,
         "top_n": top_n,
         "gap_max": gap_max,
         "n_candidates": 0,
@@ -464,17 +533,23 @@ def _empty(as_of: str, dates: list[str], *, top_n: int, gap_max: float,
 
 
 def _warnings(
-    dates: list[str], i0: int, out: list[dict[str, Any]], row: dict[str, Any],
+    as_of: str, latest: str | None, nxt: str | None,
+    out: list[dict[str, Any]], row: dict[str, Any],
 ) -> list[str]:
-    """把「这份清单在什么情况下不该被相信」写在它旁边。"""
+    """把「这份清单在什么情况下不该被相信」写在它旁边。
+
+    两条时间判据都**不用 panel 自己的日期序列**：候选读取窗口裁到 `as_of`，
+    窗口内 `dates[-1] == as_of`、没有次日格，用它们判断会把「as_of 不是最新」
+    和「次日已落盘」两件事各写成一个常量。真实日历来自 `latest_session()` /
+    `_next_session()`。
+    """
     w: list[str] = []
-    latest = dates[-1]
-    if i0 != len(dates) - 1:
+    if latest is not None and as_of < latest:
         w.append(
-            f"as_of={dates[i0]} 不是最新分区（最新 {latest}）："
+            f"as_of={as_of} 不是最新分区（最新 {latest}）："
             "若用于次日实盘，请确认该日数据已收盘定版"
         )
-    if i0 + 1 >= len(dates):
+    if nxt is None:
         w.append("次日分区尚未落盘：清算与撮合结果需等下一个交易日")
     qts = row.get("quote_ts")
     # enriched 的 quote_ts 记的是这一行的行情时间戳。收盘后仍停在竞价前快照的
