@@ -1,0 +1,82 @@
+{
+ "generated_at": "2026-11-15",
+ "anchor_end": "2026-11-06",
+ "survival": {
+  "listed_total": 5892,
+  "with_bars": 5580,
+  "survival_pct": 94.7,
+  "missing": 312,
+  "cumulative_by_year_end": {
+   "2000": {
+    "listed": 1031,
+    "with_bars": 864,
+    "gap_pct": 16.2
+   },
+   "2005": {
+    "listed": 1363,
+    "with_bars": 1170,
+    "gap_pct": 14.16
+   },
+   "2010": {
+    "listed": 2080,
+    "with_bars": 1839,
+    "gap_pct": 11.59
+   },
+   "2015": {
+    "listed": 2868,
+    "with_bars": 2577,
+    "gap_pct": 10.15
+   },
+   "2020": {
+    "listed": 4275,
+    "with_bars": 3970,
+    "gap_pct": 7.13
+   },
+   "2026": {
+    "listed": 5889,
+    "with_bars": 5580,
+    "gap_pct": 5.25
+   }
+  }
+ },
+ "cells": {
+  "n": 39980,
+  "mean_bp": 92.5,
+  "sd_bp": 566.3,
+  "pct_bp": {
+   "p1": -948.9,
+   "p5": -716.8,
+   "p10": -563.5,
+   "p25": -273.8,
+   "p50": 17.5
+  }
+ },
+ "top_proxy": {
+  "n": 65617,
+  "share_of_cells_pct": 0.429,
+  "mean_bp": 438.2,
+  "pct_bp": {
+   "p5": -86.7,
+   "p25": 120.7,
+   "p50": 362.2,
+   "p75": 683.2
+  },
+  "negative_share_pct": 9.3,
+  "all_cells_mean_bp": 15.6
+ },
+ "correction": {
+  "gap_share": 0.09,
+  "base_bp": 92.5,
+  "corrected_bp": {
+   "same_as_survivors": 92.5,
+   "p50": 85.8,
+   "p25": 59.5,
+   "p10": 33.5,
+   "p5": 19.7,
+   "p1": -1.2
+  },
+  "breakeven_x_bp": -935.0,
+  "breakeven_daily_pct": -9.35,
+  "verdict": "归零需要缺失票平均 -9.35%/日，超过主板跌停下限（-10%）且要求连续跌停——而 cohort 只买 mom20 前 20，下跌中的票进不来"
+ }
+}

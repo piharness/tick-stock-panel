@@ -556,3 +556,38 @@ def test_api_candidates_endpoint_round_trip() -> None:
 
     bad = client.get("/api/decision/l1/candidates", params={"as_of": "2026-11-08"})
     assert bad.status_code == 400, "非交易日必须 400，不能 500 也不能返回空清单"
+
+
+def test_missing_bars_are_delisted_not_a_data_gap(l1) -> None:
+    """有维表、没行情的票，数量必须停在登记的 312 只附近。
+
+    这条区分两种完全不同的东西：
+    - **生存偏差**：退市股没有历史行情，所以 20 年读数的分母是存活快照。
+      已量化（`docs/l1-gap-reversal.md` §5.2：归零需 -9.35%/日）。
+    - **数据缺口**：某只正常交易的票没被拉下来。那不是偏差，是 bug，
+      它会静默缩小池子、改变 top20 名单。
+
+    **不能用名字判断。** 312 只里有 58 只是「吸收合并 / 换股」退市，名字是
+    正常的（600102 莱钢股份、600068 葛洲坝、600991 广汽长丰…），按「退|ST」
+    过滤会把它们误报成数据 bug —— 而它们与强制退市是**同一种**生存偏差。
+
+    判据落在数量上：缺口突增说明新票没落盘（数据问题），不是退市变多了。
+    """
+    import glob
+
+    import polars as pl
+
+    files = sorted(glob.glob(str(DATA / "instruments" / "**" / "*.parquet"), recursive=True))
+    if not files:
+        pytest.skip("缺 instruments，无法判定缺口性质")
+    inst = pl.read_parquet(files[0])
+    have = set(l1._panel(DATA)[0]["symbol"].unique().to_list())
+    missing = inst.filter(~pl.col("symbol").is_in(list(have)))
+    #: 2026-11-15 登记值：312（254 只名字带退市/ST + 58 只吸收合并）。留 8 只余量
+    #: 吸收「新上市但当日分区还没落盘」，超过就是数据侧出了问题。
+    assert missing.height <= 320, (
+        f"有维表却无行情的票 {missing.height} 只，超过登记的 312 只："
+        f"{missing['symbol'].to_list()[:10]} —— 新增缺口是数据问题，不是生存偏差")
+    assert missing.height >= 300, (
+        f"缺口只剩 {missing.height} 只 —— 若补齐了退市股历史，请同时重算"
+        "docs/l1-gap-reversal.md §5.2 的三层读数，而不是只改这条断言")
