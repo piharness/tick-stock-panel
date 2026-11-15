@@ -251,6 +251,107 @@ def correction_table(layers: dict) -> dict:
     }
 
 
+def year_by_year() -> dict:
+    """逐年修正：**当年缺口率 × 当年最差层收益**，替代全期一个 w。
+
+    为什么必须逐年：缺口率 2005 年 14.2%、2026 年 5.2%，差近 3 倍；而最差层
+    （崩盘段低开买入）的收益也随年份反号 —— 2005-2008 是 +24~+57bp，
+    2009 年 -161.4bp，2011 年后几乎年年为负。全期平均的 -7.8bp 把两种相反
+    的年份混成一个数，既掩盖了 2009，也低估了早期的正贡献。
+
+    这里取**年内崩盘段**（dd<-30% 且低开 1%）的收益作为 X_y —— 它是最差的
+    可入选层，真实缺失票大部分落在更强的一层，所以这是保守下界。
+    """
+    inst = _instruments()
+    inst = inst.with_columns(pl.col("listing_date").cast(pl.Utf8).str.slice(0, 4).alias("iy"))
+    have = set(
+        scan_enriched_parquet(DATA / "kline_daily_enriched")
+        .select("symbol").unique().collect()["symbol"].to_list()
+    )
+    inst = inst.with_columns(pl.col("symbol").is_in(list(have)).alias("hb"))
+    rows = [
+        (r["iy"], r["n"], r["w"])
+        for r in inst.group_by("iy")
+        .agg(pl.len().alias("n"), pl.col("hb").sum().alias("w"))
+        .sort("iy").iter_rows(named=True)
+        if r["iy"] and r["iy"].isdigit()
+    ]
+    gap_by_year: dict[str, float] = {}
+    cum_l = cum_w = 0
+    for year, n, w in rows:
+        if int(year) < 1990:
+            continue
+        cum_l += n
+        cum_w += w
+        gap_by_year[year] = 1.0 - cum_w / cum_l
+
+    cells = l1.cohort_cells(DATA, end=ANCHOR_END)
+    df, m = l1._panel(DATA)
+    ix = {d: i for i, d in enumerate(m.dates)}
+    sx = {s: j for j, s in enumerate(m.symbols)}
+    rec = []
+    for d, s in zip(cells["date"].to_list(), cells["symbol"].to_list()):
+        i, j = ix.get(d), sx.get(s)
+        if i is None or j is None:
+            continue
+        o, c = m.open[i, j], m.close[i, j]
+        if np.isfinite(o) and o > 0 and np.isfinite(c):
+            rec.append((d, c / o - 1))
+    per = (
+        pl.DataFrame(rec, schema=["date", "ret"], orient="row")
+        .group_by("date").agg(pl.col("ret").mean().alias("r"))
+        .with_columns(pl.col("date").str.slice(0, 4).alias("y"))
+    )
+    mean_by_year = {
+        r["y"]: float(r["m"]) * 1e4
+        for r in per.group_by("y").agg(pl.col("r").mean().alias("m")).iter_rows(named=True)
+    }
+
+    d = (
+        df.sort(["symbol", "date"])
+        .with_columns([
+            pl.col("close").rolling_max(60).over("symbol").alias("hi60"),
+            (pl.col("close") / pl.col("close").shift(20).over("symbol") - 1).alias("mom20"),
+        ])
+        .with_columns([
+            pl.col("mom20").rank("ordinal", descending=True).over("date").alias("rk"),
+            (pl.col("close") / pl.col("hi60") - 1).alias("dd"),
+            (pl.col("open") / pl.col("close").shift(1).over("symbol") - 1).alias("gap"),
+            (pl.col("close") / pl.col("open") - 1).alias("oc"),
+            pl.col("date").str.slice(0, 4).alias("y"),
+        ])
+        .with_columns(pl.col("rk").le(20).fill_null(False).alias("in20"))
+    )
+    crash = (pl.col("dd") < -0.30) & (pl.col("gap") <= -0.01)
+    g = d.group_by("y").agg([pl.when(crash).then(pl.col("oc")).mean().alias("x")]).sort("y")
+
+    out: dict[str, dict] = {}
+    for row in g.iter_rows(named=True):
+        y = row["y"]
+        base = mean_by_year.get(y)
+        gap = gap_by_year.get(y)
+        x = row["x"]
+        if base is None or gap is None or x is None:
+            continue
+        x_bp = float(x) * 1e4
+        corrected = (1 - gap) * base + gap * x_bp
+        out[y] = {
+            "cohort_bp": round(base, 1),
+            "gap_pct": round(100 * gap, 1),
+            "worst_layer_bp": round(x_bp, 1),
+            "corrected_bp": round(corrected, 1),
+            "delta_bp": round(corrected - base, 1),
+        }
+    worst = min(out.items(), key=lambda kv: kv[1]["corrected_bp"]) if out else None
+    return {
+        "by_year": out,
+        "worst_year": worst[0] if worst else None,
+        "worst_corrected_bp": worst[1]["corrected_bp"] if worst else None,
+        "n_years_negative": sum(1 for v in out.values() if v["corrected_bp"] <= 0),
+        "mean_corrected_bp": round(sum(v["corrected_bp"] for v in out.values()) / len(out), 1) if out else None,
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true")
@@ -295,6 +396,15 @@ def main() -> None:
                                        for k, v in corr["breakeven_by_gap_share"].items()))
     print("   判定：%s" % corr["verdict"])
 
+    print("⑥ 逐年修正（当年缺口率 x 当年最差层）")
+    yby = year_by_year()
+    for y, v in yby["by_year"].items():
+        print("   %s  cohort %+7.1f  缺口 %4.1f%%  最差层 %+8.1f  ->  %+7.1fbp（%+.1f）"
+              % (y, v["cohort_bp"], v["gap_pct"], v["worst_layer_bp"], v["corrected_bp"], v["delta_bp"]))
+    print("   最差年份 %s -> %+.1fbp；翻负年份 %d 个；逐年均值 %+.1fbp"
+          % (yby["worst_year"], yby["worst_corrected_bp"], yby["n_years_negative"],
+             yby["mean_corrected_bp"]))
+
     result = {
         "generated_at": "2026-11-15",
         "anchor_end": ANCHOR_END,
@@ -302,6 +412,7 @@ def main() -> None:
         "cells": cell,
         "top_proxy": top,
         "conditional_layers": layers,
+        "year_by_year": yby,
         "correction": corr,
     }
     if args.write:

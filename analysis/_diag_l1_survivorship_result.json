@@ -100,6 +100,168 @@
   },
   "base_selection_rate_pct": 0.6916
  },
+ "year_by_year": {
+  "by_year": {
+   "2005": {
+    "cohort_bp": 40.7,
+    "gap_pct": 14.2,
+    "worst_layer_bp": 35.0,
+    "corrected_bp": 39.9,
+    "delta_bp": -0.8
+   },
+   "2006": {
+    "cohort_bp": 112.9,
+    "gap_pct": 13.8,
+    "worst_layer_bp": 57.2,
+    "corrected_bp": 105.2,
+    "delta_bp": -7.7
+   },
+   "2007": {
+    "cohort_bp": 82.6,
+    "gap_pct": 12.9,
+    "worst_layer_bp": 28.1,
+    "corrected_bp": 75.5,
+    "delta_bp": -7.0
+   },
+   "2008": {
+    "cohort_bp": 98.1,
+    "gap_pct": 12.5,
+    "worst_layer_bp": 23.7,
+    "corrected_bp": 88.8,
+    "delta_bp": -9.3
+   },
+   "2009": {
+    "cohort_bp": 90.9,
+    "gap_pct": 12.3,
+    "worst_layer_bp": -161.4,
+    "corrected_bp": 59.9,
+    "delta_bp": -31.1
+   },
+   "2010": {
+    "cohort_bp": 83.3,
+    "gap_pct": 11.6,
+    "worst_layer_bp": 26.8,
+    "corrected_bp": 76.7,
+    "delta_bp": -6.5
+   },
+   "2011": {
+    "cohort_bp": 73.7,
+    "gap_pct": 11.0,
+    "worst_layer_bp": -23.9,
+    "corrected_bp": 63.0,
+    "delta_bp": -10.7
+   },
+   "2012": {
+    "cohort_bp": 91.1,
+    "gap_pct": 10.8,
+    "worst_layer_bp": -14.7,
+    "corrected_bp": 79.7,
+    "delta_bp": -11.4
+   },
+   "2013": {
+    "cohort_bp": 81.1,
+    "gap_pct": 10.8,
+    "worst_layer_bp": -69.2,
+    "corrected_bp": 64.9,
+    "delta_bp": -16.2
+   },
+   "2014": {
+    "cohort_bp": 63.5,
+    "gap_pct": 10.6,
+    "worst_layer_bp": -84.5,
+    "corrected_bp": 47.7,
+    "delta_bp": -15.7
+   },
+   "2015": {
+    "cohort_bp": 133.2,
+    "gap_pct": 10.1,
+    "worst_layer_bp": 17.4,
+    "corrected_bp": 121.5,
+    "delta_bp": -11.7
+   },
+   "2016": {
+    "cohort_bp": 57.2,
+    "gap_pct": 9.5,
+    "worst_layer_bp": -20.5,
+    "corrected_bp": 49.9,
+    "delta_bp": -7.4
+   },
+   "2017": {
+    "cohort_bp": 47.6,
+    "gap_pct": 8.5,
+    "worst_layer_bp": -22.0,
+    "corrected_bp": 41.7,
+    "delta_bp": -5.9
+   },
+   "2018": {
+    "cohort_bp": 79.8,
+    "gap_pct": 8.3,
+    "worst_layer_bp": -33.2,
+    "corrected_bp": 70.4,
+    "delta_bp": -9.4
+   },
+   "2019": {
+    "cohort_bp": 117.0,
+    "gap_pct": 7.9,
+    "worst_layer_bp": -24.5,
+    "corrected_bp": 105.9,
+    "delta_bp": -11.2
+   },
+   "2020": {
+    "cohort_bp": 128.5,
+    "gap_pct": 7.1,
+    "worst_layer_bp": -20.8,
+    "corrected_bp": 117.9,
+    "delta_bp": -10.7
+   },
+   "2021": {
+    "cohort_bp": 101.4,
+    "gap_pct": 6.4,
+    "worst_layer_bp": -20.5,
+    "corrected_bp": 93.7,
+    "delta_bp": -7.8
+   },
+   "2022": {
+    "cohort_bp": 100.1,
+    "gap_pct": 5.9,
+    "worst_layer_bp": -9.2,
+    "corrected_bp": 93.7,
+    "delta_bp": -6.4
+   },
+   "2023": {
+    "cohort_bp": 141.5,
+    "gap_pct": 5.6,
+    "worst_layer_bp": -43.3,
+    "corrected_bp": 131.2,
+    "delta_bp": -10.3
+   },
+   "2024": {
+    "cohort_bp": 107.4,
+    "gap_pct": 5.5,
+    "worst_layer_bp": -12.5,
+    "corrected_bp": 100.9,
+    "delta_bp": -6.6
+   },
+   "2025": {
+    "cohort_bp": 139.1,
+    "gap_pct": 5.4,
+    "worst_layer_bp": -82.1,
+    "corrected_bp": 127.2,
+    "delta_bp": -11.9
+   },
+   "2026": {
+    "cohort_bp": 114.6,
+    "gap_pct": 5.2,
+    "worst_layer_bp": -41.2,
+    "corrected_bp": 106.4,
+    "delta_bp": -8.2
+   }
+  },
+  "worst_year": "2005",
+  "worst_corrected_bp": 39.9,
+  "n_years_negative": 0,
+  "mean_corrected_bp": 84.6
+ },
  "correction": {
   "gap_share": 0.09,
   "base_bp": 92.5,
