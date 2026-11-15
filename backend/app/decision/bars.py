@@ -23,8 +23,11 @@ import polars as pl
 
 from app.tickflow.partitions import (
     is_monthly_daily_table,
+    iter_partition_dirs,
     list_partition_dates,
     locate_partition_dir,
+    parse_partition_range,
+    partition_dates,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,9 +145,53 @@ def sessions(data_dir: Path, table: str = "kline_daily") -> list[str]:
     return sorted(out)
 
 
+#: `latest_session` 倒序最多看多少个分区。结尾通常是「1 个月分区 + 当月若干
+#: 日分区」，40 是跨月与迁移期混存的安全余量；实际被解析的只有 1–3 个。
+_LATEST_SCAN = 40
+
+
 def latest_session(data_dir: Path, table: str = "kline_daily") -> str | None:
-    dates = sessions(data_dir, table)
-    return dates[-1] if dates else None
+    """最新交易日。只解析尾部若干分区，不枚举全表。
+
+    旧实现是 `sessions()[-1]`，而 `sessions()` 对月分区表要走
+    `list_partition_dates()`：608 个月分区逐个读 `date` 列，容器内实测
+    **18.36s**。它落在 `/api/decision/overview` 的首屏路径上，且
+    `gates.evaluate()` 与 `check_k4_fresh()` 各调一次 ⇒ 页面 65s。
+
+    ## 为什么可以只读尾部
+
+    分区目录名的**年月**单调：月份早于当前最优日期的目录，行一定更早。
+    倒序扫到第一个这样的目录即可停。
+
+    但不能按目录名排序直接取最后一个：`date=2026-11`（月分区，声明区间到
+    月末）在字符串序上排在 `date=2026-11-13` **之前**，而它的数据可能最晚。
+    所以尾部要一直扫到「月份早于 best」为止——结尾那一两个月分区必须真读。
+
+    日分区走目录名（`partition_dates` 对 start == end 零扫描），月分区才读
+    `date` 列 —— 与 `sessions()` 同一分支，两个函数的答案不会分叉。
+    """
+    base = Path(data_dir) / table
+    if not base.is_dir():
+        return None
+    dirs = iter_partition_dirs(base)
+    if not dirs:
+        return None
+    best: str | None = None
+    best_ym: tuple[int, int] | None = None
+    for part in reversed(dirs[-_LATEST_SCAN:]):
+        rng = parse_partition_range(part.name)
+        if rng is None:
+            continue
+        if best_ym is not None and (rng[1].year, rng[1].month) < best_ym:
+            break
+        dates = partition_dates(part)
+        if not dates:
+            continue
+        top = max(dates)
+        if best is None or top.isoformat() > best:
+            best = top.isoformat()
+            best_ym = (top.year, top.month)
+    return best
 
 
 def _day_frame(data_dir: Path, table: str, day: str, symbols: list[str] | None) -> pl.DataFrame:
