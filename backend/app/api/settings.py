@@ -674,6 +674,7 @@ def get_preferences() -> dict:
         "daily_batch_symbols": preferences.get_daily_batch_symbols(),
         "minute_batch_symbols": preferences.get_minute_batch_symbols(),
         "backtest_worker_rss_limit_gib": preferences.get_backtest_worker_rss_limit_gib(),
+        "backtest_worker_rss_limit_max_gib": preferences.backtest_rss_limit_ceiling_gib(),
         "watchlist_columns": preferences.get_watchlist_columns(),
         "screener_result_columns": preferences.get_screener_result_columns(),
         "sse_refresh_pages": preferences.get_sse_refresh_pages(),
@@ -1396,6 +1397,11 @@ class DecisionAutoConfigIn(BaseModel):
     decision_auto_basis: str | None = None
     decision_auto_account_id: str | None = None
     decision_auto_allow_prior: bool | None = None
+    #: 建卡后是否自动把 picks 下成模拟盘买单。默认关；开之前确认
+    #: `decision_auto_strategy_id` 指向真的要执行的那条腿。
+    decision_auto_execute: bool | None = None
+    #: 撮合口径 `limit` / `open_only`。L1 分支忽略它并强制 `open_only`。
+    decision_auto_fill_mode: str | None = None
 
 
 @router.put("/preferences/decision-auto-config")

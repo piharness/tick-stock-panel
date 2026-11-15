@@ -26,7 +26,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from app.decision import bars, ledger, pwin as pwin_mod, settle as settle_mod
+from app.decision import bars, l1_cohort, ledger, pwin as pwin_mod, settle as settle_mod
 from app.decision.gates import GateResult, evaluate as evaluate_gates
 
 logger = logging.getLogger(__name__)
@@ -194,12 +194,21 @@ def produce_card(
     pwin_basis: str = "median",
     allow_prior: bool = False,
     scan_meta: dict[str, Any] | None = None,
+    fill_mode: str = ledger.FILL_MODE_LIMIT,
 ) -> dict[str, Any]:
     """一次自动发卡尝试。**任何一档不满足都返回 `status != "created"`**，
     绝不抛异常打断管道，也绝不降级造卡。
 
     返回字段：`status ∈ created | skipped_gate | skipped_no_picks |
     skipped_no_evidence | exists`，附 `gates` / `card_id` / `reason`。
+
+    `fill_mode` 必须从这一层透传：`ledger.build_card` 支持它、HTTP 层支持它，
+    中间缺了它，**自动路径就永远只能造 `limit` 卡**。而 `limit` 与 `open_only`
+    不是一个开关的两档，是两个策略（`settle._fill` docstring）：实测同一批
+    L1 pick，`limit` 成交 70 笔、`open_only` 成交 42 笔，多出的 28 笔全是
+    「开盘没成交、盘中回落补上」的反向样本，均值因此被摊薄（逐位口径见
+    `analysis/_diag_l1_loop_walk_findings.md`）。默认取 `limit` 只为向后兼容
+    既有卡，**新口径必须在调用点显式传**。
     """
     gate: GateResult = evaluate_gates(data_dir, as_of=as_of, account_id=account_id)
     if gate.blocked:
@@ -246,6 +255,7 @@ def produce_card(
         forecast=forecast or None,
         gates=gate.to_dict(),
         override_reason=None,
+        fill_mode=fill_mode,
     )
     _path, created = ledger.save_card(data_dir, card)
     return {
@@ -307,6 +317,42 @@ def scan_picks(
     return picks, meta
 
 
+def _l1_picks(data_dir: Path, cfg: dict[str, Any], as_of: str | None
+              ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any] | None]:
+    """L1 的候选与扫描元数据。返回 `(picks, scan_meta, error)`。
+
+    **必须挡住盘中**：`candidates()` 用的是 `as_of` 当天分区的 `close`，
+    而日线分区在盘中也会被实时路径写入（2026-11-13 的 `quote_ts` 是 10:42）。
+    拿它算出的 mom20 排名是「截至此刻」的排名，不是收盘排名；卡一旦封存，
+    这条错名单就是永久证据。所以先判 `as_of` 是不是收盘数据。
+    """
+    if not as_of:
+        return [], {}, {"status": "no_as_of", "reason": "没有 as_of 日期，无法取候选"}
+    state, why = settle_mod.entry_session_state(data_dir, as_of)
+    if state != "closed":
+        return [], {}, {
+            "status": "skipped_not_closed",
+            "reason": f"as_of={as_of} 不是收盘数据（{why}）：盘中名义的名单不是收盘名单",
+        }
+    try:
+        cand = l1_cohort.candidates(data_dir, as_of, top_n=cfg["top_n"])
+    except ValueError as exc:
+        return [], {}, {"status": "scan_failed", "reason": str(exc)}
+    picks = cand.get("candidates") or []
+    meta = {
+        "source": "l1_cohort",
+        #: `produce_card` 从 scan_meta 取 as_of；缺了它就是 KeyError。
+        "as_of": cand.get("as_of") or as_of,
+        "entry_date": cand.get("entry_date"),
+        "top_n": cfg["top_n"],
+        "gap_threshold_pct": picks[0].get("gap_threshold_pct") if picks else None,
+        "n_candidates": len(picks),
+        "caliber": cand.get("caliber"),
+        "warnings": cand.get("warnings") or [],
+    }
+    return picks, meta, None
+
+
 def run_decision_stage(repo: Any, engine: Any | None = None,
                        *, today: Any = None) -> dict[str, Any]:
     """盘后管道阶段入口：先结算到期卡，再按配置自动发卡。软失败由调用方兜。
@@ -334,16 +380,30 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
     if not cfg["strategy_id"]:
         return {"status": "no_strategy", "settle": settle_summary,
                 "reason": "decision_auto_strategy_id 未配置：只结算，不发卡"}
-    if engine is None:
-        return {"status": "no_engine", "settle": settle_summary,
-                "reason": "策略引擎未初始化：只结算，不发卡"}
 
-    try:
-        picks, scan_meta = scan_picks(
-            repo, engine, cfg["strategy_id"], today, top_n=cfg["top_n"])
-    except ValueError as exc:
-        return {"status": "scan_failed", "settle": settle_summary,
-                "reason": str(exc)}
+    fill_mode = str(cfg.get("fill_mode") or ledger.FILL_MODE_LIMIT)
+    if cfg["strategy_id"] == l1_cohort.L1_STRATEGY_ID:
+        # L1 的候选不是策略引擎的产物：`l1_cohort.candidates()` 直接给带限价的
+        # 清单，只用 as_of 之前的数据。这条分支存在的唯一理由是让「证据最硬的
+        # 那条腿」进同一个账本，而不是另建一套生产者。
+        picks, scan_meta, why = _l1_picks(data_dir, cfg, as_of_str)
+        if why is not None:
+            return {"status": why["status"], "settle": settle_summary,
+                    "reason": why["reason"]}
+        # L1 的成交口径是策略定义的一部分，不受配置影响：`candidates()` 输出的
+        # 就是「开盘 ≤ 限价才买」。用 limit 口径结算等于换了策略（多出来的那批
+        # 是「高开走弱」），所以这里不接受配置覆盖。
+        fill_mode = ledger.FILL_MODE_OPEN_ONLY
+    else:
+        if engine is None:
+            return {"status": "no_engine", "settle": settle_summary,
+                    "reason": "策略引擎未初始化：只结算，不发卡"}
+        try:
+            picks, scan_meta = scan_picks(
+                repo, engine, cfg["strategy_id"], today, top_n=cfg["top_n"])
+        except ValueError as exc:
+            return {"status": "scan_failed", "settle": settle_summary,
+                    "reason": str(exc)}
 
     summary = produce_card(
         data_dir,
@@ -355,9 +415,27 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
         pwin_basis=cfg["basis"],
         allow_prior=cfg["allow_prior"],
         scan_meta=scan_meta,
+        fill_mode=fill_mode,
     )
     summary["settle"] = settle_summary
     summary["strategy_id"] = cfg["strategy_id"]
+
+    # 最后一米：建卡之后把它变成订单。默认关（`decision_auto_execute`），
+    # 因为这是第一个动资金的步骤。软失败不打断管道——账单缺一天可以补，
+    # 管道中断会让后面的阶段全部缺一天。
+    if cfg.get("execute") and summary.get("card_id"):
+        try:
+            from app.decision import execute as execute_mod
+
+            summary["execute"] = execute_mod.from_card(
+                data_dir, str(summary["card_id"]),
+                account_id=cfg.get("account_id") or "default",
+            )
+        except Exception as exc:  # noqa: BLE001 - 软失败由调用方兜
+            logger.warning("decision execute failed: %s", exc)
+            summary["execute"] = {"status": "failed",
+                                  "reason": f"{type(exc).__name__}: {exc}"}
+
     logger.info("decision stage: %s (settle written=%s)", summary.get("status"),
                 settle_summary.get("written"))
     return summary

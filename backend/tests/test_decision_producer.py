@@ -73,7 +73,8 @@ def _seed_settlements(tmp_path: Path, *, days: int = 40, strategy: str = "mom",
 
 def _prefs(**kw: Any) -> dict:
     cfg = {"enabled": False, "strategy_id": "", "top_n": 20, "horizon": 20,
-           "basis": "median", "account_id": "default", "allow_prior": False}
+           "basis": "median", "account_id": "default", "allow_prior": False,
+           "fill_mode": "limit", "execute": False}
     cfg.update(kw)
     return cfg
 
@@ -250,6 +251,93 @@ def test_produce_card_settles_after_creation(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# fill_mode 透传 + 入场日收盘守卫
+# ---------------------------------------------------------------------------
+
+
+def _stamp_at(day: str, hhmmss: str) -> int:
+    from datetime import datetime, time
+    return int(datetime.combine(
+        date.fromisoformat(day), time.fromisoformat(hhmmss)).timestamp() * 1000)
+
+
+def _set_quote_ts(data_dir: Path, day: str, hhmmss: str) -> None:
+    """把某日分区的 `quote_ts` 整列改成给定时刻（盘中快照 / 收盘定稿）。"""
+    from app.decision import bars as bars_mod
+
+    part = data_dir / "kline_daily_enriched" / f"date={day}" / "part.parquet"
+    df = pl.read_parquet(part).with_columns(
+        pl.lit(_stamp_at(day, hhmmss), dtype=pl.Int64).alias("quote_ts"))
+    df.write_parquet(part)
+    bars_mod._TS_CACHE.clear()
+
+
+def test_produce_card_passes_fill_mode(tmp_path: Path):
+    """`fill_mode` 必须从生产者进卡 —— 它不是一个开关，是两个策略。
+
+    `ledger.build_card` 支持它、HTTP 层支持它，中间这一层曾经没有，
+    于是自动路径恒造 `limit`。L1 的收益来自「低开后的日内修复」，必须
+    `open_only`：`limit` 会把「开盘没成交、盘中回落补上」的反向样本收进来
+    （同一批 100 个 pick 上，成交 70 笔 vs 42 笔，逐位口径见
+    `analysis/_diag_l1_loop_walk_findings.md`）。
+    """
+    days = _seed(tmp_path)
+    kw = dict(picks=[{"symbol": SYM, "limit_price": 100.0}],
+              horizon_sessions=0, strategy_id="l1", allow_prior=True)
+
+    over = producer.produce_card(
+        tmp_path, as_of=days[0].isoformat(), fill_mode="open_only", **kw)
+    assert over["status"] == "created"
+    card = ledger.get_card(tmp_path, over["card_id"])
+    assert card["fill_mode"] == "open_only"
+    ok, why = ledger.verify_card(card)
+    assert ok, why
+
+    # 默认仍是 limit：既有卡的承诺哈希不能被这次改动改写。
+    plain = producer.produce_card(tmp_path, as_of=days[1].isoformat(), **kw)
+    assert plain["status"] == "created"
+    assert ledger.get_card(tmp_path, plain["card_id"])["fill_mode"] == "limit"
+
+
+def test_settle_refuses_entry_that_is_not_closed(tmp_path: Path, monkeypatch):
+    """入场日是盘中快照时不许结算 —— 写一次就被 `done` 键永久固化。
+
+    `horizon_sessions=0` 让 exit == entry，所以「今天建卡、今天结算」在盘中
+    完全可能：卡 as_of=D，entry=D+1，若 D+1 正是今天且行情是 10:42 的快照，
+    `close` 就是盘中价。这一支必须挂起，而不是成交。
+    """
+    from app.decision import settle as settle_mod
+
+    days = _seed(tmp_path)
+    as_of, entry = days[0].isoformat(), days[1]
+    out = producer.produce_card(
+        tmp_path, as_of=as_of,
+        picks=[{"symbol": SYM, "limit_price": 100.0, "p_win": 0.6}],
+        horizon_sessions=0, strategy_id="mom")
+    assert out["status"] == "created"
+
+    # 1) entry 就是"今天"，且 quote_ts 读不到 ⇒ unknown ⇒ 不许放行。
+    monkeypatch.setattr(settle_mod, "cn_today", lambda: entry)
+    s = settle(tmp_path)
+    assert s["written"] == 0
+    assert s["pending_reasons"]["entry_not_closed"] == 1
+
+    # 2) entry 变成"过去"但分区里留着 10:42 的盘中时刻 ⇒ 脏数据，仍拒绝：
+    #    等下去不会变，宁可缺样本，不要错样本。
+    _set_quote_ts(tmp_path, entry.isoformat(), "10:42:47")
+    monkeypatch.setattr(settle_mod, "cn_today", lambda: entry + timedelta(days=1))
+    s2 = settle(tmp_path)
+    assert s2["written"] == 0
+    assert s2["pending_reasons"]["entry_not_closed"] == 1
+
+    # 3) 收盘定稿（16:58）⇒ 放行。
+    _set_quote_ts(tmp_path, entry.isoformat(), "16:58:26")
+    s3 = settle(tmp_path)
+    assert s3["written"] == 1
+    assert s3["pending_reasons"]["entry_not_closed"] == 0
+
+
+# ---------------------------------------------------------------------------
 # run_decision_stage：管道入口的旁路语义
 # ---------------------------------------------------------------------------
 
@@ -296,3 +384,99 @@ def test_stage_reports_missing_engine(tmp_path: Path, monkeypatch):
     out = producer.run_decision_stage(repo, engine=None, today=days[0])
     assert out["status"] == "no_engine"
     assert "settle" in out
+
+
+# ---------------------------------------------------------------------------
+# L1 分支：候选不是策略引擎的产物，走 l1_cohort，口径由策略定义决定
+# ---------------------------------------------------------------------------
+
+
+def test_stage_l1_branch_forces_open_only(tmp_path: Path, monkeypatch):
+    """L1 进同一个生产者：`fill_mode` 由策略定义决定，配置覆盖不了。
+
+    L1 的候选就是「开盘 ≤ 限价才买」，用 `limit` 口径结算等于换策略
+    （多出来的是「高开走弱」，实测成交 70 笔 vs 42 笔）。
+    """
+    from app.decision import l1_cohort
+    from app.services import preferences
+
+    days = _seed(tmp_path, n=40)
+    as_of = days[30]
+    monkeypatch.setattr(
+        preferences, "get_decision_auto_config",
+        lambda: _prefs(enabled=True, strategy_id=l1_cohort.L1_STRATEGY_ID,
+                       horizon=0, fill_mode="limit", allow_prior=True))
+    repo = KlineRepository(DataStore(tmp_path))
+    out = producer.run_decision_stage(repo, engine=None, today=as_of)
+    assert out["status"] == "created", out
+
+    card = ledger.load_cards(tmp_path)[0]
+    assert card["fill_mode"] == "open_only"      # 配置写的是 limit，被强制覆盖
+    assert card["horizon_sessions"] == 0
+    assert (card.get("forecast") or {}).get("source") == "l1_cohort"
+
+
+def test_stage_l1_refuses_intraday_as_of(tmp_path: Path, monkeypatch):
+    """盘中分区不能建卡：拿「截至此刻」的排名当收盘排名，错名单会被永久封存。"""
+    from app.decision import l1_cohort
+    from app.services import preferences
+
+    days = _seed(tmp_path, n=40)
+    monkeypatch.setattr(
+        preferences, "get_decision_auto_config",
+        lambda: _prefs(enabled=True, strategy_id=l1_cohort.L1_STRATEGY_ID,
+                       horizon=0, allow_prior=True))
+    monkeypatch.setattr("app.decision.settle.entry_session_state",
+                        lambda _d, _x: ("intraday", "mock：盘中快照"))
+    repo = KlineRepository(DataStore(tmp_path))
+    out = producer.run_decision_stage(repo, engine=None, today=days[30])
+    assert out["status"] == "skipped_not_closed", out
+    assert ledger.load_cards(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# L1 分支：候选不是策略引擎的产物，走 l1_cohort，口径由策略定义决定
+# ---------------------------------------------------------------------------
+
+
+def test_stage_l1_branch_forces_open_only(tmp_path: Path, monkeypatch):
+    """L1 进同一个生产者：`fill_mode` 由策略定义决定，配置覆盖不了。
+
+    L1 的候选就是「开盘 ≤ 限价才买」，用 `limit` 口径结算等于换策略
+    （多出来的是「高开走弱」，实测成交 70 笔 vs 42 笔）。
+    """
+    from app.decision import l1_cohort
+    from app.services import preferences
+
+    days = _seed(tmp_path, n=40)
+    as_of = days[30]
+    monkeypatch.setattr(
+        preferences, "get_decision_auto_config",
+        lambda: _prefs(enabled=True, strategy_id=l1_cohort.L1_STRATEGY_ID,
+                       horizon=0, fill_mode="limit", allow_prior=True))
+    repo = KlineRepository(DataStore(tmp_path))
+    out = producer.run_decision_stage(repo, engine=None, today=as_of)
+    assert out["status"] == "created", out
+
+    card = ledger.load_cards(tmp_path)[0]
+    assert card["fill_mode"] == "open_only"      # 配置写的是 limit，被强制覆盖
+    assert card["horizon_sessions"] == 0
+    assert (card.get("forecast") or {}).get("source") == "l1_cohort"
+
+
+def test_stage_l1_refuses_intraday_as_of(tmp_path: Path, monkeypatch):
+    """盘中分区不能建卡：拿「截至此刻」的排名当收盘排名，错名单会被永久封存。"""
+    from app.decision import l1_cohort
+    from app.services import preferences
+
+    days = _seed(tmp_path, n=40)
+    monkeypatch.setattr(
+        preferences, "get_decision_auto_config",
+        lambda: _prefs(enabled=True, strategy_id=l1_cohort.L1_STRATEGY_ID,
+                       horizon=0, allow_prior=True))
+    monkeypatch.setattr("app.decision.settle.entry_session_state",
+                        lambda _d, _x: ("intraday", "mock：盘中快照"))
+    repo = KlineRepository(DataStore(tmp_path))
+    out = producer.run_decision_stage(repo, engine=None, today=days[30])
+    assert out["status"] == "skipped_not_closed", out
+    assert ledger.load_cards(tmp_path) == []

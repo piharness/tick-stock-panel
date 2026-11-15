@@ -25,6 +25,8 @@ from pydantic import BaseModel, Field
 from app.decision import bars, pwin as pwin_mod
 from app.decision import gates as gates_mod
 from app.decision import ledger, producer as producer_mod, settle as settle_mod
+from app.decision import l1_cohort as l1_cohort_mod
+from app.decision.l1_cohort import L1_TOP_N
 
 router = APIRouter(prefix="/api/decision", tags=["decision"])
 
@@ -62,6 +64,9 @@ class CardModel(BaseModel):
     benchmark: str = "000300.SH"
     strategy_id: str | None = None
     account_id: str = "default"
+    #: 撮合口径，见 `app.decision.ledger.FILL_MODES`。`open_only` 只认集合竞价，
+    #: 用于 L1 这类「收益全在开盘→收盘这一段」的策略。
+    fill_mode: str = "limit"
     forecast: dict[str, Any] | None = None
     allow_stop: bool = False
     override_reason: str | None = None
@@ -242,6 +247,7 @@ def create_card(req: CardModel, request: Request) -> dict[str, Any]:
             forecast=forecast or None,
             gates=gate.to_dict(),
             override_reason=req.override_reason if gate.blocked else None,
+            fill_mode=req.fill_mode,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -255,6 +261,34 @@ def create_card(req: CardModel, request: Request) -> dict[str, Any]:
         "pwin": pwin_source,
         "note": None if created else "同内容的卡已存在，未重复写入（幂等）。",
     }
+
+
+@router.get("/l1/candidates")
+def l1_candidates(
+    request: Request,
+    as_of: str | None = Query(default=None),
+    top_n: int = Query(default=L1_TOP_N, ge=1, le=50),
+) -> dict[str, Any]:
+    """L1 缺口反转的次日挂单清单（收盘后调用，次日 9:20–9:25 照此挂单）。
+
+    **它给的是限价，不是名单。** 只有开盘 ≤ 限价的那些才成交——那一步由次日盘后的
+    `POST /settle` 判定（卡的 `fill_mode=open_only`）。把返回的 20 只全部买入，
+    是一个未经检验的策略；研究测的是「低开的那 8.7 只」。
+
+    两点常被误读，所以写在响应里而不是文档里：
+    - `entry_date` 为空 ⇒ 次日分区还没落盘，不是「明天没有交易」；
+    - 该日不是最新分区时 `warnings` 会直说——用过期收盘价算出的限价是错的。
+    """
+    data_dir = _data_dir(request)
+    day = as_of or bars.latest_session(data_dir, bars.STOCK_ENRICHED)
+    if not day:
+        raise HTTPException(status_code=400, detail="没有可用交易日：请先同步日K数据")
+    try:
+        return l1_cohort_mod.candidates(data_dir, day, top_n=top_n)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/settle")

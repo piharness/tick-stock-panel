@@ -314,12 +314,52 @@ def set_minute_batch_symbols(size: int) -> int:
 # ===== 回测/优化 worker RSS 上限 (GiB) =====
 # 环境变量 TICK_WORKER_RSS_LIMIT_BYTES 仍是更高优先级的部署级覆盖 (见
 # app/backtest/worker.py 的解析顺序); 这里只承接设置页的界面化配置。
+#
+# 这个数是**杀进程的阈值**, 不是配额: 超了就 terminate 并给明确报错。因此它
+# 必须同时满足两件事 —— 高于真实峰值 (否则误杀合法任务), 低于容器余量
+# (否则一个泄漏的 worker 会把 API 进程一起 OOM 掉)。
+#
+# 2026-11-13 实测 (Ryzen 7 5700X / 32GiB 主机, Docker VM 8C/11.68GiB):
+#   - 全市场 × 365 天 × 真实策略单次回测: peak 0.644 GiB, 7.3s
+#   - 优化器 4 线程 × 9 组合:              peak 0.554 GiB, 8.4s
+#   - 容器稳态 (API + 缓存):                1.23 GiB
+# 即默认 6 GiB 是实测峰值的 9.3 倍, 从未触发; 而界面允许填到 64 GiB ——
+# 在 12 GiB 的容器里填 64 只会把「worker 超限」变成「整容器被 OOM」。
+# 所以上限改为跟随容器内存 (60%), 默认值保持不变 (通用安装的保守值)。
 _BACKTEST_RSS_LIMIT_GIB_DEFAULT = 6
 _BACKTEST_RSS_LIMIT_GIB_MAX = 64
+#: worker 最多能占容器总内存的比例。其余留给 API 进程、页缓存与算子峰值。
+_RSS_LIMIT_BUDGET_SHARE = 0.6
+
+
+def _rss_limit_ceiling_gib() -> int:
+    """本机允许配置的上限 (GiB): 容器总内存 × 60%, 读不到则退回 64。
+
+    读不到 cgroup 时不收紧 —— 宁可给通用上限, 也不要因为探测失败把合法
+    任务的上限压到 1 GiB。
+    """
+    try:
+        from app.services.memory_budget import memory_budget
+
+        total = memory_budget().total_bytes
+    except Exception:  # noqa: BLE001
+        return _BACKTEST_RSS_LIMIT_GIB_MAX
+    if total <= 0:
+        return _BACKTEST_RSS_LIMIT_GIB_MAX
+    derived = int(total / 1024**3 * _RSS_LIMIT_BUDGET_SHARE)
+    return min(_BACKTEST_RSS_LIMIT_GIB_MAX, max(1, derived))
+
+
+def backtest_rss_limit_ceiling_gib() -> int:
+    """本机允许配置的上限 (GiB), 供设置页把输入框 max 绑到真实硬件。
+
+    界面要是还按 64 显示, 用户填 20 保存后会被静默改成 7 —— 看起来像丢配置。
+    """
+    return _rss_limit_ceiling_gib()
 
 
 def get_backtest_worker_rss_limit_gib() -> int:
-    """回测/优化独立 worker 的 RSS 上限 (GiB)。默认 6, 范围 [0, 64], 0 = 不限制。
+    """回测/优化独立 worker 的 RSS 上限 (GiB)。默认 6, 范围 [0, 本机上限], 0 = 不限制。
 
     单位是 GiB 而非字节: 界面与报错文案均以 GiB 呈现, 换算只发生在
     worker.py 的字节级解析处, 避免两套单位并存。
@@ -329,11 +369,16 @@ def get_backtest_worker_rss_limit_gib() -> int:
         gib = int(raw)
     except (TypeError, ValueError):
         gib = _BACKTEST_RSS_LIMIT_GIB_DEFAULT
-    return max(0, min(_BACKTEST_RSS_LIMIT_GIB_MAX, gib))
+    ceiling = _rss_limit_ceiling_gib()
+    if gib > ceiling:
+        # 配置来自更大内存的机器 (或手工编辑): 收紧而不是照做, 否则 worker
+        # 还没到自己的上限, 容器就先被 OOM 杀了。0 表示不限制, 同样要收紧。
+        return ceiling
+    return max(0, gib)
 
 
 def set_backtest_worker_rss_limit_gib(gib: int) -> int:
-    gib = max(0, min(_BACKTEST_RSS_LIMIT_GIB_MAX, int(gib)))
+    gib = max(0, min(_rss_limit_ceiling_gib(), int(gib)))
     save({"backtest_worker_rss_limit_gib": gib})
     return gib
 
@@ -429,6 +474,10 @@ def get_pipeline_regime_enabled() -> bool:
 # 是用户显式选择的策略, 这是"先让账本可信, 再谈自动化"(§7)的延续。
 
 _DECISION_BASIS_VALUES = ("abs", "median")
+#: 撮合口径。`limit` 是历史默认（开盘没成交、盘中回落可补），`open_only` 只在
+#: 开盘成交。两者不是一个开关的两档，是两个策略——同一批 pick 实测成交
+#: 70 vs 42 笔（`analysis/_diag_l1_loop_walk_findings.md`）。
+_DECISION_FILL_MODES = ("limit", "open_only")
 
 
 def get_decision_auto_config() -> dict:
@@ -442,11 +491,17 @@ def get_decision_auto_config() -> dict:
     except (TypeError, ValueError):
         top_n = 20
     try:
-        horizon = max(1, min(250, int(horizon)))
+        # 下限是 0，不是 1：`ledger.build_card` 明确把 0 定义为「入场日收盘出场」
+        # （L1 的回合），钉在 1 会让「持有 1 天」冒充「回合」——多隔的那一夜
+        # 实测是负的（R5：−67.2bp，t −8.88）。
+        horizon = max(0, min(250, int(horizon)))
     except (TypeError, ValueError):
         horizon = 20
     if basis not in _DECISION_BASIS_VALUES:
         basis = "median"
+    fill_mode = str(raw.get("decision_auto_fill_mode", "limit") or "limit")
+    if fill_mode not in _DECISION_FILL_MODES:
+        fill_mode = "limit"
     return {
         "enabled": bool(raw.get("decision_auto_enabled", False)),
         "strategy_id": str(raw.get("decision_auto_strategy_id", "") or "").strip(),
@@ -455,6 +510,13 @@ def get_decision_auto_config() -> dict:
         "basis": basis,
         "account_id": str(raw.get("decision_auto_account_id", "default") or "default"),
         "allow_prior": bool(raw.get("decision_auto_allow_prior", False)),
+        #: 撮合口径。L1 分支会忽略它并强制 `open_only`（那是策略定义的一部分）。
+        "fill_mode": fill_mode,
+        #: 建卡后是否自动下单到该账户的模拟盘。默认关：下单是第一个动资金的
+        #: 动作，必须显式打开。开之前请确认 `decision_auto_strategy_id` 指向
+        #: 的是你真正想执行的那条腿——配置里的默认值（trend_breakout）在
+        #: 三百多天实测里是负的。
+        "execute": bool(raw.get("decision_auto_execute", False)),
     }
 
 
