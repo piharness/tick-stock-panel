@@ -50,7 +50,7 @@ from typing import Any
 import polars as pl
 
 from app.market_time import cn_now, cn_today, in_continuous_session
-from app.services import minute_adjust, preferences
+from app.services import minute_adjust, minute_fetch_proc, preferences
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class _RefreshState:
     rounds: int = 0
     last_round_at: float | None = None      # epoch 秒
     last_round_ms: float | None = None      # 单轮耗时
-    last_rows: int = 0                      # 上轮写入行数 (合并后)
+    last_rows: int = 0                      # 上轮写入行数 (本次输入, 非分区高度)
     last_symbols: int = 0                   # 上轮覆盖标的数
     last_requests: int = 0                  # 上轮请求数 (增量恒 1, 修复=分块数+重试)
     last_mode: str | None = None            # 上轮模式: "increment" / "full"
@@ -91,6 +91,67 @@ class _RefreshState:
     extra: dict[str, Any] = field(default_factory=dict)
     minute_basis_raw: bool | None = None   # 上轮落盘时本地库是否 raw 基准
     basis_warned: bool = False             # 混基准风险只警告一次
+
+
+def tradable_symbols(
+    data_dir,
+    instruments,
+    *,
+    today,
+    lookback_days: int = 30,
+    new_listing_days: int = 30,
+    extra: set[str] | None = None,
+) -> list[str]:
+    """维表 ∩ 近期有日线, 并上新上市与 `extra`(今日已有分钟行)。
+
+    这是取数池的**唯一实现**: 盘中刷新与任何"按标的扫分钟"的调用方都该用它,
+    否则「哪 312 只不该拉」会被写第二遍 (见 memory: 同一映射写两遍只覆盖一份)。
+    """
+    from datetime import timedelta
+    from pathlib import Path
+
+    if instruments.is_empty() or "symbol" not in instruments.columns:
+        return []
+    universe = set(instruments["symbol"].cast(pl.Utf8).unique().to_list())
+
+    root = Path(data_dir) / "kline_daily"
+    cutoff = today - timedelta(days=lookback_days)
+    try:
+        seen = set(
+            pl.scan_parquet(
+                str(root / "**" / "*.parquet"),
+                missing_columns="insert", extra_columns="ignore",
+            )
+            .filter(pl.col("date") >= cutoff)
+            .select("symbol").unique().collect()["symbol"].to_list()
+        )
+    except Exception as exc:  # noqa: BLE001 — 目录缺失/文件损坏都归为「读不到」
+        raise RuntimeError(f"近期日线无法读取: {exc}") from exc
+    if not seen:
+        # 日线盘读不到时**不许**收缩标的池: 空池 = 整轮空数据, 比多拉 312 只贵得多。
+        raise RuntimeError("近期日线为空, 无法判定取数池")
+
+    keep = universe & seen
+
+    if "listing_date" in instruments.columns:
+        raw = pl.col("listing_date")
+        listing_date = (
+            raw.cast(pl.Utf8).str.to_date(strict=False)
+            if instruments.schema["listing_date"] == pl.Utf8
+            else raw.cast(pl.Date, strict=False)
+        )
+        listing = instruments.select(
+            pl.col("symbol").cast(pl.Utf8), listing_date.alias("listing_date"),
+        )
+        fresh = set(
+            listing.filter(pl.col("listing_date") >= today - timedelta(days=new_listing_days))
+            ["symbol"].to_list()
+        )
+        keep |= universe & fresh
+
+    if extra:
+        keep |= universe & set(extra)
+    return sorted(keep)
 
 
 class MinuteRefreshService:
@@ -103,7 +164,14 @@ class MinuteRefreshService:
         self._stop = threading.Event()
         self._state = _RefreshState()
         self._round_lock = threading.Lock()  # 同时只允许一轮 (手动触发与定时轮互斥)
+        #: 上一次的门控原因, 只在变化时打日志 —— 每 2s 一轮刷屏没意义, 但
+        #: 「为什么不跑」必须有一次明确答案 (2026-11-13: 开了开关却 15 分钟没轮次,
+        #: 而 `_gate_reason` 只返回字符串、从不落日志, 排查只能猜)。
+        self._last_gate: object = object()
         self._empty_rounds = 0               # 连续空轮计数 (escalate 到全天修复)
+        #: 取数池缓存 (date, symbols)。日线扫描要读上百个分区, 一轮一次太贵;
+        #: 但绝不能缓存到跨天 —— 新股上市/退市每天都在变。
+        self._universe_cache: tuple[date, list[str]] | None = None
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -219,6 +287,16 @@ class MinuteRefreshService:
             return "holiday"
         return None
 
+    def _note_gate(self, reason: str | None) -> None:
+        """门控原因变化时落一条日志 —— 「服务开着但一轮没跑」必须能查。"""
+        if reason == self._last_gate:
+            return
+        self._last_gate = reason
+        if reason is None:
+            logger.info("全量分钟: 门控放行, 开始刷新")
+        else:
+            logger.info("全量分钟: 暂停刷新 (%s)", reason)
+
     # ------------------------------------------------------------------
     # 主循环
     # ------------------------------------------------------------------
@@ -227,6 +305,7 @@ class MinuteRefreshService:
         while not self._stop.is_set():
             try:
                 reason = self._gate_reason()
+                self._note_gate(reason)
                 if reason is None:
                     interval = self._effective_interval()
                     started = time.time()
@@ -307,8 +386,11 @@ class MinuteRefreshService:
                 # fetch 计时只覆盖网络取数; full 分支的 universe 维表读取不计入
                 fetch_started = time.perf_counter()
                 if custom is not None:
-                    latest = kline_sync.fetch_intraday_custom_latest(custom, provider_name)
-                    df, requests = latest if latest is not None else (pl.DataFrame(), 0)
+                    # 自定义源经子进程取数: 原生传输层整段调用会冻住解释器
+                    # (实测开刷新 8s 内 HTTP 全挂, 独立进程则 0.094s 无波动)。
+                    df, requests = minute_fetch_proc.fetch_via_child(
+                        "custom_latest", provider_name,
+                    )
                 else:
                     df, requests = kline_sync.fetch_intraday_universe_increment()
                 self._state.last_symbols = (
@@ -323,8 +405,14 @@ class MinuteRefreshService:
                     return
                 fetch_started = time.perf_counter()
                 if custom is not None:
-                    df, requests = kline_sync.fetch_intraday_custom_batch(
-                        custom, provider_name, symbols,
+                    # **一次调用传全池**, 分片由 provider 自己做: tdx 的
+                    # `get_intraday_batch` 内部 `_scan_slice(_SCAN_BATCH=500)` 从持久
+                    # 游标取一段并推进, 一轮就是 500 只 (~2-3 分钟), 全市场靠多轮
+                    # 轮转覆盖。2026-11-13 我在这一层又切了 500/块 ⇒ 一轮变成 12 次
+                    # 调用、每次 200s+, 整轮 40 分钟且每块撞 300s 超时 → 0 行落盘。
+                    # 分片只能有一处, 放在理解游标的那一层。
+                    df, requests = minute_fetch_proc.fetch_via_child(
+                        "custom_batch", provider_name, symbols,
                     )
                 else:
                     capset = getattr(self._app_state, "capabilities", None) if self._app_state else None
@@ -357,7 +445,7 @@ class MinuteRefreshService:
             # 且会共用同一 tmp 文件交错损坏。实测增量轮落盘 ~10ms, 锁占用可忽略。
             with self._repo._write_lock:
                 written = kline_sync._write_minute_partition(
-                    df, self._repo.store.data_dir / "kline_minute",
+                    df, self._repo.store.data_dir / "kline_minute", origin="refresh",
                 )
             write_ms = (time.perf_counter() - write_started) * 1000
 
@@ -375,11 +463,64 @@ class MinuteRefreshService:
         )
 
     def _universe(self) -> list[str]:
-        """全市场 A 股标的 (instruments 维表, 与盘后分钟同步同一来源)。"""
+        """全市场 A 股标的 = 维表 ∩ 近期有日线 (∪ 新上市 ∪ 今日已有分钟行)。
+
+        ## 为什么不再直接用维表 (2026-11-13 实测)
+
+        tdx 对没有交易的代码会 **3 次重试 + 超时**, 而维表里有 312 只**从来没有
+        日线**的退市票 (退市鹏博/退市苏吴/…)。它们占标的 5.3%, 却吃掉一轮取数的
+        绝大部分时间: 1000 只分块跑 5 分钟没完成, 日志里连续
+        `[W] hq all 3 attempts returned empty K-line for 000780/000787/…`。
+
+        筛选口径是「近期有日线」而不是「今天有数据」: 停牌票今天本来就没有数据,
+        按今天筛会把它们永久踢出池子, 复牌当天就丢分钟线。因此用**回看窗口**
+        (默认 30 天) + 上市日期兜底, 并显式并上「今日分区已有行」的代码 ——
+        复牌股只要写过一次就不会被下一次筛选挤掉。
+
+        扫描失败时退回完整维表 (fail-open): 少拉几只票是数据缺口, 而漏掉整个
+        市场的分钟线是事故。
+
+        **已知边界**: 停牌超过回看窗口、且当天才复牌的票, 当天不会进池 (它今天
+        还没有分钟行, 也还没有日线)。这天由 15:35 盘后分钟同步兜底 —— 那条路用
+        完整维表, 不依赖这里的筛选。
+        """
         inst = self._repo.get_instruments()
         if inst.is_empty() or "symbol" not in inst.columns:
             return []
-        return inst["symbol"].cast(pl.Utf8).unique().sort().to_list()
+        all_symbols = inst["symbol"].cast(pl.Utf8).unique().sort().to_list()
+        today = cn_today()
+        if self._universe_cache is not None and self._universe_cache[0] == today:
+            return self._universe_cache[1]
+        try:
+            symbols = tradable_symbols(
+                self._repo.store.data_dir, inst, today=today, extra=self._today_minute_symbols(),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("取数池筛选失败, 退回完整维表 %d 只: %s", len(all_symbols), exc)
+            symbols = all_symbols
+        if len(symbols) != len(all_symbols):
+            logger.info(
+                "取数池: %d 只 (维表 %d, 剔除 %d 只近期无日线)",
+                len(symbols), len(all_symbols), len(all_symbols) - len(symbols),
+            )
+        self._universe_cache = (today, symbols)
+        return symbols
+
+    def _today_minute_symbols(self) -> set[str]:
+        """今日分钟分区里已存在的代码; 读不到返回空集 (不参与筛选)。"""
+        with contextlib.suppress(Exception):
+            part = (
+                self._repo.store.data_dir / "kline_minute"
+                / f"date={cn_today().isoformat()}"
+            )
+            if part.is_dir():
+                frames = [
+                    pl.read_parquet(p, columns=["symbol"])
+                    for p in sorted(part.glob("*.parquet"))
+                ]
+                if frames:
+                    return set(pl.concat(frames)["symbol"].drop_nulls().to_list())
+        return set()
 
     # ------------------------------------------------------------------
     # 状态

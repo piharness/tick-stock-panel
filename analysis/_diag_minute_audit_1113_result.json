@@ -15,9 +15,12 @@
     "money_bad": 1,
     "gap_bad": 1,
     "phantom": 0,
+    "quarantined": 0,
     "block_1500": 9,
     "daily_bad": 6,
-    "filler": 7
+    "filler": 7,
+    "days_missing_partition": 0,
+    "days_error": 0
   },
   "days": [
     {
@@ -29,6 +32,7 @@
       "money_bad": 0,
       "gap_bad": 0,
       "phantom": 0,
+      "quarantined": 0,
       "block_1500": 2,
       "block_1500_detail": [
         {
@@ -68,6 +72,7 @@
       "money_bad": 0,
       "gap_bad": 0,
       "phantom": 0,
+      "quarantined": 0,
       "block_1500": 1,
       "block_1500_detail": [
         {
@@ -101,6 +106,7 @@
       "money_bad": 1,
       "gap_bad": 1,
       "phantom": 0,
+      "quarantined": 0,
       "block_1500": 1,
       "block_1500_detail": [
         {
@@ -146,6 +152,7 @@
       "money_bad": 0,
       "gap_bad": 0,
       "phantom": 0,
+      "quarantined": 0,
       "block_1500": 1,
       "block_1500_detail": [
         {
@@ -179,6 +186,7 @@
       "money_bad": 0,
       "gap_bad": 0,
       "phantom": 0,
+      "quarantined": 0,
       "block_1500": 3,
       "block_1500_detail": [
         {
@@ -232,6 +240,7 @@
       "money_bad": 0,
       "gap_bad": 0,
       "phantom": 0,
+      "quarantined": 0,
       "block_1500": 1,
       "block_1500_detail": [
         {
@@ -264,6 +273,7 @@
     "min_all_mismatch": 5,
     "min_can_mismatch": 5,
     "rows": 33430,
+    "missing": 0,
     "daily_bad_detail": [
       {
         "day": "2026-11-05",
@@ -297,10 +307,9 @@
         "m_all": 16746.0,
         "m_can": 16746.0
       }
-    ],
-    "missing": 0
+    ]
   },
-  "reading_template": "{days} 个交易日：标注异常 {label_bad} 处、金额异常 {money_bad} 处，其中 {phantom} 行是 13:00 幽灵（11:30 那根的副本）、{filler} 只是停牌合成网格；扣掉网格外行后仍对不上账的 {gap_bad} 处。另有 {block_1500} 根收盘 bar 的均价与收盘价不符（不进 OHLC 却进量额的成交），{daily_bad} 行日线自身的 amount/(volume·100) 已越出该行 low/high。",
+  "reading_template": "{days} 个交易日：标注异常 {label_bad} 处、金额异常 {money_bad} 处，其中 {phantom} 行是 13:00 幽灵（11:30 那根的副本）、{filler} 只是停牌合成网格；扣掉网格外行后仍对不上账的 {gap_bad} 处。另有 {block_1500} 根收盘 bar 的均价与收盘价不符（不进 OHLC 却进量额的成交），{daily_bad} 行日线自身的 amount/(volume·100) 已越出该行 low/high。落盘路径另隔离了 {quarantined} 行越界副本（不进量额，证据留在 data/_quarantine/）。",
   "reading_fields": {
     "days": "$totals.days",
     "label_bad": "$totals.label_bad",
@@ -309,7 +318,8 @@
     "filler": "$totals.filler",
     "gap_bad": "$totals.gap_bad",
     "block_1500": "$totals.block_1500",
-    "daily_bad": "$totals.daily_bad"
+    "daily_bad": "$totals.daily_bad",
+    "quarantined": "$totals.quarantined"
   },
-  "reading": "6 个交易日：标注异常 0 处、金额异常 1 处，其中 0 行是 13:00 幽灵（11:30 那根的副本）、7 只是停牌合成网格；扣掉网格外行后仍对不上账的 1 处。另有 9 根收盘 bar 的均价与收盘价不符（不进 OHLC 却进量额的成交），6 行日线自身的 amount/(volume·100) 已越出该行 low/high。"
+  "reading": "6 个交易日：标注异常 0 处、金额异常 1 处，其中 0 行是 13:00 幽灵（11:30 那根的副本）、7 只是停牌合成网格；扣掉网格外行后仍对不上账的 1 处。另有 9 根收盘 bar 的均价与收盘价不符（不进 OHLC 却进量额的成交），6 行日线自身的 amount/(volume·100) 已越出该行 low/high。落盘路径另隔离了 0 行越界副本（不进量额，证据留在 data/_quarantine/）。"
 }

@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import polars as pl
+import pytest
 
 from app.services import minute_refresh, preferences
 from app.services.minute_refresh import MinuteRefreshService, _in_continuous_session
@@ -147,9 +148,10 @@ def test_run_round_writes_partition_and_updates_status(tmp_path, monkeypatch):
         calls["symbols"] = list(symbols)
         return (minute_df, 1)
 
-    def fake_write(df, minute_dir):
+    def fake_write(df, minute_dir, **_kw):
         calls["dir"] = minute_dir
         calls["rows"] = df.height
+        calls["origin"] = _kw.get("origin")
         return df.height
 
     monkeypatch.setattr(
@@ -161,6 +163,7 @@ def test_run_round_writes_partition_and_updates_status(tmp_path, monkeypatch):
 
     assert calls["symbols"] == ["600000.SH"]
     assert calls["rows"] == 1
+    assert calls["origin"] == "refresh", "全量分钟轮的落盘必须带 origin=refresh"
     st = svc.status()
     assert st["rounds"] == 1
     assert st["last_rows"] == 1
@@ -204,7 +207,7 @@ def _patch_round(monkeypatch, *, lag, inc_df, burst_df):
     )
     monkeypatch.setattr(
         "app.services.kline_sync._write_minute_partition",
-        lambda df, minute_dir: df.height,
+        lambda df, minute_dir, **_kw: df.height,
     )
     return calls
 
@@ -312,8 +315,31 @@ def _patch_write(monkeypatch) -> dict:
     calls = {"rows": None}
     monkeypatch.setattr(
         "app.services.kline_sync._write_minute_partition",
-        lambda df, minute_dir: calls.update(rows=df.height) or df.height,
+        lambda df, minute_dir, **_kw: calls.update(rows=df.height) or df.height,
     )
+    return calls
+
+
+def _patch_child_fetch(monkeypatch, provider) -> list[tuple[str, list[str]]]:
+    """把「子进程取数」换成进程内直调, 保留「用了哪个端点」的断言。
+
+    真实路径把取数放在子进程里（原生传输层会冻住解释器, 见
+    `app/services/minute_fetch_proc.py`）; 单元测试无法跨进程观察 provider.calls,
+    因此在这里接管边界, 内部仍调用真实包装函数 `fetch_intraday_custom_*` ——
+    时区守卫、chunk 计数、批量→get_minute 回退都照旧被验到。
+    """
+    from app.services import kline_sync
+
+    calls: list[tuple[str, list[str]]] = []
+
+    def _fake(kind, name, symbols=None, **_kwargs):
+        calls.append((kind, list(symbols or [])))
+        if kind == "custom_batch":
+            return kline_sync.fetch_intraday_custom_batch(provider, name, symbols or [])
+        latest = kline_sync.fetch_intraday_custom_latest(provider, name)
+        return latest if latest is not None else (pl.DataFrame(), 0)
+
+    monkeypatch.setattr(minute_refresh.minute_fetch_proc, "fetch_via_child", _fake)
     return calls
 
 
@@ -326,7 +352,9 @@ def test_custom_provider_full_round_via_intraday_batch(tmp_path, monkeypatch):
         lambda self: None,  # 冷启动 → 全天修复
     )
     write_calls = _patch_write(monkeypatch)
+    kinds = _patch_child_fetch(monkeypatch, provider)
     svc._run_round()
+    assert kinds == [("custom_batch", ["600000.SH"])]
     assert provider.calls["batch"] == ["600000.SH"]
     assert write_calls["rows"] == 2
     st = svc.status()
@@ -344,7 +372,9 @@ def test_custom_provider_increment_round_via_latest(tmp_path, monkeypatch):
         lambda self: 0.2,
     )
     _patch_write(monkeypatch)
+    kinds = _patch_child_fetch(monkeypatch, provider)
     svc._run_round()
+    assert kinds == [("custom_latest", [])]
     assert provider.calls == {"latest": 3}
     st = svc.status()
     assert st["last_mode"] == "increment"
@@ -362,8 +392,10 @@ def test_custom_provider_latest_missing_forces_full_with_minute_fallback(tmp_pat
         lambda self: 0.2,  # 覆盖新鲜 → 本应增量
     )
     _patch_write(monkeypatch)
+    kinds = _patch_child_fetch(monkeypatch, provider)
     svc._run_round()
     # 增量退化为修复: 走 get_minute 回退 (chunk 回调统计请求数)
+    assert kinds == [("custom_batch", ["600000.SH"])]
     assert "minute" in provider.calls
     assert provider.calls["minute"]["symbols"] == ["600000.SH"]
     assert svc.status()["last_mode"] == "full"
@@ -483,3 +515,138 @@ def test_status_endpoint_without_service():
     resp = client.get("/api/settings/minute-refresh/status")
     assert resp.status_code == 200
     assert resp.json() == {"available": False}
+
+
+def test_gate_reason_logs_only_on_change(tmp_path, monkeypatch, caplog):
+    """「开着但不跑」必须能查: 原因变化时落一条, 相同原因不刷屏。"""
+    svc = _svc(tmp_path, monkeypatch)
+    with caplog.at_level("INFO", logger="app.services.minute_refresh"):
+        svc._note_gate("disabled")
+        svc._note_gate("disabled")
+        svc._note_gate("capability")
+        svc._note_gate(None)
+
+    messages = [
+        r.getMessage() for r in caplog.records
+        if "暂停刷新" in r.getMessage() or "门控放行" in r.getMessage()
+    ]
+    assert len(messages) == 3, messages
+    assert "disabled" in messages[0]
+    assert "capability" in messages[1]
+    assert "放行" in messages[2]
+
+
+# --------------------------------------------------------------- 取数池筛选
+def _seed_daily(root, rows):
+    import polars as pl
+    from datetime import date
+    part = root / "kline_daily" / "date=2026-11-12"
+    part.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({
+        "symbol": [r[0] for r in rows],
+        "date": [r[1] for r in rows],
+        "open": [10.0] * len(rows), "high": [10.0] * len(rows),
+        "low": [10.0] * len(rows), "close": [10.0] * len(rows),
+        "volume": [1.0] * len(rows), "amount": [1.0] * len(rows),
+    }).write_parquet(part / "part.parquet")
+
+
+def test_tradable_symbols_drops_delisted_keeps_fresh_and_extra(tmp_path):
+    """退市票 (从无日线) 剔除; 新上市 / 今日已有分钟行 必须保留。"""
+    import polars as pl
+    from datetime import date
+
+    _seed_daily(tmp_path, [
+        ("600000.SH", date(2026, 11, 12)),
+        ("600001.SH", date(2026, 10, 20)),   # 一个月前停牌 → 仍在窗口内
+    ])
+    inst = pl.DataFrame({
+        "symbol": ["600000.SH", "600001.SH", "600002.SH", "600003.SH"],
+        "listing_date": ["1999-01-01", "1999-01-01", "1999-01-01", "2026-11-10"],
+    })
+
+    kept = minute_refresh.tradable_symbols(
+        tmp_path, inst, today=date(2026, 11, 13), extra={"600003.SH"},
+    )
+    # 600002 从无日线且非新上市 → 剔除; 600003 新上市 + 今日已有行 → 保留
+    assert kept == ["600000.SH", "600001.SH", "600003.SH"]
+
+
+def test_tradable_symbols_fails_open_when_daily_unreadable(tmp_path):
+    """读不到日线时抛错, 让调用方退回完整维表 —— 绝不返回空池。"""
+    import polars as pl
+    from datetime import date
+
+    inst = pl.DataFrame({"symbol": ["600000.SH"], "listing_date": ["1999-01-01"]})
+    with pytest.raises(RuntimeError):
+        minute_refresh.tradable_symbols(tmp_path, inst, today=date(2026, 11, 13))
+
+
+def test_universe_falls_back_to_instruments_on_scan_error(tmp_path, monkeypatch):
+    """筛选异常 → 用完整维表 (少拉票是缺口, 空池是事故)。"""
+    import polars as pl
+    from datetime import date
+
+    svc = _svc(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        svc._repo, "get_instruments",
+        lambda: pl.DataFrame({"symbol": ["600000.SH", "600002.SH"]}),
+    )
+    monkeypatch.setattr(minute_refresh, "cn_today", lambda: date(2026, 11, 13))
+    monkeypatch.setattr(
+        minute_refresh, "tradable_symbols",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    assert svc._universe() == ["600000.SH", "600002.SH"]
+
+
+def test_round_passes_whole_pool_in_one_call(tmp_path, monkeypatch):
+    """分片只能有一处: provider 内部按游标取 500 只, 这一层不许再切。
+
+    2026-11-13 事故: 在 `minute_refresh` 又按 500 切了一次 ⇒ 一轮变成 12 次
+    调用、每次 200s+、整轮 40 分钟且每块撞超时 → 0 行落盘。
+    """
+    provider = _FakeCustomProvider(batch=True)
+    svc = _svc(tmp_path, monkeypatch, full_minute_provider="myfm", custom=provider)
+    monkeypatch.setattr(
+        minute_refresh.MinuteRefreshService, "_today_coverage_lag_minutes",
+        lambda self: None,
+    )
+    _patch_write(monkeypatch)
+    calls = []
+    def _fake(kind, name, symbols=None, **_kwargs):
+        calls.append((kind, list(symbols or [])))
+        return provider.get_intraday_batch(symbols), 1
+
+    monkeypatch.setattr(minute_refresh.minute_fetch_proc, "fetch_via_child", _fake)
+    svc._run_round()
+    assert len(calls) == 1, calls
+    kind, passed = calls[0]
+    assert kind == "custom_batch"
+    assert passed == ["600000.SH"]
+
+
+def test_round_passes_whole_pool_in_one_call(tmp_path, monkeypatch):
+    """分片只能有一处: provider 内部按游标取 500 只, 这一层不许再切。
+
+    2026-11-13 事故: 在 `minute_refresh` 又按 500 切了一次 ⇒ 一轮变成 12 次
+    调用、每次 200s+、整轮 40 分钟且每块撞超时 → 0 行落盘。
+    """
+    provider = _FakeCustomProvider(batch=True)
+    svc = _svc(tmp_path, monkeypatch, full_minute_provider="myfm", custom=provider)
+    monkeypatch.setattr(
+        minute_refresh.MinuteRefreshService, "_today_coverage_lag_minutes",
+        lambda self: None,
+    )
+    _patch_write(monkeypatch)
+    calls = []
+    def _fake(kind, name, symbols=None, **_kwargs):
+        calls.append((kind, list(symbols or [])))
+        return provider.get_intraday_batch(symbols), 1
+
+    monkeypatch.setattr(minute_refresh.minute_fetch_proc, "fetch_via_child", _fake)
+    svc._run_round()
+    assert len(calls) == 1, calls
+    kind, passed = calls[0]
+    assert kind == "custom_batch"
+    assert passed == ["600000.SH"]
