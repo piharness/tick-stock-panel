@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -45,6 +47,7 @@ from app.api import (
     rps,
     screener,
     sector_rotation,
+    table_game,
     signals,
     stock_analysis,
     strategy,
@@ -66,6 +69,7 @@ from app.extensions.loader import (
     start_backend_extensions,
 )
 from app.jobs import daily_pipeline
+from app.request_metrics import RequestMetricsMiddleware
 from app.services.daily_health import DailyIntegrityError
 from app.services.matrix_prewarm_owner import MatrixCachePrewarmOwner
 from app.services.mining_process_lock import MiningProcessLock, MiningProcessLockError
@@ -89,6 +93,55 @@ if not getattr(sys, "frozen", False):
     from app.logfile import attach_rotating_log
 
     attach_rotating_log("backend.log", max_mb=10, backup_count=3)
+
+
+def _start_table_game_warmup(data_dir) -> None:
+    """后台预热对手盘模型（博弈链路页）。
+
+    放在模块级而不是 lifespan 内: `_application_lifespan` 函数体后段有一个
+    局部 `import threading`, 那会让 `threading` 在整个函数里变成局部变量,
+    在它之前引用就会 UnboundLocalError（2026-11-13 实际踩到, 容器起不来）。
+    """
+    def _run() -> None:
+        try:
+            from app.services import table_game
+
+            table_game.warm(data_dir)
+        except Exception as exc:  # noqa: BLE001 — 预热失败不影响任何功能
+            logger.warning("table_game warmup failed: %s", exc)
+
+    import threading
+
+    threading.Thread(target=_run, name="table-game-warm", daemon=True).start()
+
+
+def _start_provider_warmup() -> None:
+    """后台预热行情客户端 —— 免费档的**第一次真实请求**要付 ~100s。
+
+    实测（2026-11-14，本地与容器各一次）：`get_client()` 只要 3.3s，但紧接着
+    那一次 `klines.batch` 要 100~107s；同进程第二次起 0.5s。也就是说这 100s
+    是每个进程一次的握手成本，谁先碰谁付。
+
+    个股分析页的「本地不足 → 上游前复权补齐」功能正好会长在冷路径上：容器刚
+    起来时打开两年区间，用户要等 1 分半。把这一次成本挪到启动后的后台线程里
+    （daemon，失败只记日志），用户侧就只剩本地读 + 0.5s。
+    """
+    def _run() -> None:
+        try:
+            from app.services.kline_sync import get_client
+
+            tf = get_client()
+            tf.klines.batch(
+                ["000001.SZ"], period="1d", adjust="none", count=5,
+                as_dataframe=False, show_progress=False,
+            )
+            logger.info("provider warmup: 行情客户端已热")
+        except Exception as exc:  # noqa: BLE001 — 预热失败不影响任何功能
+            logger.info("provider warmup skipped: %s", exc)
+
+    import threading
+
+    threading.Thread(target=_run, name="provider-warm", daemon=True).start()
 
 
 @asynccontextmanager
@@ -123,6 +176,29 @@ async def _application_lifespan(app: FastAPI):
     repo = KlineRepository(store)
     app.state.datastore = store
     app.state.repo = repo
+    # 分区 dtype 自检: 一个分区把列写成别的类型, 整张表的 glob 扫描就永久抛
+    # SchemaError, 而读路径会把它吞成"改从上游拉数"(2026-11-13 实测: 冷启动
+    # 第一张图 9s、source=live、turnover_rate 缺失, 账本上只表现为"慢")。
+    # 只查最近 10 个分区(~0.1~0.3s): 漂移产生于最近的写入, 全表 372 个 footer
+    # 要 1.3s, 不值得放进启动路径。全表检查走 `python -m app.services.schema_drift --all`。
+    try:
+        from app.services.schema_drift import check_recent, describe_drifts
+
+        _t0 = time.perf_counter()
+        _drifts = check_recent(store.data_dir, days=10)
+        app.state.schema_drift = [d.__dict__ for d in _drifts]
+        if _drifts:
+            logger.error(
+                "分区 dtype 漂移 %d 处(会让整表扫描失败): %s",
+                len(_drifts), describe_drifts(_drifts),
+            )
+        else:
+            logger.info(
+                "schema drift check: clean (最近 10 个分区, %.2fs)",
+                time.perf_counter() - _t0,
+            )
+    except Exception as e:  # noqa: BLE001 — 自检失败不许影响启动
+        logger.warning("schema drift check skipped: %s", e)
     # 去内置化种子迁移必须赶在下方 refresh_cache 之前: enriched 缓存构建时
     # 编译自定义信号表达式, 晚种会让本次启动的看板/梯队引用的 signal_limit_*
     # 列缺失 (跌停恒 0、连板梯队无数据), 直到下一次缓存刷新才自愈。
@@ -179,6 +255,14 @@ async def _application_lifespan(app: FastAPI):
     # Polars 缓存预热 — enriched 的重计算 (107万行 compute_indicators) 推后台,
     # instruments/index/ETF 仍同步 (毫秒级)。应用立即 ready, 指标算完后自动替换。
     repo.refresh_cache(background=True)
+
+    # 对手盘模型预热 — 一次读 250 个日线分区 + 242 个龙虎榜 JSON, 9p 上实测 6.5s。
+    # 不预热的话「博弈链路」页首次打开要转 6 秒; 预热是 daemon 线程, 失败只记日志。
+    _start_table_game_warmup(repo.store.data_dir)
+
+    # 行情客户端预热 — 免费档每个进程的第一次真实请求要付 ~100s 握手成本。
+    # 个股分析的「上游前复权补齐」正好长在这条冷路径上，挪到后台线程。
+    _start_provider_warmup()
 
     # 自定义数据源配置(可选): 失败只记录错误, 不影响 TickFlow 基准路径。
     try:
@@ -567,6 +651,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 传输压缩: 首屏要拉 342KB 主包 + 201KB CSS (未压缩), 远端/手机访问时这三项
+# 是纯串行等待。gzip 后约 1/4, 且 JS 解析前的解压由浏览器做。
+# 只对 >=1KB 的响应生效, 不碰 SSE (text/event-stream 已被 Starlette 排除)。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 
 # ================================================================
 # 访问认证中间件
@@ -651,6 +740,11 @@ async def auth_middleware(request: Request, call_next):
     return JSONResponse(status_code=401, content={"detail": "未登录或会话已过期"})
 
 
+# 请求耗时账本: 最后注册 = 最外层, 计时含认证与 gzip。纯 ASGI, 不缓冲 SSE。
+# 关闭: TSP_REQUEST_METRICS=0。判读: python -m app.request_metrics --date <YYYY-MM-DD>
+app.add_middleware(RequestMetricsMiddleware)
+
+
 # 路由
 app.include_router(core_router)
 app.include_router(auth_api.router)
@@ -695,6 +789,7 @@ app.include_router(alerts.router)
 app.include_router(events.router)
 app.include_router(rps.router)
 app.include_router(sector_rotation.router)
+app.include_router(table_game.router)
 
 # 二次开发路由与小粒度策略在所有核心路由后注册, 禁止覆盖核心路径。
 extension_registry, extension_load_errors = configure_backend_extensions(app)
@@ -755,6 +850,22 @@ async def provider_request_error_handler(request: Request, exc: ProviderRequestE
     return JSONResponse(status_code=502, content={"detail": str(exc), "code": "provider_request"})
 
 # 生产期静态文件(前端 dist)
+class _ImmutableAssetFiles(StaticFiles):
+    """Vite 产物带内容哈希 → 可以永久缓存。
+
+    默认 StaticFiles 不发 Cache-Control, 浏览器只能按 ETag 每次回源校验:
+    首屏 30+ 个请求就是 30+ 次条件请求, 远端访问时每个都吃一个 RTT。
+    文件名里已经编了内容哈希, 内容变了 URL 就变了, 所以 max-age 一年是安全的。
+    index.html 不在此列 (它在下面单独发 no-store), 否则新版本永远刷不出来。
+    """
+
+    async def get_response(self, path, scope):  # type: ignore[override]
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["cache-control"] = "public, max-age=31536000, immutable"
+        return response
+
+
 def _register_static_routes(target: FastAPI, static_dir: Path) -> None:
     """挂载前端构建产物: /assets 走静态服务, 根级文件直出, 其余回退 SPA。
 
@@ -763,10 +874,28 @@ def _register_static_routes(target: FastAPI, static_dir: Path) -> None:
     安装包的浏览器页签因此没有图标。
     """
     if (static_dir / "assets").exists():
-        target.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
+        target.mount(
+            "/assets",
+            _ImmutableAssetFiles(directory=static_dir / "assets"),
+            name="assets",
+        )
 
     @target.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str):
+        # `/api/*` 绝不能落进 SPA 兜底。回退成 index.html 会让**任何**未注册的
+        # API 路径都返回 200 + text/html：`curl -o /dev/null -w '%{http_code}'`
+        # 会给一个不存在的路由打「上线了」。2026-11-12 实测：镜像里没有
+        # `app/decision/l1_cohort.py`，`/api/decision/l1/candidates` 仍返回 200
+        # HTML ⇒ 部署检查全绿而功能不存在。健康的 404 比撒谎的 200 便宜。
+        if full_path == "api" or full_path.startswith("api/"):
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "detail": "该 API 路径未注册",
+                    "code": "route_not_found",
+                    "path": f"/{full_path}",
+                },
+            )
         # 只直出 dist 根目录文件 (单段路径); index.html 仍走下方 no-store 分支。
         if full_path and "/" not in full_path and full_path not in (".", ".."):
             asset = static_dir / full_path

@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from datetime import date
@@ -274,6 +275,21 @@ def run_now(
         except Exception as e:  # noqa: BLE001
             logger.warning("integrity scan failed (soft, 按无坏数据处理): %s", e)
             integrity_issues = []
+        # 恒等式审计: 与修补链分离。这里只报告 + 落盘, 不改范围拉取起点 ——
+        # 因为其中「北交所 amount 口径」「指数行混入」重拉修不好, 接进修补链
+        # 会变成永不收敛的红灯。
+        try:
+            from app.services import data_integrity as _di
+
+            fact_issues = _di.audit_recent_facts(repo.store.data_dir, today=today)
+            if fact_issues:
+                logger.warning(
+                    "facts: %d 个分区违反落盘恒等式(不自动修补, 见 %s): %s",
+                    len(fact_issues), "/".join(_di.FACT_REPORT_REL),
+                    "; ".join(f"{i.day} {i.table} {i.reason}" for i in fact_issues[:3]),
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("fact audit failed (soft): %s", e)
     # 日K范围拉取的起点(分支3补缺口/分支4首次/数据修正); 实时增量/跳过时为 None。
     # 供 Step 1.5 除权因子回溯范围对齐: 范围拉取→用日K范围, 非范围→最近N天兜底。
     daily_range_start: _date | None = None
@@ -711,10 +727,20 @@ def run_now(
             emit("sync_minute", 90 + int(3 * cur / tot),
                  f"分钟K 批次 {cur}/{tot}" + (f" [{seg_label}]" if seg_label else ""),
                  stage_pct=int(100 * cur / tot), skip_log=True)
-        written_minute = kline_sync.sync_and_persist_minute(
-            minute_symbols, repo, capset, days=minute_days,
-            on_chunk_done=_minute_chunk_progress,
-        )
+        try:
+            written_minute = kline_sync.sync_and_persist_minute(
+                minute_symbols, repo, capset, days=minute_days,
+                on_chunk_done=_minute_chunk_progress,
+            )
+        except Exception as e:  # noqa: BLE001
+            # 越界副本（13:00 幽灵）已改为**逐行隔离**（kline_sync._quarantine_off_grid_duplicates），
+            # 不再抛错：一条幽灵行不该让 20 交易日 × 100 只整帧不落盘。这里的兜底留给
+            # 真正的失败（通道异常、隔离记录写不成）。一天失败不该连带丢掉
+            # regime/主线/结算/台账/复盘 —— 但**终态仍须 failed**: 那一天的分钟数据确实
+            # 没更新，静默继续就是「绿得比昨天更快」。
+            logger.error("sync_minute failed: %s", e)
+            emit("sync_minute", 93, f"分钟K同步失败:{e}")
+            stage_errors.append(f"sync_minute: {e}")
         minute_dir = repo.store.data_dir / "kline_minute"
         minute_cover_days = len(list(minute_dir.glob("date=*"))) if minute_dir.exists() else 0
         emit("sync_minute", 93, f"分钟K完成,覆盖 {minute_cover_days} 天")
@@ -726,6 +752,65 @@ def run_now(
             logger.info("sync_minute skipped: minute provider has no capability/dataset")
         else:
             logger.info("sync_minute skipped: user disabled")
+
+    # Step 2.5b: 分钟K盘后验收(只读, 软失败) — 落盘闸门只拦「会双计」的那一支,
+    # L/B/S/M 四条轴它一条都不管(见 services/minute_audit 的分工说明)。判据原先只在
+    # analysis/ 里, 而 analysis/ 不随后端镜像发布 ⇒ 容器内既无验收也无修法; 现在与
+    # CLI 共用同一份实现, 每天把结论落在 data/_audit/minute/ 并进 job result。
+    #
+    # 只审计**当天**: 每天各审计一次, `date=*.json` 自然累积成时间序列。改成回看整个
+    # 同步窗口(默认 5 天)会让同一条历史异常连报 5 天, 报警一吵就没人看了; 回看用 CLI。
+    # 进度停在 93: 紧接其后的 regime/mainline 从 90 起步, 报 94 会让进度条倒退。
+    minute_audit_summary: dict | None = None
+    try:
+        from app.services import minute_audit as _minute_audit
+
+        audit_day_str = today.isoformat()
+        if (repo.store.data_dir / "kline_minute" / f"date={audit_day_str}").is_dir():
+            _rep = _minute_audit.audit_days(repo.store.data_dir, [audit_day_str])
+            _tot = _minute_audit.summarize(_rep)
+            _rc = _minute_audit.verdict(_tot)
+            _lines = _minute_audit.format_findings(_rep)
+            minute_audit_summary = {"day": audit_day_str, "totals": _tot, "verdict": _rc}
+            if _rc:
+                logger.warning("minute_audit %s: %s", audit_day_str, "; ".join(_lines))
+                if _tot.get("phantom"):
+                    # 只报计数等于把可修的东西变成一句「有 N 处」——把命令写进同一条日志,
+                    # 值班的人不用再去翻 analysis/ (那目录根本不在镜像里)。
+                    logger.warning(
+                        "minute_audit: %d 行 13:00 幽灵(11:30 的副本), 修法: "
+                        "python -m app.services.minute_audit --repair-phantom --apply",
+                        _tot["phantom"],
+                    )
+            else:
+                logger.info("minute_audit %s: %s", audit_day_str, "; ".join(_lines))
+            if _tot.get("quarantined"):
+                # 隔离之后盘上的数据是对的 ⇒ 退出码不必红；但「源还在产脏」必须每天
+                # 有一条声音，否则隔离就成了静默丢弃（绿但无感知比红更贵）。
+                logger.warning(
+                    "minute_audit: %s 有 %d 行越界副本被隔离(未落盘), 说明源仍在产脏; "
+                    "证据在 data/_quarantine/kline_minute/date=%s/, 修法见 "
+                    "docs/features.md → 全量分钟",
+                    audit_day_str, _tot["quarantined"], audit_day_str,
+                )
+            try:
+                from app.services.fs_utils import atomic_write_text
+
+                _out = (repo.store.data_dir / "_audit" / "minute"
+                        / f"date={audit_day_str}.json")
+                _out.parent.mkdir(parents=True, exist_ok=True)
+                atomic_write_text(_out, json.dumps(
+                    {"days": _rep, "totals": _tot, "verdict": _rc},
+                    ensure_ascii=False, indent=2, default=str))
+            except Exception as e:  # noqa: BLE001 — 产物写不成不影响判定
+                logger.warning("minute_audit artifact failed (soft): %s", e)
+            emit("minute_audit", 93, f"分钟K验收:{'通过' if not _rc else '发现异常'}")
+        else:
+            skipped.append("minute_audit")
+            logger.info("minute_audit skipped: %s 无分钟分区", audit_day_str)
+    except Exception as e:  # noqa: BLE001 — 观测不许把观测变成故障源
+        logger.warning("minute_audit failed (soft): %s", e)
+        minute_audit_summary = {"error": f"{type(e).__name__}: {e}"}
 
     # Step 2.6: 市场环境(regime) 增量计算 — enriched 已就绪后聚合环境指标。
     # 双检测(缺口+stale), 自动补算遗漏/被覆写的日。软失败: 不阻断主管道。
@@ -860,6 +945,7 @@ def run_now(
         "etf_daily_rows": written_etf_daily,
         "etf_adj_factor_symbols": etf_adj_symbols,
         "minute_rows": written_minute,
+        "minute_audit": minute_audit_summary,
         "regime_days": regime_days,
         "mainline_rows": mainline_rows,
         "paper_settle": paper_summary,
@@ -1347,6 +1433,145 @@ def _maybe_push_review(content: str, meta: dict) -> None:
         logger.warning("review push error: %s", e)
 
 
+# ================================================================
+# 盘后龙虎榜增量 (data/dragon_tiger/date=*.json)
+# ================================================================
+
+DRAGON_TIGER_JOB_ID = "dragon_tiger_daily"
+DRAGON_TIGER_RETRY_JOB_ID = "dragon_tiger_daily_retry"
+# 披露通常在 18:00 之后; 19:10 主跑, 20:40 幂等补一次兜披露延迟
+DRAGON_TIGER_SLOTS = ((DRAGON_TIGER_JOB_ID, 19, 10), (DRAGON_TIGER_RETRY_JOB_ID, 20, 40))
+
+
+# ================================================================
+# 每日名单二次成型 (data/user_data/daily_slate/slate-<as_of>.json)
+# ================================================================
+
+SLATE_FINALIZE_JOB_ID = "decision_slate_finalize"
+SLATE_FINALIZE_RETRY_JOB_ID = "decision_slate_finalize_retry"
+# 管道默认 15:35 跑，此时日线可能还是竞价快照 ⇒ 名单写成 `skipped_not_closed`。
+# 那一刻起就没有第二轮了：单份文件一旦「未成立」，当天永久没有名单。
+# 16:40 在收盘定稿后补一次，18:10 再兜一次供应商迟交。两个时点都调用同一个
+# 幂等阶段（名单 → 结算 → 发卡），15:35 已经成功过就只是空转。
+SLATE_FINALIZE_SLOTS = (
+    (SLATE_FINALIZE_JOB_ID, 16, 40),
+    (SLATE_FINALIZE_RETRY_JOB_ID, 18, 10),
+)
+
+
+def _run_slate_finalize(repo) -> dict:
+    """补齐今天的名单（以及随之而来的卡）。
+
+    `today=cn_today()` 而不是 `None`：`None` 会让 `build_slate` 取「最新分区」，
+    在节假日/同步失败时补出**上一个交易日**的名单并试图为那天发卡——
+    补算历史只能走 `python -m app.decision.slate --backfill`，那是有意的动作，
+    不该藏在定时任务里。
+
+    返回 dict 而不是 None：`_run_tracked` 把返回值写进 JobStore 的完成记录，
+    任务列表要能看见这次到底产出了什么（哪一天、几只）。
+    """
+    from app.decision.producer import run_decision_stage
+
+    try:
+        state = _get_app_state()
+        engine = getattr(state, "strategy_engine", None) if state else None
+        out = run_decision_stage(repo, engine, today=cn_today())
+        slate_summary = out.get("slate") or {}
+        logger.info("slate finalize: stage=%s slate=%s as_of=%s rows=%s",
+                    out.get("status"), slate_summary.get("status"),
+                    slate_summary.get("as_of"), slate_summary.get("n_rows"))
+        return out
+    except Exception as exc:  # noqa: BLE001 — 定时任务异常不得影响调度器主循环
+        logger.exception("slate finalize 异常")
+        return {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+
+
+def _register_slate_finalize_jobs(scheduler, repo) -> None:
+    """注册两个时点 (定稿后补跑 + 迟交兜底), 工作日 mon-fri Asia/Shanghai。
+
+    走 `_run_tracked`：与盘后管道共用重任务槽位。16:40 时管道若仍在跑
+    （分钟K同步可能拖到一小时后），这里会被跳过并在任务列表里留一条 failed——
+    比并发写账本安全：`settle` 的幂等靠读已结算键，两个进程同时读会双写。
+    """
+    for job_id, hour, minute in SLATE_FINALIZE_SLOTS:
+        scheduler.add_job(
+            # `job_id=job_id` 是默认参数绑定，不是多余：闭包晚绑定会让两个任务
+            # 都报成最后一个 id，任务列表里从此分不清是谁跑失败了。
+            # `on_progress` 必须接住：`_run_tracked` 用关键字传它。
+            lambda job_id=job_id, on_progress=None: _run_tracked(
+                lambda on_progress=None: _run_slate_finalize(repo), job_id),
+            trigger=CronTrigger(day_of_week="mon-fri",
+                                hour=hour, minute=minute,
+                                timezone="Asia/Shanghai"),
+            id=job_id,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+
+
+def _is_trading_day() -> bool | None:
+    """今日是否交易日 (True/False/None=未知)。单独包一层便于测试注入。"""
+    from app.services.trading_day import is_trading_day
+
+    return is_trading_day()
+
+
+def _run_dragon_tiger_pull(repo) -> None:
+    """把当日龙虎榜三榜落进本地缓存。失败只记日志, 不阻断任何主流程。
+
+    必须单独排 job 的两个理由:
+    - 在线路径 (get_dragon_tiger) 只在 trade_date < today 时写缓存, 拉「今天」
+      永远不落盘 ⇒ 复用在线路径做增量等于每天都不写;
+    - fuyao 只允许回溯一年, 漏掉的这一天过了窗口就永久缺失, 补不回来。
+
+    完成判据是 is_expected_day 而非 state —— 服务端未发布目标日时会安静返回
+    上一交易日, state 依旧是 ok, 只看 state 会得到「每天绿、每天没写今天」。
+    """
+    try:
+        from app.market_time import cn_today
+        from app.services import dragon_tiger as svc
+
+        data_dir = repo.store.data_dir
+        today = cn_today()
+        if svc.has_cache(data_dir, today):
+            logger.info("dragon_tiger %s 已在缓存, 跳过", today)
+            return
+        if _is_trading_day() is False:
+            logger.info("dragon_tiger %s 休市, 跳过", today)
+            return
+        res = svc.pull_latest(data_dir, today)
+        state = res.get("state")
+        if state == "ok" and res.get("is_expected_day"):
+            logger.info("dragon_tiger %s 入库: %s 只 / %s 席位",
+                        today, res.get("stocks"), res.get("seats"))
+        elif state == "ok":
+            logger.warning(
+                "dragon_tiger %s 未发布, 服务端仍返回 %s; 若 20:40 那次也没等到, "
+                "手工跑 backfill_dragon_tiger.py --today --force",
+                today, res.get("trade_date"))
+        elif state == "source_unavailable":
+            logger.info("dragon_tiger 跳过: fuyao 未配置")
+        else:
+            logger.warning("dragon_tiger %s 失败(%s): %s",
+                           today, state, res.get("message"))
+    except Exception:  # noqa: BLE001 — 定时任务异常不得影响调度器主循环
+        logger.exception("dragon_tiger scheduled pull 异常")
+
+
+def _register_dragon_tiger_jobs(scheduler, repo) -> None:
+    """注册两个时点 (主跑 + 幂等补跑), 工作日 mon-fri Asia/Shanghai。"""
+    for job_id, hour, minute in DRAGON_TIGER_SLOTS:
+        scheduler.add_job(
+            lambda: _run_dragon_tiger_pull(repo),
+            trigger=CronTrigger(day_of_week="mon-fri",
+                                hour=hour, minute=minute,
+                                timezone="Asia/Shanghai"),
+            id=job_id,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+
+
 def _register_review_job(scheduler, repo, hour: int, minute: int) -> None:
     """注册/更新定时复盘 job(工作日 mon-fri, Asia/Shanghai)。
 
@@ -1451,6 +1676,15 @@ def start_scheduler(repo: KlineRepository, capset: CapabilitySet) -> AsyncIOSche
         replace_existing=True,
     )
 
+    # 盘后: 龙虎榜当日榜单入库 (19:10 主跑 + 20:40 幂等补跑)
+    # 与日K管道解耦: 榜单披露晚于 15:35 管道, 且一年窗口使漏采不可逆。
+    _register_dragon_tiger_jobs(scheduler, repo)
+
+    # 盘后: 每日名单二次成型 (16:40 定稿后补跑 + 18:10 兜供应商迟交)
+    # 解耦的理由: 名单要的是「收盘定稿」，不是「管道跑完」。15:35 那次若
+    # 拿到竞价快照，名单会写成 skipped_not_closed，而单份文件不会自己变新。
+    _register_slate_finalize_jobs(scheduler, repo)
+
     # 周期性能力重探: 付费 Key 中途过期/续费无需重启即可被发现。
     # 只热更新 app.state.capabilities(API 端点、盘后管道 _pipeline_then_refresh 均读它);
     # 档位变化记 WARNING, 让「Key 失效」在日志/前端可见, 不再静默按旧档位打 403 端点。
@@ -1492,9 +1726,14 @@ def start_scheduler(repo: KlineRepository, capset: CapabilitySet) -> AsyncIOSche
                     review_sched["hour"], review_sched["minute"])
 
     scheduler.start()
-    logger.info("scheduler started; instruments@%02d:%02d, pipeline@%02d:%02d, depth@%02d:%02d mon-fri",
+    # 这一行是「今天到底定了几个闹钟」的唯一摘要。漏掉一个时点，运维就只能靠
+    # 翻上面十几条 Added job 才知道它存在——而「没人知道它在跑」和「它没在跑」
+    # 在事故里长得一样。
+    _slate_slots = "+".join(f"{h:02d}:{m:02d}" for _, h, m in SLATE_FINALIZE_SLOTS)
+    logger.info("scheduler started; instruments@%02d:%02d, pipeline@%02d:%02d, "
+                "depth@%02d:%02d, slate_finalize@%s mon-fri",
                 inst_sched["hour"], inst_sched["minute"], sched["hour"], sched["minute"],
-                depth_sched["hour"], depth_sched["minute"])
+                depth_sched["hour"], depth_sched["minute"], _slate_slots)
     return scheduler
 
 

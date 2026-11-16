@@ -61,3 +61,28 @@ def test_index_html_direct_request_stays_uncached(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.headers["cache-control"] == NO_STORE
     assert response.text == INDEX_HTML
+
+
+def test_unknown_api_route_is_404_not_spa_html(tmp_path: Path) -> None:
+    """`/api/*` 缺席必须 404 JSON —— 否则部署检查无从区分「上线」与「没上线」。
+
+    2026-11-12 实测：镜像里没有 `app/decision/l1_cohort.py`，
+    `/api/decision/l1/candidates?as_of=2026-11-11` 返回 **200 + text/html**
+    （SPA 的 index.html）。用 `curl -w '%{http_code}'` 判断部署状态的人，
+    在这种回应下永远看不到失败。
+    """
+    response = _client(tmp_path).get("/api/decision/l1/candidates?as_of=2026-11-11")
+
+    assert response.status_code == 404, "未注册的 API 路径不许被 SPA 兜底成 200"
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["code"] == "route_not_found"
+    assert INDEX_HTML not in response.text
+
+
+def test_api_prefix_alone_is_404(tmp_path: Path) -> None:
+    """`/api` 本身（无尾斜线）也属于 API 命名空间。"""
+    response = _client(tmp_path).get("/api")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "route_not_found"
+
