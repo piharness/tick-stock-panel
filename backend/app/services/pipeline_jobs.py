@@ -5,12 +5,20 @@
   - create()/start() 即落盘 pending/running 快照(进度只更新内存) ——
     进程意外死亡(uvicorn --reload 热重载 / 被 kill)时记录不蒸发
   - succeeded/failed 后写入终态并从内存释放
-  - 实例化时扫描磁盘,把上个进程遗留的 pending/running 孤儿记录补标为
-    failed(中断);finished_at 取文件 mtime(最后已知存活时刻),不用下次
-    开机时间虚增时长
+  - 实例化时扫描磁盘,把**所有者已死**的 pending/running 记录补标为 failed
+    (中断);finished_at 取文件 mtime(最后已知存活时刻),不用下次开机时间虚增时长
   - 列表查询 = 内存中的活跃 job + 磁盘文件扫描,按时间排序
   - 单个查询 = 内存优先,没有则读磁盘
   - 创建新 job 前检查文件数量,>= max_jobs 时删除最老的文件
+
+**所有者存活判定(2026-11-13 修)**: 旧实现假设「实例化时磁盘上的 pending/running
+必然来自已死进程」。该假设在两种真实部署下不成立:
+  1. 容器与宿主共用 data/ (本仓是 9p 挂载) —— 宿主侧脚本一 import 就把容器里
+     正在跑的任务判死(实测 38601a2e80 progress 44 被误标, 容器内存仍 running);
+  2. 任何诊断脚本/测试只要 import 本模块, 都会实例化模块级 job_store 并触发补录。
+改用**实例租约**: 每个进程一个 run/<instance>.lease, 心跳线程每 30s 刷 mtime;
+补录前先看记录 owner_instance 的租约是否还新鲜。租约用 mtime 而不是 pid ——
+容器与宿主的 pid 命名空间不同, 同一 pid 可能是两个进程; mtime 跨挂载语义一致。
 """
 from __future__ import annotations
 
@@ -18,6 +26,7 @@ import json
 import logging
 import os
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -101,6 +110,19 @@ def _default_store_dir() -> Path:
 
 _STORE_DIR = _default_store_dir()
 
+# ── 实例租约(所有者存活证据) ────────────────────────────────────────────
+# 一个进程一个 instance id; run/<instance>.lease 的 mtime 即心跳。
+# TTL 取 3× 心跳: 心跳线程睡 30s, 容忍两次调度延迟不误判死亡。
+_INSTANCE = uuid.uuid4().hex[:8]
+OWNER_LEASE_TTL_S = 90
+OWNER_LEASE_HEARTBEAT_S = 30
+# 进度回调里刷新租约的最小间隔(9p 上单次写 ~3.6ms, 按分块回调刷太浪费)
+_LEASE_TOUCH_MIN_INTERVAL_S = 10
+
+
+def _lease_dir(store_dir: Path) -> Path:
+    return store_dir / "run"
+
 
 class JobStore:
     def __init__(self, max_jobs: int = 50, store_dir: Path = _STORE_DIR) -> None:
@@ -109,7 +131,13 @@ class JobStore:
         self._active_jobs: dict[str, dict[str, Any]] = {}   # running/pending
         self._active_id: str | None = None
         self._lock = threading.Lock()
+        self._lease_path = _lease_dir(store_dir) / f"{_INSTANCE}.lease"
+        self._last_touch = 0.0
+        self._heartbeat: threading.Thread | None = None
+        self._heartbeat_stop = threading.Event()
         self._store_dir.mkdir(parents=True, exist_ok=True)
+        self._touch_lease()
+        self._cleanup_stale_leases()
         self._reap_orphans()
 
     # ===== persistence =====
@@ -171,14 +199,81 @@ class JobStore:
         jobs.sort(key=lambda j: j.get("started_at") or "", reverse=True)
         return jobs
 
-    def _reap_orphans(self) -> None:
-        """启动补录: 把上个进程遗留的 pending/running 记录标为中断。
+    # ===== 所有者租约 =====
 
-        单例在进程启动时实例化,此时磁盘上的 pending/running 必然来自已死
-        亡的进程(uvicorn --reload 热重载 / 被 kill)—— 不补录则这些记录
-        永远停留在「运行中」, 同步历史里既看不到结果也看不到失败, 即
-        「数据在、记录丢」。finished_at 取文件 mtime(最后一次落盘 = 最后
-        已知存活时刻), 避免拿下次开机时间虚增 duration。
+    def _touch_lease(self, *, force: bool = False) -> None:
+        """刷新本进程的存活证据。任何异常都吞掉 —— 租约失败不许影响任务。"""
+        now = time.time()
+        if not force and (now - self._last_touch) < _LEASE_TOUCH_MIN_INTERVAL_S:
+            return
+        try:
+            self._lease_path.parent.mkdir(parents=True, exist_ok=True)
+            # 内容只用于人读(pid 帮助在宿主上认出容器进程); 判活只看 mtime。
+            self._lease_path.write_text(
+                json.dumps({"instance": _INSTANCE, "pid": os.getpid()}), encoding="utf-8",
+            )
+            self._last_touch = now
+        except Exception as e:  # noqa: BLE001
+            logger.debug("job_store: 租约刷新失败(忽略): %s", e)
+
+    def _cleanup_stale_leases(self) -> None:
+        """删除 24h 前的租约文件。留着只会让 run/ 无限增长。"""
+        cutoff = time.time() - 24 * 3600
+        try:
+            for f in _lease_dir(self._store_dir).glob("*.lease"):
+                if f == self._lease_path:
+                    continue
+                try:
+                    if f.stat().st_mtime < cutoff:
+                        f.unlink()
+                except OSError:
+                    continue
+        except OSError:
+            return
+
+    def _start_heartbeat(self) -> None:
+        """首个任务开始时启动心跳线程(只有真正拥有任务的进程才需要交租)。"""
+        if self._heartbeat is not None:
+            return
+
+        def _loop() -> None:
+            while not self._heartbeat_stop.wait(OWNER_LEASE_HEARTBEAT_S):
+                if self._active_id is not None:
+                    self._touch_lease(force=True)
+
+        self._heartbeat = threading.Thread(
+            target=_loop, name="job-lease-heartbeat", daemon=True,
+        )
+        self._heartbeat.start()
+
+    def _owner_alive(self, job: dict[str, Any]) -> bool:
+        """记录的所有者进程是否还活着。
+
+        - 没有 ``owner_instance``: 旧构建写入(升级前), 维持旧规则 —— 立即补录。
+          升级完成后不再有这种记录; 过渡期若宿主脚本先于容器重建而运行, 仍可能
+          误判一次, 故**重建容器前不要在宿主上实例化 JobStore**。
+        - 本进程的 instance: 活着(第二个 store 实例化不得回收自己的任务)。
+        - 其它 instance: 看租约 mtime。租约缺失(进程已退出/被清)或超过 TTL ⇒ 死。
+        """
+        inst = str(job.get("owner_instance") or "")
+        if not inst:
+            return False
+        if inst == _INSTANCE:
+            return True
+        try:
+            age = time.time() - (_lease_dir(self._store_dir) / f"{inst}.lease").stat().st_mtime
+        except OSError:
+            return False
+        return age <= OWNER_LEASE_TTL_S
+
+    def _reap_orphans(self) -> None:
+        """启动补录: 把**所有者已死**的 pending/running 记录标为中断。
+
+        判活见 ``_owner_alive``。旧实现无条件补录, 理由是「实例化时磁盘上的
+        pending/running 必然来自已死进程」—— 该前提在「容器与宿主共用 data/」
+        与「任何脚本 import 本模块都会实例化 job_store」两种情况下都不成立,
+        实测会把线上正在跑的任务判死。finished_at 仍取文件 mtime(最后一次
+        落盘 = 最后已知处于该状态), 避免拿下次开机时间虚增 duration。
         """
         for f in self._store_dir.glob("*.json"):
             try:
@@ -187,6 +282,12 @@ class JobStore:
                 continue
             orig_status = j.get("status")
             if not j.get("id") or orig_status not in ("pending", "running"):
+                continue
+            if self._owner_alive(j):
+                logger.info(
+                    "job_store: 跳过 %s —— 所有者进程仍存活(instance=%s)",
+                    j["id"], j.get("owner_instance"),
+                )
                 continue
             j["status"] = "failed"
             j["error"] = "后端重启,任务中断(启动时补录)"
@@ -259,12 +360,19 @@ class JobStore:
                 "result": None,
                 "error": None,
                 "timeout_s": timeout_s,
+                # 所有者存活证据: 别的进程据此判断「这条 running 是不是还有人在跑」。
+                # 缺了它就只能猜, 而猜错的方向是杀掉正在写盘的任务。
+                "owner_instance": _INSTANCE,
+                "owner_pid": os.getpid(),
             }
             self._active_jobs[job_id] = job
             self._active_id = job_id
             # pending 即落盘: 进程在 start() 前死亡时记录也不丢
             self._delete_oldest()
             self._write_file(job)
+        # 租约是 9p 上的文件写, 放到锁外: 它不参与单飞判定, 不该阻塞别的 create/get。
+        self._touch_lease(force=True)
+        self._start_heartbeat()
         _register_cancel_flag(job_id)
         return job_id, True
 
@@ -275,6 +383,7 @@ class JobStore:
                 return
             j["status"] = "running"
             j["started_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            self._touch_lease()
             # 心跳基准初始化为启动时刻: start() 到首次 progress() 之间的
             # 初始化阶段(解析标的池等)同样计入停滞计时。
             j["last_progress_at"] = j["started_at"]
@@ -344,6 +453,9 @@ class JobStore:
                 j["log"].append(entry)
                 if len(j["log"]) > 200:
                     j["log"] = j["log"][-200:]
+        # 进度回调是"我还在干活"的最强证据, 顺带交租(mtime 即心跳)。
+        # 放在锁外: 9p 上一次写 ~3.6ms, 不该让轮询方的 get() 陪着等。
+        self._touch_lease()
         # 锁外检查取消: reap 可能在本次更新刚结束后置位,下一次回调必然命中;
         # 在这里立即检查可以把终止延迟压缩到当次回调。
         ev = _CANCEL_FLAGS.get(job_id)
@@ -512,7 +624,41 @@ def _duration_s(j: dict[str, Any]) -> float | None:
 
 
 # 进程内单例
-job_store = JobStore()
+class _LazyJobStore:
+    """模块级单例的惰性代理 —— **import 不实例化**。
+
+    实例化会触发 ``_reap_orphans``。而"宿主脚本 / 测试 import 本模块"这条路径
+    上, 补录会扫到**容器正在跑**的任务: 旧构建写的记录没有 ``owner_instance``,
+    无从判活, 只能按旧规则立即补录(实测 2026-11-13 两次把 progress 44 的活任务
+    判死, 其中一次就是跑测试触发的)。惰性化后, 纯 import 不再产生任何磁盘副作用;
+    首次真正用到时才建 store, 服务端的第一访问就是启动后的首个任务查询。
+    """
+
+    def __init__(self, store_dir: Path | None = None) -> None:
+        self._store: JobStore | None = None
+        self._store_dir = store_dir
+        self._init_lock = threading.Lock()
+
+    def _instance(self) -> JobStore:
+        store = self._store
+        if store is not None:
+            return store
+        with self._init_lock:
+            if self._store is None:
+                self._store = (
+                    JobStore() if self._store_dir is None
+                    else JobStore(store_dir=self._store_dir)
+                )
+            return self._store
+
+    def __getattr__(self, name: str) -> Any:
+        # 初始化前的内部属性访问不能走代理, 否则 __getattr__ 自身会递归。
+        if name in {"_store", "_store_dir", "_init_lock"}:
+            raise AttributeError(name)
+        return getattr(self._instance(), name)
+
+
+job_store = _LazyJobStore()
 
 _Result = TypeVar("_Result")
 
