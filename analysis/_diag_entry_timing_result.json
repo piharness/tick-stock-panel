@@ -1,0 +1,456 @@
+{
+ "purpose": "启动时点的市场状态能否改善后续 90 日的 mu/sigma；波动管理是否有效",
+ "caliber": "S1 可实现形状；H=90 交易日；状态 t 日收盘可得；forward 从 t+1 起；分组边界只用 <=2024 估；CI 按年 block bootstrap",
+ "parity": {
+  "s1_n_days": 5269,
+  "s1_mean_gross_bp": 40.82,
+  "expect_from_product_nav": 40.82,
+  "diff_bp": -0.0,
+  "s1_ir_net20": 1.07
+ },
+ "n_forward_windows": {
+  "in_sample": 4798,
+  "out_sample": 342
+ },
+ "group_by_vol": {
+  "axis": "V20_market_realized_vol_pct",
+  "rows": [
+   {
+    "group": 0,
+    "n": 960,
+    "v_lo": null,
+    "v_hi": 16.75,
+    "fwd_ir_mean": 2.11,
+    "fwd_ir_ci95_block_year": [
+     1.3,
+     2.93
+    ],
+    "fwd_mu_bp": 41.8,
+    "fwd_sd_bp": 41.3,
+    "fwd_ir_median": 2.19
+   },
+   {
+    "group": 1,
+    "n": 959,
+    "v_lo": 16.75,
+    "v_hi": 20.88,
+    "fwd_ir_mean": 2.41,
+    "fwd_ir_ci95_block_year": [
+     1.56,
+     3.21
+    ],
+    "fwd_mu_bp": 45.9,
+    "fwd_sd_bp": 39.4,
+    "fwd_ir_median": 2.18
+   },
+   {
+    "group": 2,
+    "n": 960,
+    "v_lo": 20.88,
+    "v_hi": 25.61,
+    "fwd_ir_mean": 2.08,
+    "fwd_ir_ci95_block_year": [
+     1.35,
+     2.88
+    ],
+    "fwd_mu_bp": 36.5,
+    "fwd_sd_bp": 36.2,
+    "fwd_ir_median": 1.82
+   },
+   {
+    "group": 3,
+    "n": 959,
+    "v_lo": 25.61,
+    "v_hi": 34.69,
+    "fwd_ir_mean": 2.05,
+    "fwd_ir_ci95_block_year": [
+     1.49,
+     2.69
+    ],
+    "fwd_mu_bp": 37.6,
+    "fwd_sd_bp": 37.3,
+    "fwd_ir_median": 1.9
+   },
+   {
+    "group": 4,
+    "n": 960,
+    "v_lo": 34.69,
+    "v_hi": null,
+    "fwd_ir_mean": 2.21,
+    "fwd_ir_ci95_block_year": [
+     1.47,
+     3.2
+    ],
+    "fwd_mu_bp": 40.7,
+    "fwd_sd_bp": 41.9,
+    "fwd_ir_median": 2.38
+   }
+  ]
+ },
+ "group_by_drawdown": {
+  "axis": "DD250_drawdown_from_250d_high_pct",
+  "rows": [
+   {
+    "group": 0,
+    "n": 960,
+    "v_lo": null,
+    "v_hi": -23.33,
+    "fwd_ir_mean": 1.94,
+    "fwd_ir_ci95_block_year": [
+     1.48,
+     2.77
+    ],
+    "fwd_mu_bp": 37.5,
+    "fwd_sd_bp": 40.3,
+    "fwd_ir_median": 2.17
+   },
+   {
+    "group": 1,
+    "n": 959,
+    "v_lo": -23.33,
+    "v_hi": -12.17,
+    "fwd_ir_mean": 1.43,
+    "fwd_ir_ci95_block_year": [
+     0.78,
+     2.08
+    ],
+    "fwd_mu_bp": 26.9,
+    "fwd_sd_bp": 37.7,
+    "fwd_ir_median": 1.21
+   },
+   {
+    "group": 2,
+    "n": 960,
+    "v_lo": -12.17,
+    "v_hi": -6.72,
+    "fwd_ir_mean": 2.08,
+    "fwd_ir_ci95_block_year": [
+     1.46,
+     2.73
+    ],
+    "fwd_mu_bp": 37.3,
+    "fwd_sd_bp": 37.3,
+    "fwd_ir_median": 2.13
+   },
+   {
+    "group": 3,
+    "n": 959,
+    "v_lo": -6.72,
+    "v_hi": -2.44,
+    "fwd_ir_mean": 2.46,
+    "fwd_ir_ci95_block_year": [
+     1.63,
+     3.22
+    ],
+    "fwd_mu_bp": 44.7,
+    "fwd_sd_bp": 39.1,
+    "fwd_ir_median": 2.21
+   },
+   {
+    "group": 4,
+    "n": 960,
+    "v_lo": -2.44,
+    "v_hi": null,
+    "fwd_ir_mean": 2.95,
+    "fwd_ir_ci95_block_year": [
+     1.95,
+     3.72
+    ],
+    "fwd_mu_bp": 56.0,
+    "fwd_sd_bp": 41.7,
+    "fwd_ir_median": 2.51
+   }
+  ]
+ },
+ "group_by_vol_oos": {
+  "axis": "V20 (OOS >=2025)",
+  "rows": [
+   {
+    "group": 0,
+    "n": 141,
+    "v_lo": null,
+    "v_hi": 16.75,
+    "fwd_ir_mean": 3.3,
+    "fwd_ir_ci95_block_year": [
+     2.74,
+     3.47
+    ],
+    "fwd_mu_bp": 70.1,
+    "fwd_sd_bp": 43.6,
+    "fwd_ir_median": 3.3
+   },
+   {
+    "group": 1,
+    "n": 111,
+    "v_lo": 16.75,
+    "v_hi": 20.88,
+    "fwd_ir_mean": 2.84,
+    "fwd_ir_ci95_block_year": [
+     2.37,
+     3.02
+    ],
+    "fwd_mu_bp": 61.3,
+    "fwd_sd_bp": 44.4,
+    "fwd_ir_median": 2.64
+   },
+   {
+    "group": 2,
+    "n": 28
+   },
+   {
+    "group": 3,
+    "n": 42,
+    "v_lo": 25.61,
+    "v_hi": 34.69,
+    "fwd_ir_mean": 2.21,
+    "fwd_ir_ci95_block_year": [
+     1.71,
+     2.77
+    ],
+    "fwd_mu_bp": 47.4,
+    "fwd_sd_bp": 45.4,
+    "fwd_ir_median": 1.98
+   },
+   {
+    "group": 4,
+    "n": 20
+   }
+  ]
+ },
+ "group_by_drawdown_oos": {
+  "axis": "DD250 (OOS >=2025)",
+  "rows": [
+   {
+    "group": 0,
+    "n": 0
+   },
+   {
+    "group": 1,
+    "n": 11
+   },
+   {
+    "group": 2,
+    "n": 50,
+    "v_lo": -12.17,
+    "v_hi": -6.72,
+    "fwd_ir_mean": 2.22,
+    "fwd_ir_ci95_block_year": [
+     2.04,
+     2.48
+    ],
+    "fwd_mu_bp": 46.7,
+    "fwd_sd_bp": 44.3,
+    "fwd_ir_median": 2.16
+   },
+   {
+    "group": 3,
+    "n": 109,
+    "v_lo": -6.72,
+    "v_hi": -2.44,
+    "fwd_ir_mean": 2.63,
+    "fwd_ir_ci95_block_year": [
+     2.54,
+     2.68
+    ],
+    "fwd_mu_bp": 55.3,
+    "fwd_sd_bp": 43.7,
+    "fwd_ir_median": 2.32
+   },
+   {
+    "group": 4,
+    "n": 172,
+    "v_lo": -2.44,
+    "v_hi": null,
+    "fwd_ir_mean": 3.14,
+    "fwd_ir_ci95_block_year": [
+     2.63,
+     3.3
+    ],
+    "fwd_mu_bp": 67.8,
+    "fwd_sd_bp": 44.2,
+    "fwd_ir_median": 3.2
+   }
+  ]
+ },
+ "monotonicity": {
+  "vol": {
+   "n_groups": 5,
+   "values": [
+    2.11,
+    2.41,
+    2.08,
+    2.05,
+    2.21
+   ],
+   "monotone_up": false,
+   "monotone_down": false,
+   "sign_flips": 2
+  },
+  "drawdown": {
+   "n_groups": 5,
+   "values": [
+    1.94,
+    1.43,
+    2.08,
+    2.46,
+    2.95
+   ],
+   "monotone_up": false,
+   "monotone_down": false,
+   "sign_flips": 1
+  },
+  "vol_oos": {
+   "n_groups": 3,
+   "values": [
+    3.3,
+    2.84,
+    2.21
+   ],
+   "monotone_up": false,
+   "monotone_down": true,
+   "sign_flips": 0
+  },
+  "drawdown_oos": {
+   "n_groups": 3,
+   "values": [
+    2.22,
+    2.63,
+    3.14
+   ],
+   "monotone_up": true,
+   "monotone_down": false,
+   "sign_flips": 0
+  }
+ },
+ "current_reading": {
+  "as_of": "2026-10-19",
+  "v20_pct_annualized": 21.16,
+  "v20_percentile_in_sample": 41.6,
+  "dd250_pct": -18.48,
+  "dd250_percentile_in_sample": 26.2,
+  "s1_last_20d_mean_bp": 19.45,
+  "s1_last_20d_sd_bp": 250.6,
+  "target_window": "2026-11-16 .. 2027-03-31",
+  "trading_days_in_window_est": 90
+ },
+ "vol_management": {
+  "target_vol_pct": 5.0,
+  "raw_ir_gross": 2.09,
+  "volmanaged_ir_gross": 2.17,
+  "raw_ir_net20": 1.06,
+  "volmanaged_ir_net20": 1.07,
+  "avg_leverage": 0.143,
+  "lev_p05": 0.083,
+  "lev_p95": 0.226,
+  "volmanaged_sigma_nat_pct": 5.41,
+  "reading": "IR 之差 = 波动率择时的 alpha。若是 0，vol targeting 只换 sigma 不换 IR；为正说明高波动期收益/波动比更差，值得降杠杆"
+ },
+ "seasonality_by_month": [
+  {
+   "month": 1,
+   "n_days": 402,
+   "mean_gross_bp": 21.77,
+   "sd_bp": 291.4,
+   "t": 1.5,
+   "ir_gross": 1.08
+  },
+  {
+   "month": 2,
+   "n_days": 359,
+   "mean_gross_bp": 78.71,
+   "sd_bp": 275.2,
+   "t": 5.42,
+   "ir_gross": 4.13
+  },
+  {
+   "month": 3,
+   "n_days": 487,
+   "mean_gross_bp": 49.84,
+   "sd_bp": 266.2,
+   "t": 4.13,
+   "ir_gross": 2.7
+  },
+  {
+   "month": 4,
+   "n_days": 440,
+   "mean_gross_bp": 38.98,
+   "sd_bp": 286.6,
+   "t": 2.85,
+   "ir_gross": 1.96
+  },
+  {
+   "month": 5,
+   "n_days": 431,
+   "mean_gross_bp": 77.94,
+   "sd_bp": 279.7,
+   "t": 5.78,
+   "ir_gross": 4.02
+  },
+  {
+   "month": 6,
+   "n_days": 448,
+   "mean_gross_bp": 17.02,
+   "sd_bp": 285.2,
+   "t": 1.26,
+   "ir_gross": 0.86
+  },
+  {
+   "month": 7,
+   "n_days": 487,
+   "mean_gross_bp": 38.01,
+   "sd_bp": 278.0,
+   "t": 3.02,
+   "ir_gross": 1.97
+  },
+  {
+   "month": 8,
+   "n_days": 487,
+   "mean_gross_bp": 29.22,
+   "sd_bp": 260.0,
+   "t": 2.48,
+   "ir_gross": 1.62
+  },
+  {
+   "month": 9,
+   "n_days": 449,
+   "mean_gross_bp": 16.81,
+   "sd_bp": 282.9,
+   "t": 1.26,
+   "ir_gross": 0.86
+  },
+  {
+   "month": 10,
+   "n_days": 367,
+   "mean_gross_bp": 54.86,
+   "sd_bp": 319.0,
+   "t": 3.29,
+   "ir_gross": 2.48
+  },
+  {
+   "month": 11,
+   "n_days": 450,
+   "mean_gross_bp": 37.08,
+   "sd_bp": 287.1,
+   "t": 2.74,
+   "ir_gross": 1.86
+  },
+  {
+   "month": 12,
+   "n_days": 462,
+   "mean_gross_bp": 39.61,
+   "sd_bp": 268.0,
+   "t": 3.18,
+   "ir_gross": 2.13
+  }
+ ],
+ "target_window_history": {
+  "n_days": 1935,
+  "mean_gross_bp": 43.18,
+  "sd_bp": 278.8,
+  "ir_gross": 2.24,
+  "ir_net20": 1.2,
+  "vs_all_ir_gross": 2.09,
+  "note": "同一策略在目标日历窗与全年的对比；不是预测，是历史上这一段的表现"
+ },
+ "elapsed_s": 199.7
+}

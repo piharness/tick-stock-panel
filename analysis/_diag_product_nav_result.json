@@ -1,0 +1,557 @@
+{
+ "purpose": "把 L1 从增量 alpha 还原成可执行的产品净值序列，钉死 sigma 的分母",
+ "caliber": "mom20 top20 等权；gap=open[d+1]/close[d]-1；i1=open->close；成本 20bp/回合；年化分母 208.4 回合/年",
+ "shapes": [
+  {
+   "shape": "S0_overlay_only",
+   "denominator": "回合资本 M/N 份（不可执行，上界；仅有信号日）",
+   "n_days": 5192,
+   "mean_gross_bp": 106.21,
+   "mean_net20_bp": 86.21,
+   "sd_bp": 327.7,
+   "sigma_nat_pct": 47.31,
+   "ir_gross": 4.68,
+   "ir_net20": 3.8,
+   "lower_net_own_n": 3.4,
+   "ann_net_pct": 179.7
+  },
+  {
+   "shape": "S0_overlay_on_AUM",
+   "denominator": "总 AUM（overlay 占 M/N；全部日子）",
+   "n_days": 5269,
+   "mean_gross_bp": 38.53,
+   "mean_net20_bp": 18.53,
+   "sd_bp": 146.6,
+   "sigma_nat_pct": 21.16,
+   "ir_gross": 3.8,
+   "ir_net20": 1.83,
+   "lower_net_own_n": 1.43,
+   "ann_net_pct": 38.6
+  },
+  {
+   "shape": "S1_base1d_overlay",
+   "denominator": "日内最大占用 1+M/N 份（可实现；全部日子）",
+   "n_days": 5269,
+   "mean_gross_bp": 40.82,
+   "mean_net20_bp": 20.82,
+   "sd_bp": 281.4,
+   "sigma_nat_pct": 40.63,
+   "ir_gross": 2.09,
+   "ir_net20": 1.07,
+   "lower_net_own_n": 0.68,
+   "ann_net_pct": 43.4
+  },
+  {
+   "shape": "S2_base1d_only",
+   "denominator": "底仓 1 份（无 overlay；全部日子）",
+   "n_days": 5269,
+   "mean_gross_bp": 5.48,
+   "mean_net20_bp": -14.52,
+   "sd_bp": 289.9,
+   "sigma_nat_pct": 41.85,
+   "ir_gross": 0.27,
+   "ir_net20": -0.72,
+   "lower_net_own_n": -1.11,
+   "ann_net_pct": -30.3
+  }
+ ],
+ "sigma_triangle_S1": {
+  "shape": "S1",
+  "sigma_nat_pct": 40.63,
+  "leverage": 0.1231,
+  "aum_cap_cny": 178270829.0,
+  "ann_profit_cny": 9521233.0,
+  "mu_pct": 5.34,
+  "ir_net": 1.07,
+  "mu_over_floor": 0.53,
+  "note": "AUM 上限 = A_star / L；每天买入金额 = AUM（底仓全换 + 加仓）"
+ },
+ "parity_vs_annualize_half": {
+  "annualize_total_equity_field_bp": 25.369481765834934,
+  "S1_mean_gross_bp": 40.82,
+  "gap_bp": 15.45,
+  "annualize_ir_implied": 2.15,
+  "S1_ir_gross": 2.09,
+  "note": "annualize 的 /2 字段只把收益减半、波动未动，隐含「底仓零收益零波动」；S1 是同一件事的显式算法：底仓收益进分子、隔夜波动进分母、占用进分母"
+ },
+ "sigma_decomposition": {
+  "sd_total_bp": 281.4,
+  "sd_base_component_bp": 245.0,
+  "sd_overlay_component_bp": 146.6,
+  "cov_bp2": -1141.8,
+  "corr": -0.032,
+  "share_variance_base": 0.743,
+  "why": "底仓与 overlay 是同一批票的隔夜段与日内段，正相关 => overlay 不分散，只是加杠杆。S1 的 sigma 由底仓主导，而底仓的净收益只有 +7.8bp/日"
+ },
+ "gap_grid": [
+  {
+   "gap_threshold_pct": -0.2,
+   "n_days": 5269,
+   "selected_frac": 0.57,
+   "i1_selected_bp": 91.73,
+   "base_bp": 5.48,
+   "s1_mean_gross_bp": 42.35,
+   "s1_ir_gross": 2.19,
+   "s1_ir_net20": 1.16,
+   "sigma_nat_pct": 40.26,
+   "mu_at_sigma5_pct": 5.79,
+   "aum_cap_cny": 176647393.0
+  },
+  {
+   "gap_threshold_pct": -0.3,
+   "n_days": 5269,
+   "selected_frac": 0.549,
+   "i1_selected_bp": 93.68,
+   "base_bp": 5.48,
+   "s1_mean_gross_bp": 42.53,
+   "s1_ir_gross": 2.2,
+   "s1_ir_net20": 1.16,
+   "sigma_nat_pct": 40.32,
+   "mu_at_sigma5_pct": 5.82,
+   "aum_cap_cny": 176910653.0
+  },
+  {
+   "gap_threshold_pct": -0.5,
+   "n_days": 5269,
+   "selected_frac": 0.507,
+   "i1_selected_bp": 97.24,
+   "base_bp": 5.48,
+   "s1_mean_gross_bp": 42.39,
+   "s1_ir_gross": 2.19,
+   "s1_ir_net20": 1.16,
+   "sigma_nat_pct": 40.4,
+   "mu_at_sigma5_pct": 5.78,
+   "aum_cap_cny": 177261666.0
+  },
+  {
+   "gap_threshold_pct": -0.75,
+   "n_days": 5269,
+   "selected_frac": 0.454,
+   "i1_selected_bp": 101.26,
+   "base_bp": 5.48,
+   "s1_mean_gross_bp": 41.76,
+   "s1_ir_gross": 2.15,
+   "s1_ir_net20": 1.12,
+   "sigma_nat_pct": 40.53,
+   "mu_at_sigma5_pct": 5.6,
+   "aum_cap_cny": 177832062.0
+  },
+  {
+   "gap_threshold_pct": -1.0,
+   "n_days": 5269,
+   "selected_frac": 0.401,
+   "i1_selected_bp": 106.21,
+   "base_bp": 5.48,
+   "s1_mean_gross_bp": 40.82,
+   "s1_ir_gross": 2.09,
+   "s1_ir_net20": 1.07,
+   "sigma_nat_pct": 40.63,
+   "mu_at_sigma5_pct": 5.34,
+   "aum_cap_cny": 178270829.0
+  },
+  {
+   "gap_threshold_pct": -1.5,
+   "n_days": 5269,
+   "selected_frac": 0.307,
+   "i1_selected_bp": 112.3,
+   "base_bp": 5.48,
+   "s1_mean_gross_bp": 37.67,
+   "s1_ir_gross": 1.93,
+   "s1_ir_net20": 0.9,
+   "sigma_nat_pct": 40.76,
+   "mu_at_sigma5_pct": 4.51,
+   "aum_cap_cny": 178841225.0
+  },
+  {
+   "gap_threshold_pct": -2.0,
+   "n_days": 5269,
+   "selected_frac": 0.233,
+   "i1_selected_bp": 117.1,
+   "base_bp": 5.48,
+   "s1_mean_gross_bp": 33.45,
+   "s1_ir_gross": 1.71,
+   "s1_ir_net20": 0.69,
+   "sigma_nat_pct": 40.8,
+   "mu_at_sigma5_pct": 3.43,
+   "aum_cap_cny": 179016732.0
+  },
+  {
+   "gap_threshold_pct": -3.0,
+   "n_days": 5269,
+   "selected_frac": 0.14,
+   "i1_selected_bp": 128.32,
+   "base_bp": 5.48,
+   "s1_mean_gross_bp": 26.89,
+   "s1_ir_gross": 1.37,
+   "s1_ir_net20": 0.35,
+   "sigma_nat_pct": 40.91,
+   "mu_at_sigma5_pct": 1.76,
+   "aum_cap_cny": 179499375.0
+  }
+ ],
+ "recent_subsample": {
+  "S1": {
+   "shape": "S1",
+   "denominator": "recent_2025-06-06+",
+   "n_days": 332,
+   "mean_gross_bp": 61.6,
+   "mean_net20_bp": 41.6,
+   "sd_bp": 300.0,
+   "sigma_nat_pct": 43.32,
+   "ir_gross": 2.96,
+   "ir_net20": 2.0,
+   "lower_net_own_n": 0.44,
+   "ann_net_pct": 86.7
+  },
+  "S2": {
+   "shape": "S2",
+   "denominator": "recent_2025-06-06+",
+   "n_days": 332,
+   "mean_gross_bp": 22.35,
+   "mean_net20_bp": 2.35,
+   "sd_bp": 312.7,
+   "sigma_nat_pct": 45.14,
+   "ir_gross": 1.03,
+   "ir_net20": 0.11,
+   "lower_net_own_n": -1.44,
+   "ann_net_pct": 4.9
+  },
+  "S0_on_AUM": {
+   "shape": "S0_on_AUM",
+   "denominator": "recent_2025-06-06+",
+   "n_days": 332,
+   "mean_gross_bp": 51.21,
+   "mean_net20_bp": 31.21,
+   "sd_bp": 154.4,
+   "sigma_nat_pct": 22.29,
+   "ir_gross": 4.79,
+   "ir_net20": 2.92,
+   "lower_net_own_n": 1.35,
+   "ann_net_pct": 65.0
+  }
+ },
+ "cost_grid": [
+  {
+   "cost_bp": 2.0,
+   "ir_net": 1.99,
+   "mu_at_sigma5_pct": 9.96,
+   "ann_profit_cny": 17751317.0,
+   "meets_10pct": false
+  },
+  {
+   "cost_bp": 5.0,
+   "ir_net": 1.84,
+   "mu_at_sigma5_pct": 9.19,
+   "ann_profit_cny": 16379500.0,
+   "meets_10pct": false
+  },
+  {
+   "cost_bp": 8.0,
+   "ir_net": 1.68,
+   "mu_at_sigma5_pct": 8.42,
+   "ann_profit_cny": 15007682.0,
+   "meets_10pct": false
+  },
+  {
+   "cost_bp": 12.0,
+   "ir_net": 1.48,
+   "mu_at_sigma5_pct": 7.39,
+   "ann_profit_cny": 13178592.0,
+   "meets_10pct": false
+  },
+  {
+   "cost_bp": 16.0,
+   "ir_net": 1.27,
+   "mu_at_sigma5_pct": 6.37,
+   "ann_profit_cny": 11349503.0,
+   "meets_10pct": false
+  },
+  {
+   "cost_bp": 20.0,
+   "ir_net": 1.07,
+   "mu_at_sigma5_pct": 5.34,
+   "ann_profit_cny": 9520413.0,
+   "meets_10pct": false
+  }
+ ],
+ "sigma_needed_for_mu10": [
+  {
+   "cost_bp": 5.0,
+   "sd_needed_bp": 258.5,
+   "sd_now_bp": 281.4,
+   "reduction_needed_pct": -8.1
+  },
+  {
+   "cost_bp": 8.0,
+   "sd_needed_bp": 236.9,
+   "sd_now_bp": 281.4,
+   "reduction_needed_pct": -15.8
+  },
+  {
+   "cost_bp": 12.0,
+   "sd_needed_bp": 208.0,
+   "sd_now_bp": 281.4,
+   "reduction_needed_pct": -26.1
+  },
+  {
+   "cost_bp": 20.0,
+   "sd_needed_bp": 150.3,
+   "sd_now_bp": 281.4,
+   "reduction_needed_pct": -46.6
+  }
+ ],
+ "gate": {
+  "ir_net": 1.07,
+  "days_lower_gt0": 701.0,
+  "days_lower_gt2": null,
+  "n_days_now": 5269,
+  "verdict": "IR_net 1.07 < 2.0 ⇒ 无论多少天，下界都不可能超过 2.0 ⇒ 「mu 下界 >= 10%」不是时间问题，是水平问题"
+ },
+ "by_year": [
+  {
+   "year": "2005",
+   "n_days": 221,
+   "s1_gross_bp": -3.59,
+   "s1_ir_net20": -1.77,
+   "s2_gross_bp": -19.82,
+   "s2_sd_bp": 194.3,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2006",
+   "n_days": 241,
+   "s1_gross_bp": 65.74,
+   "s1_ir_net20": 2.98,
+   "s2_gross_bp": 47.37,
+   "s2_sd_bp": 220.7,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2007",
+   "n_days": 242,
+   "s1_gross_bp": 85.39,
+   "s1_ir_net20": 3.98,
+   "s2_gross_bp": 67.99,
+   "s2_sd_bp": 246.1,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2008",
+   "n_days": 246,
+   "s1_gross_bp": 5.47,
+   "s1_ir_net20": -0.64,
+   "s2_gross_bp": -47.13,
+   "s2_sd_bp": 339.2,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2009",
+   "n_days": 244,
+   "s1_gross_bp": 62.47,
+   "s1_ir_net20": 2.44,
+   "s2_gross_bp": 39.11,
+   "s2_sd_bp": 258.8,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2010",
+   "n_days": 242,
+   "s1_gross_bp": 37.58,
+   "s1_ir_net20": 1.08,
+   "s2_gross_bp": 12.51,
+   "s2_sd_bp": 234.1,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2011",
+   "n_days": 244,
+   "s1_gross_bp": 20.45,
+   "s1_ir_net20": 0.03,
+   "s2_gross_bp": -12.29,
+   "s2_sd_bp": 219.6,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2012",
+   "n_days": 243,
+   "s1_gross_bp": 19.87,
+   "s1_ir_net20": -0.01,
+   "s2_gross_bp": -13.24,
+   "s2_sd_bp": 213.6,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2013",
+   "n_days": 238,
+   "s1_gross_bp": 51.31,
+   "s1_ir_net20": 1.92,
+   "s2_gross_bp": 30.58,
+   "s2_sd_bp": 239.0,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2014",
+   "n_days": 245,
+   "s1_gross_bp": 60.58,
+   "s1_ir_net20": 2.66,
+   "s2_gross_bp": 46.4,
+   "s2_sd_bp": 225.5,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2015",
+   "n_days": 244,
+   "s1_gross_bp": 91.52,
+   "s1_ir_net20": 2.73,
+   "s2_gross_bp": 37.72,
+   "s2_sd_bp": 409.2,
+   "i1_selected_bp": 0.02
+  },
+  {
+   "year": "2016",
+   "n_days": 244,
+   "s1_gross_bp": 24.31,
+   "s1_ir_net20": 0.23,
+   "s2_gross_bp": -8.46,
+   "s2_sd_bp": 278.4,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2017",
+   "n_days": 244,
+   "s1_gross_bp": 8.18,
+   "s1_ir_net20": -0.7,
+   "s2_gross_bp": -17.18,
+   "s2_sd_bp": 242.2,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2018",
+   "n_days": 243,
+   "s1_gross_bp": -8.98,
+   "s1_ir_net20": -1.63,
+   "s2_gross_bp": -58.59,
+   "s2_sd_bp": 267.0,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2019",
+   "n_days": 244,
+   "s1_gross_bp": 44.53,
+   "s1_ir_net20": 1.26,
+   "s2_gross_bp": 2.28,
+   "s2_sd_bp": 292.4,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2020",
+   "n_days": 243,
+   "s1_gross_bp": 61.01,
+   "s1_ir_net20": 1.76,
+   "s2_gross_bp": 14.53,
+   "s2_sd_bp": 342.2,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2021",
+   "n_days": 243,
+   "s1_gross_bp": 54.11,
+   "s1_ir_net20": 1.76,
+   "s2_gross_bp": 25.58,
+   "s2_sd_bp": 283.1,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2022",
+   "n_days": 242,
+   "s1_gross_bp": 21.16,
+   "s1_ir_net20": 0.06,
+   "s2_gross_bp": -25.62,
+   "s2_sd_bp": 297.6,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2023",
+   "n_days": 242,
+   "s1_gross_bp": 58.38,
+   "s1_ir_net20": 1.6,
+   "s2_gross_bp": 9.39,
+   "s2_sd_bp": 360.9,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2024",
+   "n_days": 242,
+   "s1_gross_bp": 29.6,
+   "s1_ir_net20": 0.35,
+   "s2_gross_bp": -28.91,
+   "s2_sd_bp": 409.2,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2025",
+   "n_days": 243,
+   "s1_gross_bp": 57.01,
+   "s1_ir_net20": 1.68,
+   "s2_gross_bp": 10.9,
+   "s2_sd_bp": 326.5,
+   "i1_selected_bp": 0.01
+  },
+  {
+   "year": "2026",
+   "n_days": 189,
+   "s1_gross_bp": 50.83,
+   "s1_ir_net20": 1.51,
+   "s2_gross_bp": 6.51,
+   "s2_sd_bp": 310.3,
+   "i1_selected_bp": 0.01
+  }
+ ],
+ "quarters": [
+  {
+   "quarter": 1,
+   "date_from": "2005-02-02",
+   "date_to": "2010-07-07",
+   "s1_gross_bp": 41.72,
+   "s1_ir_net20": 1.24,
+   "s2_gross_bp": 15.43
+  },
+  {
+   "quarter": 2,
+   "date_from": "2010-07-08",
+   "date_to": "2015-12-09",
+   "s1_gross_bp": 49.27,
+   "s1_ir_net20": 1.63,
+   "s2_gross_bp": 19.25
+  },
+  {
+   "quarter": 3,
+   "date_from": "2015-12-10",
+   "date_to": "2021-05-11",
+   "s1_gross_bp": 27.26,
+   "s1_ir_net20": 0.37,
+   "s2_gross_bp": -11.65
+  },
+  {
+   "quarter": 4,
+   "date_from": "2021-05-12",
+   "date_to": "2026-10-19",
+   "s1_gross_bp": 45.02,
+   "s1_ir_net20": 1.1,
+   "s2_gross_bp": -1.11
+  }
+ ],
+ "anatomy": {
+  "n_days": 5269,
+  "n_skipped_too_few_tradable": 0,
+  "date_first": "2005-02-02",
+  "date_last": "2026-10-19",
+  "gap_mean_all_top20_bp": -41.84,
+  "gap_mean_selected_bp": -281.85,
+  "i1_mean_all_top20_bp": 49.62,
+  "i1_mean_selected_bp": 106.21,
+  "selected_frac_mean": 0.4005,
+  "days_with_zero_selected": 77
+ },
+ "elapsed_s": 208.4
+}

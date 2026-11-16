@@ -415,14 +415,16 @@ def numbered_lines(root: Path, cfg: Config = Config()) -> list[Line]:
 
 
 # --------------------------------------------------------------------------- #
-# 产物取值：`a.b` / `rows[k=v].field` / `acf.1`，可配 agg
+# 产物取值：`a.b` / `rows[k=v].field` / `acf.1` / `rows[0].f` / `m["p=2%"].f`
 # --------------------------------------------------------------------------- #
 
 class PathError(Exception):
     """产物里没有这个键，或筛选后为空——都当失败，不返回 None。"""
 
 
-_SEG = re.compile(r"^(?P<name>[\w/%.−-]*)(?:\[(?P<sel>[^\]]*)\])?$")
+#: 段语法。`name` 里多认一个 `=`：产物里真有一类键字面写成 `p=2%`
+#: （`capacity_axis.pov_entry` 就是按参与率命名的），不认它就只能走引号形式。
+_SEG = re.compile(r"^(?P<name>[\w/%.=−-]*)(?:\[(?P<sel>[^\]]*)\])?$")
 
 
 def _eq(a: object, b: object) -> bool:
@@ -433,7 +435,23 @@ def _eq(a: object, b: object) -> bool:
 
 
 def resolve(doc: object, path: str) -> list[object]:
-    """按 `.` 分段取值；`[]` 里是 `键=值` 过滤；返回叶子列表。"""
+    """按 `.` 分段取值；返回叶子列表。三种段形：
+
+    - `a.b`          取键 / 列表下标（纯数字段，`acf.1`）；
+    - `rows[0].f`     **列表下标**——`[]` 里是纯整数时按位置取，不是过滤；
+    - `rows[k=v].f`   过滤，`k` 与 `v` 都按字符串比（`_eq` 允许数值等价）；
+    - `m["p=2%"].f`   **字面键**——键里带 `.`/`=`/`%` 时唯一能寻址的写法。
+
+    下标与引号键是 13x 补的。之前 `[]` 只有「过滤」一种语义，于是
+
+    - `power.ks[3]` 这类下标路径被当成 `ks` 上的过滤器 `3`，报「元素不是对象」；
+    - `pov_entry` 里真有 `p=2%` 这个键，`_SEG` 不认 `=` ⇒ 永远报「段语法非法」；
+    - 更要紧的一处：下标落在**对象列表**上时 `for k, v in preds` 直接抛
+      `ValueError`，而 `_check_entry` 只捕 `PathError`——一条登记项的书写方式
+      能把整次检查打成 traceback，不是红，是崩。
+
+    三种失败现在都是 `PathError`：判据是「这条读不出来」，不是「解释器不认识」。
+    """
     def walk(node: object, parts: list[str]) -> list[object]:
         if not parts:
             return [node]
@@ -455,14 +473,33 @@ def resolve(doc: object, path: str) -> list[object]:
                 raise PathError(f"{head} 之上不是容器")
         if sel is None:
             return walk(node, rest)
+        if len(sel) >= 2 and sel[0] == '"' and sel[-1] == '"':
+            key = sel[1:-1]
+            if not isinstance(node, dict) or key not in node:
+                raise PathError(f"缺键 {key!r}（在 {head}）")
+            return walk(node[key], rest)
+        if sel.strip().lstrip("+-").isdigit():
+            if not isinstance(node, list):
+                raise PathError(f"{head} 不是列表，不能取下标")
+            idx = int(sel.strip())
+            if not -len(node) <= idx < len(node):
+                raise PathError(f"下标 {idx} 越界（{head} 共 {len(node)} 项）")
+            return walk(node[idx], rest)
         if not isinstance(node, list):
             raise PathError(f"{head} 不是列表，不能过滤")
-        preds = [p.split("=", 1) for p in sel.split(",") if p.strip()]
+        preds: list[tuple[str, str]] = []
+        for p in sel.split(","):
+            if not p.strip():
+                continue
+            k, sep, v = p.partition("=")
+            if not sep:
+                raise PathError(f"过滤须写 键=值: {sel}")
+            preds.append((k.strip(), v))
         out: list[object] = []
         for item in node:
             if not isinstance(item, dict):
                 raise PathError(f"{head} 的元素不是对象")
-            if all(k.strip() in item and _eq(item[k.strip()], v) for k, v in preds):
+            if all(k in item and _eq(item[k], v) for k, v in preds):
                 out.extend(walk(item, rest))
         if not out:
             raise PathError(f"过滤 {sel} 在 {name} 上无匹配")

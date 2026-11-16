@@ -1,0 +1,293 @@
+{
+  "generated_for": "错一天（T-2 名单）的组合收益后果",
+  "caliber": {
+    "ret": "当日日内 raw-equivalent：close[T]/open[T]-1（与 121.49bp 同口径）",
+    "right": "决策日 T-1，限价基准 close[T-1]",
+    "wrong": "决策日 T-2，限价基准 close[T-2]",
+    "annualize": "日序列均值 × 250，非复利",
+    "churn": "20 - |名单交集|（名单层），不是成交票差集",
+    "voids": "right 未过池/成交门槛的天数；wrong 未过门槛 = 买不到票，不是买错票",
+    "note": "不需帧/日历；L1 是纯日线产品。require_next 两套并列。"
+  },
+  "runs": [
+    {
+      "require_next": true,
+      "n_days": 291,
+      "window": {
+        "from": "2025-06-09",
+        "to": "2026-10-16"
+      },
+      "churn": {
+        "mean": 4.72,
+        "p50": 5,
+        "max": 9
+      },
+      "fill_count": {
+        "right_mean": 8.92,
+        "wrong_mean": 10.45,
+        "name_only_mean": 9.18
+      },
+      "wrong_only_mean": 3.65,
+      "right": {
+        "n": 291,
+        "mean_bp": 126.43,
+        "sd_bp": 342.22,
+        "t": 6.3,
+        "ci95_bp": [
+          87.11,
+          165.75
+        ],
+        "ir_ann": 5.84
+      },
+      "wrong": {
+        "n": 291,
+        "mean_bp": 69.89,
+        "sd_bp": 311.86,
+        "t": 3.82,
+        "ci95_bp": [
+          34.06,
+          105.72
+        ],
+        "ir_ann": 3.54
+      },
+      "diff_wrong_minus_right": {
+        "n": 291,
+        "mean_bp": -56.54,
+        "sd_bp": 246.36,
+        "t": -3.92,
+        "ci95_bp": [
+          -84.85,
+          -28.24
+        ],
+        "ir_ann": -3.63
+      },
+      "decompose": {
+        "name_effect": {
+          "n": 291,
+          "mean_bp": -7.69,
+          "sd_bp": 158.52,
+          "t": -0.83,
+          "ci95_bp": [
+            -25.91,
+            10.52
+          ],
+          "ir_ann": -0.77
+        },
+        "lag2_name_effect": {
+          "n": 285,
+          "mean_bp": -6.33,
+          "sd_bp": 182.67,
+          "t": -0.58,
+          "ci95_bp": [
+            -27.53,
+            14.88
+          ],
+          "ir_ann": -0.55
+        },
+        "limit_effect": {
+          "n": 291,
+          "mean_bp": -51.77,
+          "sd_bp": 243.08,
+          "t": -3.63,
+          "ci95_bp": [
+            -79.7,
+            -23.85
+          ],
+          "ir_ann": -3.37
+        },
+        "interaction": {
+          "n": 291,
+          "mean_bp": 2.92,
+          "sd_bp": 159.88,
+          "t": 0.31,
+          "ci95_bp": [
+            -15.45,
+            21.29
+          ],
+          "ir_ann": 0.29
+        }
+      },
+      "annualized_pct": {
+        "right": 3.161,
+        "wrong": 1.747,
+        "diff": -1.413,
+        "name_effect": -0.192,
+        "lag2_name_effect": -0.158,
+        "limit_effect": -1.294
+      },
+      "win_rate_diff": 0.4055,
+      "by_year": {
+        "2025": {
+          "n": 127,
+          "mean_bp": 3.58,
+          "sd_bp": 143.9,
+          "t": 0.28,
+          "ci95_bp": [
+            -21.44,
+            28.61
+          ],
+          "ir_ann": 0.39
+        },
+        "2026": {
+          "n": 164,
+          "mean_bp": -16.43,
+          "sd_bp": 168.89,
+          "t": -1.25,
+          "ci95_bp": [
+            -42.28,
+            9.42
+          ],
+          "ir_ann": -1.54
+        }
+      },
+      "voids": {
+        "right": {
+          "few_names": 11
+        },
+        "wrong": {
+          "few_names": 9
+        }
+      }
+    },
+    {
+      "require_next": false,
+      "n_days": 307,
+      "window": {
+        "from": "2025-06-09",
+        "to": "2026-11-09"
+      },
+      "churn": {
+        "mean": 4.67,
+        "p50": 5,
+        "max": 9
+      },
+      "fill_count": {
+        "right_mean": 9.02,
+        "wrong_mean": 10.51,
+        "name_only_mean": 9.27
+      },
+      "wrong_only_mean": 3.64,
+      "right": {
+        "n": 307,
+        "mean_bp": 125.15,
+        "sd_bp": 339.94,
+        "t": 6.45,
+        "ci95_bp": [
+          87.12,
+          163.18
+        ],
+        "ir_ann": 5.82
+      },
+      "wrong": {
+        "n": 307,
+        "mean_bp": 74.45,
+        "sd_bp": 310.88,
+        "t": 4.2,
+        "ci95_bp": [
+          39.67,
+          109.22
+        ],
+        "ir_ann": 3.79
+      },
+      "diff_wrong_minus_right": {
+        "n": 307,
+        "mean_bp": -50.7,
+        "sd_bp": 245.35,
+        "t": -3.62,
+        "ci95_bp": [
+          -78.15,
+          -23.26
+        ],
+        "ir_ann": -3.27
+      },
+      "decompose": {
+        "name_effect": {
+          "n": 307,
+          "mean_bp": -7.7,
+          "sd_bp": 156.6,
+          "t": -0.86,
+          "ci95_bp": [
+            -25.22,
+            9.82
+          ],
+          "ir_ann": -0.78
+        },
+        "lag2_name_effect": {
+          "n": 301,
+          "mean_bp": -7.9,
+          "sd_bp": 179.2,
+          "t": -0.76,
+          "ci95_bp": [
+            -28.14,
+            12.35
+          ],
+          "ir_ann": -0.7
+        },
+        "limit_effect": {
+          "n": 307,
+          "mean_bp": -45.85,
+          "sd_bp": 240.84,
+          "t": -3.34,
+          "ci95_bp": [
+            -72.79,
+            -18.91
+          ],
+          "ir_ann": -3.01
+        },
+        "interaction": {
+          "n": 307,
+          "mean_bp": 2.84,
+          "sd_bp": 157.2,
+          "t": 0.32,
+          "ci95_bp": [
+            -14.74,
+            20.43
+          ],
+          "ir_ann": 0.29
+        }
+      },
+      "annualized_pct": {
+        "right": 3.129,
+        "wrong": 1.861,
+        "diff": -1.268,
+        "name_effect": -0.193,
+        "lag2_name_effect": -0.198,
+        "limit_effect": -1.146
+      },
+      "win_rate_diff": 0.4137,
+      "by_year": {
+        "2025": {
+          "n": 127,
+          "mean_bp": 3.58,
+          "sd_bp": 143.9,
+          "t": 0.28,
+          "ci95_bp": [
+            -21.44,
+            28.61
+          ],
+          "ir_ann": 0.39
+        },
+        "2026": {
+          "n": 180,
+          "mean_bp": -15.66,
+          "sd_bp": 164.91,
+          "t": -1.27,
+          "ci95_bp": [
+            -39.75,
+            8.43
+          ],
+          "ir_ann": -1.5
+        }
+      },
+      "voids": {
+        "right": {
+          "few_names": 11,
+          "pool_small": 2
+        },
+        "wrong": {
+          "few_names": 9
+        }
+      }
+    }
+  ]
+}
