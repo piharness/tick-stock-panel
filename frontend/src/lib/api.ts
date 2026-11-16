@@ -5243,6 +5243,36 @@ export const api = {
   strategyPublish: (strategyId: string) =>
     request<{ ok: boolean; strategy_id: string }>(`/api/strategies/${encodeURIComponent(strategyId)}/publish`, { method: 'POST' }),
 
+  /** 策略池(后端持久化): 读取当前池 */
+  strategyPoolGet: () =>
+    request<{ ids: string[]; updated_at: string | null; revision: number }>('/api/strategy-pool'),
+
+  /** 策略池(后端持久化): 整体覆盖池 */
+  strategyPoolPut: (ids: string[], reason?: string) =>
+    request<{ ids: string[]; updated_at: string | null; revision: number }>('/api/strategy-pool', {
+      method: 'PUT',
+      body: JSON.stringify({ ids, reason: reason ?? '' }),
+    }),
+
+  /** 策略池历史(可回查) */
+  strategyPoolHistory: (limit = 50) =>
+    request<{ items: any[] }>(`/api/strategy-pool/history?limit=${limit}`),
+
+  /** 策略自动捕获: 提交社区文本, 后台执行全链 */
+  strategyCaptureSubmit: (text: string) =>
+    request<{ status: string; uuid: string }>('/api/strategy-capture', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+
+  /** 策略自动捕获: 列出历史采集 */
+  strategyCaptureList: (limit = 50) =>
+    request<{ items: any[] }>(`/api/strategy-capture?limit=${limit}`),
+
+  /** 策略自动捕获: 查询单个采集详情 */
+  strategyCaptureGet: (uuid: string) =>
+    request<any>(`/api/strategy-capture/${encodeURIComponent(uuid)}`),
+
   strategyRun: (strategyId: string, params?: Record<string, any>, asOf?: string, pool?: string[]) =>
     request<ScreenerResult>('/api/strategies/run', {
       method: 'POST',
