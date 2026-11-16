@@ -13,7 +13,7 @@ import polars as pl
 from fastapi import APIRouter, Query, Request
 
 from app.market_time import cn_today
-from app.services import regime_builder
+from app.services import battle_context, regime_builder
 
 router = APIRouter(prefix="/api/regime", tags=["regime"])
 
@@ -104,6 +104,20 @@ def regime_latest(request: Request):
     latest = df.sort("date", descending=True).head(1)
     rows = _df_to_records(latest)
     return {"row": rows[0] if rows else None}
+
+
+@router.get("/context")
+def regime_context(
+    request: Request,
+    window: int = Query(250, ge=60, le=1000, description="分位窗口（交易日）"),
+):
+    """最新环境日的参照系：各指标历史分位 + 同类日子的次日表现。
+
+    回答的是「这个数字算高还是低、过去这种日子之后发生了什么」——
+    单看数值本身不携带这类信息。计算全部落在 regime_history 上（唯一产点）。
+    """
+    df = regime_builder.load_regime_history(_data_dir(request))
+    return battle_context.build(df, window=window)
 
 
 @router.get("/states")

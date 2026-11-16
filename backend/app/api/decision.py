@@ -200,7 +200,8 @@ def _attach_card_to_slate(data_dir: Path, slate: dict[str, Any]) -> dict[str, An
 
 
 @router.get("/slate")
-def get_slate(request: Request, as_of: str | None = Query(default=None)) -> dict[str, Any]:
+def get_slate(request: Request, as_of: str | None = Query(default=None),
+              lookback: int = Query(default=20, ge=2, le=120)) -> dict[str, Any]:
     """每日名单 —— 唯一产地的只读出口。
 
     **只读磁盘，不重算**：名单是盘后管道的产物。HTTP 层重算会让「页面看到的」
@@ -211,18 +212,55 @@ def get_slate(request: Request, as_of: str | None = Query(default=None)) -> dict
     等于让陈旧永远沉默。2026-11-15 的现场是 enriched 已到 11-13、最新卡
     停在 11-11，而页面显示「已封存 10 张卡」——没有任何一处报警。
 
-    `as_of` 缺省读最新一份；指定日期但文件不存在返回 404，不降级到最新。
+    三件事一起返回，缺一件读者就得自己拼：
+
+    - `slate`：**可执行的那一份**。缺省取窗口内最新一份 `status ∈ ready/empty`
+      的名单，而不是目录里最新的文件。今天这次构建没成立（数据未定稿、
+      供应商迟交）时，昨天那份仍然是明早要照着挂的单——把它藏起来，
+      等于用一条运行状态覆盖掉唯一的答案。
+    - `head`：目录里最新的一份，无论成不成立。它与 `slate` 不同就说明
+      「最近一次运行没成」，页面必须把原因写在名单上方。
+    - `series`：窗口内逐日点名。缺哪天一列可见——**没有它，「每日」这个词
+      就无法验证**；只有单份文件时，管道停三天和正常跑完长得一模一样。
+
+    指定 `as_of` 时只读那一天，文件不存在返回 404，不降级到最新。
     """
     data_dir = _data_dir(request)
-    slate = slate_mod.read_slate(data_dir, as_of)
-    if slate is None:
-        where = f"as_of={as_of}" if as_of else "最新"
-        raise HTTPException(
-            status_code=404,
-            detail=f"名单不存在（{where}）：盘后管道尚未生成，或该日无收盘数据",
-        )
+    view = slate_mod.series(data_dir, lookback=lookback)
+    # `latest_ready` 是同一次遍历里留下的完整内容；不单独再读一遍目录。
+    latest_ready = view.pop("latest_ready", None)
+    head_entry = view.get("head") or {}
+    head = (slate_mod.read_slate(data_dir, head_entry["as_of"])
+            if head_entry.get("as_of") else None)
+    head = slate_mod.annotate_staleness(data_dir, head) if head else None
+
+    if as_of:
+        slate = slate_mod.read_slate(data_dir, as_of)
+        if slate is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"名单不存在（as_of={as_of}）：盘后管道尚未生成，或该日无收盘数据",
+            )
+    else:
+        # 一份 ready 都没有时退回最新文件：让页面能回答「为什么没有名单」，
+        # 而不是只显示 404。它不是可执行名单，`status` 会说明这一点。
+        slate = latest_ready or head
+        if slate is None:
+            # 连交易日都列不出来（enriched 不在）但文件还在：读文件，
+            # 不要因为「算不出序列」就连「有没有名单」都不回答。
+            slate = slate_mod.read_slate(data_dir)
+        if slate is None:
+            raise HTTPException(
+                status_code=404,
+                detail="名单不存在（最新）：盘后管道尚未生成，或该日无收盘数据",
+            )
     slate = slate_mod.annotate_staleness(data_dir, slate)
-    return {"slate": slate, "card": _attach_card_to_slate(data_dir, slate)}
+    return {
+        "slate": slate,
+        "card": _attach_card_to_slate(data_dir, slate),
+        "head": head,
+        "series": view,
+    }
 
 
 @router.get("/cards")

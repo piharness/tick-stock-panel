@@ -11,6 +11,7 @@
  */
 import { Fragment, useCallback, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   RefreshCw, Loader2, ShieldCheck, ShieldAlert, ShieldQuestion,
   ScrollText, Target, ArrowRight, Bot, AlertTriangle, ChevronDown, ChevronRight,
@@ -26,6 +27,7 @@ import {
   type DecisionScore,
   type DecisionSlate,
   type DecisionSlateCard,
+  type DecisionSlateSeries,
 } from '@/lib/api'
 import { toast } from '@/components/Toast'
 import { QK } from '@/lib/queryKeys'
@@ -171,9 +173,13 @@ export function Decision() {
 
   // 每日名单：唯一产地的只读视图。`retry:false` —— 名单没生成是正常状态
   // （盘后管道还没跑），重试三次只会把「没有」变成「加载中」。
+  //
+  // `slateAsOf` 非空 = 正在回看某一天。它进 queryKey，所以回看不会污染
+  // 「最新」那一份的缓存——两个问题分开问，答案分开存。
+  const [slateAsOf, setSlateAsOf] = useState<string | null>(null)
   const slateQ = useQuery({
-    queryKey: ['decision', 'slate'],
-    queryFn: () => api.decisionSlate(),
+    queryKey: ['decision', 'slate', slateAsOf],
+    queryFn: () => api.decisionSlate(slateAsOf ?? undefined),
     refetchOnWindowFocus: false,
     retry: false,
     staleTime: 30_000,
@@ -289,6 +295,10 @@ export function Decision() {
       <SlatePanel
         slate={slateQ.data?.slate}
         card={slateQ.data?.card}
+        head={slateQ.data?.head}
+        series={slateQ.data?.series}
+        browsing={slateAsOf !== null}
+        onSelect={setSlateAsOf}
         failed={slateQ.isError}
         error={slateQ.error instanceof Error ? slateQ.error.message : undefined}
       />
@@ -555,27 +565,37 @@ function fix(v: number | null | undefined, digits = 2): string {
  *  3. 没有名单要说清是哪一种「没有」——未收盘、无分区、口径非法、生成失败
  *     是四种不同的病因，压成一个空表就等于让它们都无法诊断。
  */
-function SlatePanel({ slate, card, failed, error }: {
+function SlatePanel({ slate, card, head, series, browsing, onSelect, failed, error }: {
   slate?: DecisionSlate
   card?: DecisionSlateCard | null
+  head?: DecisionSlate | null
+  series?: DecisionSlateSeries
+  /** 正在回看某一天，而不是「最新可执行的那一份」。 */
+  browsing: boolean
+  onSelect: (asOf: string | null) => void
   failed: boolean
   error?: string
 }) {
   const [open, setOpen] = useState<string | null>(null)
+  const navigate = useNavigate()
   const meta = slate ? SLATE_STATUS_LABEL[slate.status] : undefined
   const ready = slate?.status === 'ready' || slate?.status === 'empty'
+  // 「最近一次运行没成立」与「名单落后」是两件事：前者要知道原因，
+  // 后者要知道行情走到哪了。同时出现时只说前者——它更具体，
+  // 而且它的结论（下面是最近一份仍可执行的名单）已经把后者包含进去了。
+  const headMissed = !browsing && !!head && !!slate && head.as_of !== slate.as_of
 
   return (
     <section className="mt-3 rounded-card border border-border bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-xs font-medium text-foreground">今日名单</h2>
+          <h2 className="text-xs font-medium text-foreground">每日名单</h2>
           {slate?.as_of && (
             <span className="font-mono text-[11px] text-muted">
               {slate.as_of}
               {slate.entry_date
                 ? ` → ${slate.entry_date} 开盘挂单`
-                : ' → 次日挂单（日历未落盘）'}
+                : ' → 次日挂单（次日分区未落盘）'}
             </span>
           )}
           {slate && ready && (
@@ -604,7 +624,74 @@ function SlatePanel({ slate, card, failed, error }: {
         </div>
       </div>
 
-      {slate && slate.stale && (
+      {/* 覆盖条：把「每日」这个词变成可数的东西。
+          缺一天在单份文件里看不出来——目录里永远只有「有」和「没有」，
+          而读者看的是最近一份，它看起来总是正常的。 */}
+      {series && series.sessions > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5">
+          <span className="text-[10px] text-muted">近 {series.sessions} 个交易日</span>
+          <div className="flex items-end gap-[2px]">
+            {series.days.map(d => {
+              const tone = !d.present || d.status === null
+                ? 'bg-danger/60'
+                : d.status === 'ready'
+                  ? 'bg-accent/70'
+                  : d.status === 'empty'
+                    ? 'bg-accent/25'
+                    : 'bg-warning/70'
+              const label = d.present
+                ? (d.status ? (SLATE_STATUS_LABEL[d.status]?.label ?? d.status) : '不可读')
+                : '缺失'
+              return (
+                <button
+                  key={d.as_of}
+                  type="button"
+                  title={`${d.as_of}  ${label}${d.reason ? `：${d.reason}` : ''}`}
+                  // 缺失的那天不可点：点开只会得到 404，而 404 不能告诉你
+                  // 「那天为什么没算」——原因在 series 里，不在那一天的文件里。
+                  onClick={() => d.present && onSelect(d.as_of)}
+                  disabled={!d.present}
+                  className={cn(
+                    'h-3 w-2 rounded-[1px]',
+                    tone,
+                    d.present && 'hover:opacity-80',
+                    slate?.as_of === d.as_of && 'ring-1 ring-foreground',
+                  )}
+                />
+              )
+            })}
+          </div>
+          <span className="font-mono text-[10px] text-muted">
+            {series.ready + series.empty} 成立 · {series.holes.length} 缺口
+          </span>
+          {browsing && (
+            <button
+              type="button"
+              onClick={() => onSelect(null)}
+              className="rounded border border-border px-1.5 py-0.5 text-[10px] text-secondary hover:bg-elevated"
+            >
+              回到最新
+            </button>
+          )}
+          {series.holes.length > 0 && (
+            <span className="font-mono text-[10px] text-danger">
+              缺口 {series.holes.slice(0, 5).join(' ')}
+              {series.holes.length > 5 ? ` 等 ${series.holes.length} 天` : ''}
+            </span>
+          )}
+        </div>
+      )}
+
+      {headMissed && head && (
+        <div className="mx-3 mt-2 rounded border border-warning/40 bg-warning/10 px-2.5 py-2 text-[11px] leading-relaxed text-warning">
+          最近一次运行（<code className="font-mono">{head.as_of}</code>）没有成立：
+          {head.reason ?? (head.status ? SLATE_STATUS_LABEL[head.status].label : '未知原因')}。
+          下面是最近一份成立的名单（<code className="font-mono">{slate?.as_of ?? '—'}</code>）——
+          它仍是可照挂的那一份，但不是今天新算的。
+        </div>
+      )}
+
+      {slate && slate.stale && !headMissed && (
         <div className="mx-3 mt-2 rounded border border-danger/40 bg-danger/10 px-2.5 py-2 text-[11px] leading-relaxed text-danger">
           名单停在 <code className="font-mono">{slate.as_of ?? '—'}</code>，行情已到{' '}
           <code className="font-mono">{slate.expected_as_of}</code>。
@@ -659,7 +746,20 @@ function SlatePanel({ slate, card, failed, error }: {
                     className="cursor-pointer border-b border-border/60 hover:bg-elevated/60"
                   >
                     <td className="px-3 py-1.5 font-mono text-muted">{row.rank}</td>
-                    <td className="px-2 py-1.5 font-mono text-foreground">{row.symbol}</td>
+                    <td className="px-2 py-1.5 font-mono text-foreground">
+                      {/* 下钻的第二步：行内展开是「这张单的细节」，
+                          点代码是「这只票长什么样」。两者都要，不能只留一个。 */}
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation()
+                          navigate(`/stock-analysis?symbol=${encodeURIComponent(row.symbol)}`)
+                        }}
+                        className="underline decoration-dotted underline-offset-2 hover:text-accent"
+                      >
+                        {row.symbol}
+                      </button>
+                    </td>
                     <td className="px-2 py-1.5 text-right font-mono text-secondary">{fix(row.prev_close_raw)}</td>
                     <td className="px-2 py-1.5 text-right font-mono font-medium text-foreground">{fix(row.limit_price)}</td>
                     <td className={cn('px-2 py-1.5 text-right font-mono',
@@ -732,6 +832,11 @@ function SlatePanel({ slate, card, failed, error }: {
           <span>面板起点 {slate.panel_since ?? '—'}</span>
           <span>结构 v{slate.schema_revision}</span>
           <span className="font-mono">生成于 {slate.built_at?.slice(0, 19).replace('T', ' ') ?? '—'}</span>
+          {slate.origin && (
+            <span className={slate.origin === 'backfill' ? 'text-warning' : undefined}>
+              {slate.origin === 'backfill' ? '补算' : '管道自动'}
+            </span>
+          )}
           {slate.warnings.map((w, i) => (
             <span key={i} className="text-warning">· {w}</span>
           ))}

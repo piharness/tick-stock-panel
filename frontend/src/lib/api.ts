@@ -3240,11 +3240,39 @@ export type DecisionSlate = {
   built_at: string
   first_built_at?: string
   reason?: string
+  /** 谁写的：`pipeline` 盘后自动 / `backfill` 事后补算。旧文件没有这个字段。 */
+  origin?: 'pipeline' | 'backfill' | null
   /** 以下三项在**读取时刻**重算，不听 `stale_at_build`：
    *  昨天写的文件今天一定旧了，把旧结论返回出去等于让停滞永远沉默。 */
   expected_as_of: string
   lag_sessions: number
   stale: boolean
+}
+
+/** 序列里的一天。`present=false` 是「根本没有文件」，与「有文件但没成立」不同：
+ *  前者要问管道为什么没跑，后者原因在 `status`/`reason` 里。 */
+export type DecisionSlateDay = {
+  as_of: string
+  present: boolean
+  status: DecisionSlateStatus | null
+  n_rows: number | null
+  built_at: string | null
+  origin: string | null
+  reason: string | null
+}
+
+/** 窗口内逐日点名。`holes` = 没有可执行名单的日期，按时间序。 */
+export type DecisionSlateSeries = {
+  lookback: number
+  sessions: number
+  ready: number
+  empty: number
+  missing: string[]
+  unreadable: string[]
+  not_ready: string[]
+  holes: string[]
+  head: DecisionSlateDay | null
+  days: DecisionSlateDay[]
 }
 
 export type DecisionSlateCard = {
@@ -3261,8 +3289,12 @@ export type DecisionSlateCard = {
 }
 
 export type DecisionSlateResponse = {
+  /** **可执行的那一份**：窗口内最新一份成立的名单，不是最新文件。 */
   slate: DecisionSlate
   card: DecisionSlateCard | null
+  /** 目录里最新的一份，无论成不成立。与 `slate` 不同 ⇒ 最近一次运行没成立。 */
+  head: DecisionSlate | null
+  series: DecisionSlateSeries
 }
 
 export const api = {

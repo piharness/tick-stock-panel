@@ -185,6 +185,27 @@ def test_status_and_stale_are_orthogonal(tmp_path: Path):
     assert out["stale"] is True
 
 
+def test_both_axes_take_all_four_combinations(tmp_path: Path):
+    """四格都要能出现，且彼此不带动。
+
+    只钉「ready + stale」一格，等于只证明了一种巧合。真正要证明的是
+    `annotate_staleness()` **只碰新鲜度三个字段**：`status` 由文件决定，
+    读的时候不许因为「旧了」被改写，也不许因为「新」就把一个未成立的名单
+    说成成立。四格逐一列出，任何一格缺失都说明两根轴粘上了。
+    """
+    _mk_partitions(tmp_path, ["2026-11-12", "2026-11-13"])   # 11-13 已落盘
+    cases = [
+        ("2026-11-13", slate.STATUS_READY, False),    # 最新且成立
+        ("2026-11-12", slate.STATUS_READY, True),     # 成立但落后一天
+        ("2026-11-13", slate.STATUS_FAILED, False),   # 未成立，但确实是最新那次
+        ("2026-11-12", slate.STATUS_FAILED, True),    # 未成立且落后
+    ]
+    for as_of, status, want_stale in cases:
+        out = slate.annotate_staleness(tmp_path, {"as_of": as_of, "status": status})
+        assert out["status"] == status, "新鲜度改写了状态"
+        assert out["stale"] is want_stale, (as_of, status, out)
+
+
 def test_old_schema_is_treated_as_unreadable(tmp_path: Path):
     """结构版本不认 ⇒ 视为没有名单，不能拿旧 rows 当新口径。"""
     path = slate.slate_path(tmp_path, "2026-11-13")
@@ -283,6 +304,37 @@ def test_api_reports_stale_without_changing_status(client: TestClient,
     assert sl["expected_as_of"] == "2026-11-13"
 
 
+def test_api_serves_the_latest_ready_list_when_the_head_failed(client: TestClient,
+                                                              tmp_path: Path):
+    """最近一次运行没成立 ⇒ 主表仍是最近一份**成立**的名单，head 单独说原因。
+
+    这是「可执行」与「最新」两根轴在接口层的分工：
+    - `slate` 回答「明早照哪份挂单」，今天没算就用昨天那份（它仍是有效的）；
+    - `head` 回答「最近一次运行怎么样」，成不成立都要给。
+    把两者合并，要么藏掉唯一可执行的名单，要么把昨天的名单说成今天的。
+    """
+    base = tmp_path / bars.STOCK_ENRICHED
+    for d in ("2026-11-12", "2026-11-13"):
+        (base / f"date={d}").mkdir(parents=True, exist_ok=True)
+    _write_slate(tmp_path, as_of="2026-11-12")
+    _write_slate(tmp_path, as_of="2026-11-13", status=slate.STATUS_SKIPPED_NOT_CLOSED,
+                 rows=[], n_rows=0, reason="quote_ts=11:20:00 早于 15:00:00，是盘中快照")
+
+    body = client.get("/api/decision/slate").json()
+    assert body["slate"]["as_of"] == "2026-11-12"
+    assert body["slate"]["status"] == "ready"
+    assert body["slate"]["rows"][0]["symbol"] == SYM
+    assert body["head"]["as_of"] == "2026-11-13"
+    assert body["head"]["status"] == "skipped_not_closed"
+    assert body["series"]["sessions"] == 2
+    assert body["series"]["holes"] == ["2026-11-13"]
+
+    # 指定日期时不许被「最新成立」覆盖：读者点的是那一天。
+    exact = client.get("/api/decision/slate?as_of=2026-11-13").json()
+    assert exact["slate"]["status"] == "skipped_not_closed"
+    assert exact["slate"]["rows"] == []
+
+
 # ---------------------------------------------------------------------------
 # 5. 真实数据锚
 # ---------------------------------------------------------------------------
@@ -334,6 +386,10 @@ def test_freshness_cache_invalidates_when_partition_appears(tmp_path: Path):
     这条防的是「read-your-write 不成立」：管道刚落完当天分区，页面却还按
     上一次列举的结果说「已是最新」。MEMORY 里那类「34 处手工调用 clear()」
     的缓存，缺的就是这条证明。
+
+    注意本函数此前在文件里**定义了两遍**（同内容）。Python 静默让后者覆盖前者，
+    pytest 只收一条——改前一份等于没改，而没有任何东西会红。合并成一条时
+    顺手把它钉在文件末尾：重复定义在这里不是风格问题，是判据失效。
     """
     _mk_partitions(tmp_path, ["2026-11-12"])
     first = slate.annotate_staleness(tmp_path, {"as_of": "2026-11-12"})
@@ -345,18 +401,210 @@ def test_freshness_cache_invalidates_when_partition_appears(tmp_path: Path):
     assert second["expected_as_of"] == "2026-11-13"
 
 
-def test_freshness_cache_invalidates_when_partition_appears(tmp_path: Path):
-    """新增分区后必须重新列举——缓存失效靠父目录 mtime，不靠手工 clear。
+# ---------------------------------------------------------------------------
+# 6. 序列：一份文件不是「每日名单」
+# ---------------------------------------------------------------------------
 
-    这条防的是「read-your-write 不成立」：管道刚落完当天分区，页面却还按
-    上一次列举的结果说「已是最新」。MEMORY 里那类「34 处手工调用 clear()」
-    的缓存，缺的就是这条证明。
+
+def test_series_separates_missing_from_not_ready(tmp_path: Path):
+    """缺口的三种形态必须分开，它们的下一步动作不同。
+
+    构造：三个交易日，只有第一天成立。
+    - 第二天：文件在、status=failed ⇒ `not_ready`（原因在文件里）
+    - 第三天：没有文件 ⇒ `missing`（管道没跑）
+    把两者压成「缺失」，就分不清「要不要重跑」和「要不要查为什么失败」。
     """
-    _mk_partitions(tmp_path, ["2026-11-12"])
-    first = slate.annotate_staleness(tmp_path, {"as_of": "2026-11-12"})
-    assert first["lag_sessions"] == 0
+    days = ["2026-11-11", "2026-11-12", "2026-11-13"]
+    _mk_partitions(tmp_path, days)
+    _write_slate(tmp_path, as_of=days[0])
+    _write_slate(tmp_path, as_of=days[1], status=slate.STATUS_FAILED,
+                 rows=[], n_rows=0, reason="boom")
 
+    view = slate.series(tmp_path, lookback=10)
+    assert view["sessions"] == 3
+    assert view["ready"] == 1
+    assert view["missing"] == [days[2]]
+    assert view["not_ready"] == [days[1]]
+    assert view["holes"] == [days[1], days[2]]
+    assert view["head"]["as_of"] == days[2]
+    assert view["latest_ready"]["as_of"] == days[0]
+
+
+def test_series_treats_old_schema_as_unreadable_not_missing(tmp_path: Path):
+    """文件在但结构版本不认 ⇒ `unreadable`，不是 `missing`。
+
+    「没有文件」和「有文件但读不懂」都要重算，但前者要问管道为什么没跑，
+    后者是旧口径的遗留——把它报成缺失，等于让一次结构升级看起来像管道停摆。
+    """
     _mk_partitions(tmp_path, ["2026-11-13"])
-    second = slate.annotate_staleness(tmp_path, {"as_of": "2026-11-12"})
-    assert second["lag_sessions"] == 1, "新增分区后缓存没有失效"
-    assert second["expected_as_of"] == "2026-11-13"
+    path = slate.slate_path(tmp_path, "2026-11-13")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"schema_revision": 0, "as_of": "2026-11-13"}),
+                    encoding="utf-8")
+    view = slate.series(tmp_path, lookback=5)
+    assert view["missing"] == []
+    assert view["unreadable"] == ["2026-11-13"]
+    assert view["holes"] == ["2026-11-13"]
+
+
+def test_build_refuses_a_non_session_date(tmp_path: Path):
+    """`as_of` 不是已落盘的交易日 ⇒ 不按「0 只」处理。
+
+    盘后管道的 `today` 在周末/节假日正是一个非交易日：少了这条，
+    每天都会多出一份声称「今天 0 只满足条件」的名单，而那天根本没开盘。
+    `empty` 是策略结论，`skipped_no_data` 是数据事实——两者不能互换。
+    """
+    _mk_partitions(tmp_path, ["2026-11-12", "2026-11-13"])
+    out = slate.build_slate(tmp_path, "2026-11-14")   # 周六
+    assert out["status"] == slate.STATUS_SKIPPED_NO_DATA
+    assert out["rows"] == []
+    assert "不是已落盘的交易日" in out["reason"]
+
+
+def test_backfill_fills_holes_and_leaves_ready_alone(tmp_path: Path):
+    """补算只补洞：已成立的那一天不重写（`built_at` 不变即证明）。
+
+    幂等是它敢每天多跑几次、也敢随时手工补的前提。若每次都重写，
+    「这份名单什么时候就有了」会被当天的时间戳反复覆盖。
+    """
+    days = _seed(tmp_path, n=40)
+    day = days[39].isoformat()
+    first = slate.build_slate(tmp_path, day)
+    assert first["status"] in slate.READY_STATES
+    path = slate.write_slate(tmp_path, first)
+    before = json.loads(path.read_text(encoding="utf-8"))["built_at"]
+
+    out = slate.backfill(tmp_path, lookback=2)
+    assert out["failed"] == []
+    assert day in out["skipped"], out
+    after = json.loads(path.read_text(encoding="utf-8"))["built_at"]
+    assert after == before, "已成立的日子被重写了"
+
+    # 窗口内其余交易日应被补齐，且标成 backfill。
+    view = slate.series(tmp_path, lookback=2)
+    assert view["holes"] == [], view
+    for entry in view["days"]:
+        assert entry["present"]
+        assert entry["status"] in slate.READY_STATES
+    assert slate.read_slate(tmp_path, days[38].isoformat())["origin"] == slate.ORIGIN_BACKFILL
+
+
+def test_producer_never_falls_back_to_an_older_slate(tmp_path: Path, monkeypatch):
+    """今天的名单没算出来 ⇒ 今天不发卡，**不许**拿昨天的名单顶上。
+
+    回退分支看起来是兜底，实际是把「今天没算」改写成「今天用昨天的名单」：
+    卡上写昨天的日期与昨天的限价，而调用方以为它是今天的。
+    而且这个兜底永远生效——目录里最新那份名单总是存在。
+    """
+    from app.services import preferences
+
+    days = _seed(tmp_path, n=40)
+    older = slate.build_slate(tmp_path, days[29].isoformat())
+    assert older["status"] in slate.READY_STATES
+    slate.write_slate(tmp_path, older)
+
+    monkeypatch.setattr(
+        preferences, "get_decision_auto_config",
+        lambda: _prefs(enabled=True, strategy_id=l1_cohort.L1_STRATEGY_ID,
+                       horizon=0, allow_prior=True))
+    monkeypatch.setattr(
+        slate, "build_slate",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("构建失败")))
+
+    repo = KlineRepository(DataStore(tmp_path))
+    out = producer.run_decision_stage(repo, engine=None, today=days[30])
+    assert out["status"] == slate.STATUS_FAILED, out
+    assert ledger.load_cards(tmp_path) == [], "回退到旧名单发了一张日期不对的卡"
+
+
+def test_slate_identity_in_the_card_is_content_not_build_time(tmp_path: Path):
+    """同一批单重算一次名单，必须落回同一个 `card_id`。
+
+    名单的身份用**内容指纹**，不用 `built_at`。否则补跑（16:40 的二次成型、
+    手工 --backfill、写盘失败后重试）每多跑一次就多一张卡：同一份证据在
+    Brier 里被算两遍，而两张卡的 picks 一模一样，看起来完全正常。
+
+    **只改 `built_at`** 是关键：两次 `run_decision_stage` 若在同一秒内跑完，
+    `built_at` 相同，用 `built_at` 当身份也能「通过」——那种测试什么都没证明。
+    这里显式把构建时刻推到一小时后，再比身份。
+
+    变异检验：把 `fingerprint(slate)` 换回 `slate["built_at"]`，本测试变红。
+    """
+    days = _seed(tmp_path, n=40)
+    day = days[30].isoformat()
+    slate.write_slate(tmp_path, slate.build_slate(tmp_path, day))
+
+    picks_a, meta_a, err = producer._l1_picks(tmp_path, day)
+    assert err is None and picks_a
+
+    payload = slate.read_slate(tmp_path, day)
+    payload["built_at"] = "2026-01-01T16:40:00+08:00"   # 模拟「一小时后重算」
+    slate.write_slate(tmp_path, payload)
+
+    picks_b, meta_b, err = producer._l1_picks(tmp_path, day)
+    assert err is None
+    assert picks_a == picks_b
+    assert meta_a["slate"] == meta_b["slate"], "构建时刻进了名单身份"
+
+    common = dict(as_of=day, picks=picks_a, horizon_sessions=0,
+                  strategy_id=l1_cohort.L1_STRATEGY_ID,
+                  fill_mode=ledger.FILL_MODE_OPEN_ONLY)
+    # `_l1_picks` 给的是名单原样的 picks；`p_win` 由 `produce_card` 之后补上。
+    # 这里直接建卡，所以要自己补——用常数即可：本测试问的是卡的身份，
+    # 不是 p_win 的出处。
+    card_a = ledger.build_card(
+        forecast=dict(meta_a), **{**common, "picks": [dict(p, p_win=0.5) for p in picks_a]})
+    card_b = ledger.build_card(
+        forecast=dict(meta_b), **{**common, "picks": [dict(p, p_win=0.5) for p in picks_b]})
+    assert card_a["card_id"] == card_b["card_id"]
+
+    # 反向：内容真的变了（限价差一分）必须换 id——那是另一份承诺。
+    moved = [dict(p, p_win=0.5) for p in picks_a]
+    moved[0]["limit_price"] = float(moved[0]["limit_price"]) - 0.01
+    card_c = ledger.build_card(forecast=dict(meta_a), **{**common, "picks": moved})
+    assert card_c["card_id"] != card_a["card_id"]
+
+
+def test_second_run_does_not_create_a_second_card(tmp_path: Path, monkeypatch):
+    """盘后二次成型（16:40/18:10）跑第二遍不许多出一张卡。
+
+    `run_decision_stage` 是幂等阶段：名单重写、结算跳过、发卡落回同一 id。
+    这条与上面那条分工不同——上面钉「身份由什么决定」，这条钉「阶段本身可重入」。
+    """
+    from app.services import preferences
+
+    days = _seed(tmp_path, n=40)
+    monkeypatch.setattr(
+        preferences, "get_decision_auto_config",
+        lambda: _prefs(enabled=True, strategy_id=l1_cohort.L1_STRATEGY_ID,
+                       horizon=0, allow_prior=True))
+    repo = KlineRepository(DataStore(tmp_path))
+
+    first = producer.run_decision_stage(repo, engine=None, today=days[30])
+    assert first["status"] == "created", first
+    second = producer.run_decision_stage(repo, engine=None, today=days[30])
+    assert second["status"] == "exists", second
+    cards = ledger.load_cards(tmp_path)
+    assert len(cards) == 1, [c["card_id"] for c in cards]
+    assert cards[0]["card_id"] == first["card_id"]
+
+
+def test_real_data_has_no_hole_before_the_newest_session():
+    """真数据上，最近 10 个交易日里（除最新一日）不许有洞。
+
+    这是「盘后自动生成」唯一可执行的判据：`build_slate()` 能算出来不等于
+    管道写过——本判据读磁盘，不重算。
+
+    去掉最新一日是有意的：盘后管道 15:35 跑、数据可能 15:31 才定稿，
+    这一天的名单本来就可能还没成立；把它算成洞会让本测试在每个交易日
+    下午恒红一次，恒红等于没有门。更久以前的洞由页面（20 天覆盖条）与
+    `python -m app.decision.slate --coverage` 负责。
+    """
+    view = slate.series(DATA, lookback=10)
+    assert view["sessions"] >= 2, "窗口里没有足够交易日，判据未执行"
+    head = (view["head"] or {}).get("as_of")
+    holes = [d for d in view["holes"] if d != head]
+    assert not holes, (
+        f"这些交易日没有可执行名单：{holes}。"
+        "补算：python -m app.decision.slate --backfill --lookback 20"
+    )

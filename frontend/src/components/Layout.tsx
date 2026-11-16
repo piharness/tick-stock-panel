@@ -53,6 +53,7 @@ import {
   IconStrategy,
   IconFactors,
   IconBacktest,
+  IconFlow,
   IconRegime,
   IconIndices,
   IconData,
@@ -88,6 +89,8 @@ type CoreIndex = (typeof CORE_INDEXES)[number]
 
 const nav = [
   { to: '/',                 label: '看板',     icon: IconDashboard },
+  // 博弈链路紧跟看板：它是"今天该看什么"的入口，先有流程再有页面。
+  { to: '/battle',           label: '博弈链路', icon: IconFlow },
   { to: '/watchlist',        label: '自选',     icon: IconWatchlist },
   { to: '/screener',         label: '策略',     icon: IconStrategy },
   { to: '/factors',          label: '因子',     icon: IconFactors },

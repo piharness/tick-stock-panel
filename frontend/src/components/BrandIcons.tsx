@@ -204,6 +204,16 @@ export const IconData = make(
   </>,
 )
 
+/** 博弈链路 — 两个环节 + 推进箭头 (按时间顺序走完流程) */
+export const IconFlow = make(
+  <>
+    <rect x="3" y="6" width="6" height="12" />
+    <rect x="15" y="6" width="6" height="12" />
+    <path d="M9.5 12H14.2" />
+    <path d="M12.6 10.4L14.4 12L12.6 13.6" />
+  </>,
+)
+
 /** 决策账本 — 封存的卡 + 右下角核对勾 (预登记 → 结算) */
 export const IconDecision = make(
   <>

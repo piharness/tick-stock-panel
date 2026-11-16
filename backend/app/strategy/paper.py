@@ -377,12 +377,20 @@ def create_order(
     asset_type: str | None = None,
     ref_price: float | None = None,
     source: str = "manual",
+    limit_price: float | None = None,
 ) -> tuple[dict | None, str | None]:
     """创建订单并校验。qty 与 amount 二选一 (amount 按参考价折算百股)。
 
     order_type: market(即时, 盘中钩子撮合) / next_open / close。
     ETF 即时单自动转 next_open (盘中钩子只喂股票快照)。
-    返回 (order, None) 或 (None, 错误信息)。
+
+    `limit_price` 是**条件成交价**，不是报价上限：买单要求撮合价 ≤ 它，
+    卖单要求撮合价 ≥ 它；不满足就过期留痕，不顺延。它存在的唯一理由是
+    「低开才买」这类策略——`next_open` 原本无条件按开盘价成交，会把
+    「高开走弱」的样本一起买进来，那是另一个策略（实测成交 70 笔 vs 42 笔，
+    均值被摊薄，见 `analysis/_diag_l1_loop_walk_findings.md`）。
+    与 `ref_price` 的分工：`ref_price` 只用于下单时的资金预检，`limit_price`
+    才是撮合判据。
     """
     with PAPER_LOCK:
         acc = get_account(data_dir, account_id)
@@ -394,6 +402,12 @@ def create_order(
             return None, f"side 非法: {side!r}"
         if order_type not in ("market", "next_open", "close"):
             return None, f"order_type 非法: {order_type!r}"
+        if limit_price is not None:
+            limit_price = float(limit_price)
+            if limit_price <= 0:
+                return None, f"limit_price 必须为正: {limit_price}"
+            if order_type == "market":
+                return None, "market 单不支持 limit_price：盘中钩子按快照价即时成交，没有可比的 bar"
         symbol = (symbol or "").strip()
         if not symbol:
             return None, "symbol 不能为空"
@@ -453,8 +467,10 @@ def create_order(
             "order_type": order_type,
             "status": "pending",   # pending / filled / cancelled / expired
             "ref_price": float(ref_price) if ref_price else None,
+            #: 条件成交价。`None` = 无条件（原有行为，完全向后兼容）。
+            "limit_price": float(limit_price) if limit_price is not None else None,
             "postponed": 0,        # 顺延交易日计数 (停牌顺延 / 涨跌停排队共用)
-            "source": source,      # manual / auto:{rule_id}
+            "source": source,      # manual / auto:{rule_id} / card:{card_id}
             "created_at": _now_iso(),
             "filled_at": None,
             "fill_price": None,
@@ -756,6 +772,70 @@ def _fill_order(data_dir: Path, order: dict, raw_price: float, day: str, account
     return fill
 
 
+#: 决策卡买单的来源前缀。平仓只跟这一类买单走，不动手动单与监控规则单。
+CARD_SOURCE_PREFIX = "card:"
+
+
+def _close_rounds(data_dir: Path, day: str, account_id: str, summary: dict) -> None:
+    """把当日成交的「决策卡买单」配一笔等量卖出，卖的是**老股**。
+
+    为什么必须在同一次 `settle_day` 里做，而不是盘后再下一张 `close` 单：
+    L1 的收益是 open→close **同一根 bar**。盘后下的 close 单会等到下一交易日
+    收盘才成交，那就变成隔夜持有——实测那条腿是负的（R5：−67.2bp，t −8.88），
+    与 L1 不是同一个策略。少了这一步，「回合」就会被静默换成「持有 1 天」。
+
+    T+1 在这里不是障碍：卖出的批次满足 `lot.date < day`，是买入之前就持有的
+    老股，合法。账户没有底仓时**什么都不做**，只把「缺库存」计入
+    `round_unfunded`——宁可少一个回合，也不要造一个不可实现的日内交易。
+    """
+    buys = [
+        f for f in load_fills(data_dir, account_id)
+        if f.get("date") == day and f.get("side") == "buy" and f.get("kind") == "fill"
+    ]
+    if not buys:
+        return
+    for fill in buys:
+        order = get_order(data_dir, str(fill.get("order_id")), account_id)
+        if order is None or not str(order.get("source") or "").startswith(CARD_SOURCE_PREFIX):
+            continue
+        symbol = str(fill.get("symbol"))
+        qty = int(fill.get("qty") or 0)
+        if qty <= 0:
+            continue
+        pos = load_positions(data_dir, account_id).get(symbol)
+        avail = _available_of(pos, day) if pos else 0
+        if avail < qty:
+            summary["round_unfunded"] = int(summary.get("round_unfunded", 0)) + 1
+            continue
+        bar = read_daily_bar(data_dir, symbol, order.get("asset_type", "stock"), day)
+        if bar is None:
+            summary["round_unfunded"] = int(summary.get("round_unfunded", 0)) + 1
+            continue
+        close_order = {
+            "id": _new_id("order"),
+            "symbol": symbol,
+            "asset_type": order.get("asset_type", "stock"),
+            "side": "sell",
+            "qty": qty,
+            "order_type": "close",
+            "status": "pending",
+            "ref_price": float(bar["close"]),
+            "limit_price": None,
+            "postponed": 0,
+            "source": f"{order.get('source')}:close",
+            "created_at": _now_iso(),
+            "filled_at": None,
+            "fill_price": None,
+            "fees": None,
+            "reason": None,
+        }
+        save_order(data_dir, close_order, account_id)
+        if _fill_order(data_dir, close_order, float(bar["close"]), day, account_id) is not None:
+            summary["round_closed"] = int(summary.get("round_closed", 0)) + 1
+        else:
+            summary["round_unfunded"] = int(summary.get("round_unfunded", 0)) + 1
+
+
 def _expire(data_dir: Path, order: dict, reason: str, account_id: str = DEFAULT_ACCOUNT_ID) -> None:
     """拒单置 expired 并立即落盘 (撮合拒绝必须留痕, 不允许静默丢弃)。"""
     order["status"] = "expired"
@@ -955,7 +1035,8 @@ def settle_day(data_dir: Path, day: str, account_id: str = DEFAULT_ACCOUNT_ID) -
     当日开盘后才下 / 排队的 next_open 单, 以及收盘后才下的 close / market 单,
     当日不成交也不计顺延, 留到下一交易日 (见 _placed_after_price_time)。
     """
-    summary = {"filled": 0, "expired": 0, "corp_actions": 0, "nav": None, "account": account_id}
+    summary = {"filled": 0, "expired": 0, "corp_actions": 0, "nav": None,
+               "account": account_id, "round_closed": 0, "round_unfunded": 0}
     with PAPER_LOCK:
         acc = get_account(data_dir, account_id)
         if acc is None:
@@ -980,11 +1061,34 @@ def settle_day(data_dir: Path, day: str, account_id: str = DEFAULT_ACCOUNT_ID) -
                 continue  # 下单/排队时该价已打印, 留到下一交易日 (不计顺延)
             # next_open 用开盘价; close 与 market 兜底用收盘价
             raw = bar["open"] if order["order_type"] == "next_open" else bar["close"]
+            limit = order.get("limit_price")
+            if limit is not None:
+                # 限价是**策略语义**，不是风控：低开才买 ⇒ 高开就不该进这个回合。
+                # 因此过期而不是顺延——顺延会让它明天以另一个开盘价重试，而
+                # 这条限价只对「今天这个开盘」有意义。滑点不参与比较：判据是
+                # 原始 bar 价，与 `settle._fill` 的 `open_only` 同一口径。
+                lim = float(limit)
+                if order["side"] == "buy" and float(raw) > lim + 1e-9:
+                    _expire(data_dir, order,
+                            f"开盘 {float(raw):.2f} 高于限价 {lim:.2f}, 按策略不成交",
+                            account_id)
+                    summary["expired"] += 1
+                    continue
+                if order["side"] == "sell" and float(raw) < lim - 1e-9:
+                    _expire(data_dir, order,
+                            f"收盘 {float(raw):.2f} 低于限价 {lim:.2f}, 按策略不成交",
+                            account_id)
+                    summary["expired"] += 1
+                    continue
             before = order["status"]
             if _fill_order(data_dir, order, raw, day, account_id) is not None:
                 summary["filled"] += 1
             elif before == "pending" and order["status"] == "expired":
                 summary["expired"] += 1
+
+        # 回合平仓：当日成交的决策卡买单，卖出等量老股（T+1 允许卖老股）。
+        # 位置在买卖循环之后、除权调整之前：此刻当日成交已记账，持仓已物化。
+        _close_rounds(data_dir, day, account_id, summary)
 
         # 除权调整 (仅持仓标的; 幂等: 同一 symbol 同日只应用一次 — 重跑结算不二次乘因子)
         positions = load_positions(data_dir, account_id)

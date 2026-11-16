@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-11-13",
+  "dragon_tiger": {
+    "days": 241,
+    "trades": 12940,
+    "H1": {
+      "excess_bp": -3.1,
+      "t": -0.22,
+      "n_days": 241
+    },
+    "H2": {
+      "excess_bp": -44.8,
+      "t": -2.52,
+      "n_days": 240
+    },
+    "H5": {
+      "excess_bp": -142.9,
+      "t": -5.69,
+      "n_days": 238
+    }
+  },
+  "auction": {
+    "window_days": 60,
+    "days_used": 60,
+    "n": 358,
+    "all_mean": 0.004848,
+    "chase_ge5_n": 105,
+    "chase_ge5_mean": -0.017927,
+    "as_of": "2026-11-13"
+  }
+}

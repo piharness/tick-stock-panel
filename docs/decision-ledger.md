@@ -118,13 +118,46 @@
    7 套截断常量、`mom20` 四份实现，而**决策卡页面看不到标的**（「标的」列
    是数量）。现在：盘后管道 Step 2.9 先产 `slate-<as_of>.json`，卡从它取 picks
    （`producer._l1_picks` 只读磁盘），`GET /api/decision/slate` 只读返回，
-   Decision 页有「今日名单」表与下钻。
+   Decision 页有「每日名单」表与下钻。
    - `status`（成不成立）与 `stale`（新不新鲜）是两根轴，`ready + stale` 合法；
    - `stale` 在**读取时刻**重算，不信文件里的 `stale_at_build`；
    - `top_n` 对 L1 不可配（`invalid_top_n`），改它等于换策略；
    - 判据：`test_producer_card_picks_equal_slate_rows`（构造性相等）、
      `test_staleness_is_recomputed_at_read_time`（变异检验 3/3 被杀）、
      `test_real_slate_tracks_latest_complete_session`（真数据锚）。
+
+   **补充（同日，把「每日」这个词变成可验证的）**。单份文件只能回答「今天有没有」，
+   回答不了「上周三算过吗」——管道停一天就永久缺一天，而页面仍显示最近一份，
+   看起来一切正常（11-12 就是这样丢的）。所以序列本身要有判据：
+
+   - `series()` 以 **enriched 交易日**为分母逐日点名，把缺口分成三类：
+     `missing`（没文件）/ `unreadable`（有文件但结构不认）/ `not_ready`（有文件、
+     `status` 非 ready）。三者下一步动作不同，压成「缺失」就分不清该重跑还是该查原因。
+   - `python -m app.decision.slate --coverage` 打印序列，**退出码 3** 表示窗口内
+     （除最新一日）有洞；`--backfill` 幂等补齐，`origin=backfill` 记下「这份是补的」，
+     `first_built_at` 由 `write_slate()` 继承，不许被补算改写成「当天跑过」。
+   - **最新一日不算洞**：管道 15:35 跑、数据可能 15:31 才定稿。把它算进去，
+     这个判据会在每个交易日午后恒红一次，恒红等于没有门。
+   - 盘后另有两个时点补成型（16:40 / 18:10，`_register_slate_finalize_jobs`）：
+     15:35 那次若拿到竞价快照，名单是 `skipped_not_closed`，而单份文件不会自己变新。
+     补跑走与管道同一个幂等阶段，且与管道共用重任务槽位（不并发写账本）。
+   - **卡的身份用内容指纹，不用 `built_at`**：补跑/补算每多跑一次就多一张卡，
+     同一份证据在 Brier 里算两遍，而两张卡的 picks 一模一样。`fingerprint` =
+     sha256(as_of + strategy + top_n + [(symbol, limit)])；限价差一分即换 id。
+   - `as_of` 必须是**已落盘的交易日**：否则周末会被算成 `empty`（「今天 0 只」），
+     而「没开盘」和「0 只满足」是两件事——前者是数据事实，后者是策略结论。
+   - 判据：`test_series_separates_missing_from_not_ready`、
+     `test_backfill_fills_holes_and_leaves_ready_alone`、
+     `test_build_refuses_a_non_session_date`、
+     `test_producer_never_falls_back_to_an_older_slate`、
+     `test_slate_identity_in_the_card_is_content_not_build_time`、
+     `test_real_data_has_no_hole_before_the_newest_session`，
+     以及 `tests/test_decision_slate_schedule.py`（闭包绑定 / `on_progress` 签名 /
+     `today` 必须钉住）。变异检验 7/7 被杀。
+
+   对拍：`python analysis/_verify_slate_vs_cards.py --check` 用**今天的产地**重算
+   历史卡那天的名单，10 张卡逐位相同（0 分叉）。它同时验证了 `--backfill`：
+   补出来的 10-29..11-11 与当时封存的 picks 一字不差。
 4. **组合层**：把 `sizing.py` 的 E[log] 仓位接到 `paper` 的下单金额上，但必须先有
    `n ≥ 8` 且 `significant=true` 的校准证据。
 

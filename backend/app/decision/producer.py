@@ -361,15 +361,25 @@ def _l1_picks(data_dir: Path, as_of: str | None
     3. `as_of` 用名单里的值，不用调用方传的 `today`：两者不一致时，
        卡必须记录它实际承诺的那一天。
 
+    **只读 `as_of` 那一天，绝不回退到「最新一份」。** 回退看起来是兜底，
+    实际是把「今天的名单没算出来」改写成「今天用昨天的名单发卡」：
+    卡上会写昨天的日期、昨天的限价，而调用方以为它是今天的。目录里最新那份
+    名单永远存在（除非首次运行），所以这个兜底永远生效、永远不报错。
+
     盘中数据仍要在这里再挡一次：`build_slate` 会返回 `skipped_not_closed`，
     这里把它原样上报，不降级造卡。
     """
-    slate = slate_mod.read_slate(Path(data_dir), as_of) if as_of else \
-        slate_mod.read_slate(Path(data_dir))
+    if not as_of:
+        return [], {}, {
+            "status": slate_mod.STATUS_FAILED,
+            "reason": "本次构建没有 as_of（写出失败/无分区）：不回退到旧名单发卡",
+        }
+    slate = slate_mod.read_slate(Path(data_dir), str(as_of))
     if slate is None:
         return [], {}, {
             "status": "scan_failed",
-            "reason": "每日名单未落盘：无法从同一份名单发卡（先看管道 slate 日志）",
+            "reason": f"{as_of} 的每日名单未落盘：无法从同一份名单发卡"
+                      "（先看管道 slate 日志）",
         }
     if slate.get("status") not in slate_mod.READY_STATES:
         return [], {}, {
@@ -390,14 +400,16 @@ def _l1_picks(data_dir: Path, as_of: str | None
         "n_candidates": len(picks),
         "caliber": slate.get("caliber"),
         "warnings": slate.get("warnings") or [],
-        # 名单的身份进 forecast ⇒ 进承诺哈希：同一 as_of 换了一份名单
-        # （结构版本、截断、构建时刻）就是另一张卡。
+        # 名单的身份进 forecast ⇒ 进承诺哈希。用**内容指纹**而不是 `built_at`：
+        # 补跑一次（同一批单、新的构建时刻）必须落回同一个 card_id，
+        # 否则同一天会被记两张卡，同一份证据在 Brier 里算两遍。
+        # 「另一份名单」指的是 rows 变了，不是写盘时间变了。
         "slate": {
             "schema_revision": slate.get("schema_revision"),
             "status": slate.get("status"),
             "n_rows": slate.get("n_rows"),
             "stale_at_build": slate.get("stale_at_build"),
-            "built_at": slate.get("built_at"),
+            "fingerprint": slate_mod.fingerprint(slate),
         },
     }
     return picks, meta, None

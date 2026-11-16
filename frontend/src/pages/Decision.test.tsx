@@ -5,6 +5,7 @@
  */
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { api, type DecisionAutoConfig, type DecisionOverview, type DecisionSlateResponse, type Preferences } from '@/lib/api'
@@ -79,6 +80,29 @@ const slateResponse: DecisionSlateResponse = {
     stale: true,
   },
   card: null,
+  head: null,
+  // 覆盖条：两周里每天都成立。断言的落点是「序列存在」而不是某个数字——
+  // 数字会随真实数据变，而「近 N 日里有几个缺口」这句话必须一直在。
+  series: {
+    lookback: 20,
+    sessions: 2,
+    ready: 2,
+    empty: 0,
+    missing: [],
+    unreadable: [],
+    not_ready: [],
+    holes: [],
+    head: {
+      as_of: '2026-11-11', present: true, status: 'ready', n_rows: 1,
+      built_at: '2026-11-11T16:00:00+08:00', origin: 'pipeline', reason: null,
+    },
+    days: [
+      { as_of: '2026-11-10', present: true, status: 'ready', n_rows: 20,
+        built_at: null, origin: 'pipeline', reason: null },
+      { as_of: '2026-11-11', present: true, status: 'ready', n_rows: 1,
+        built_at: null, origin: 'pipeline', reason: null },
+    ],
+  },
 }
 
 beforeEach(() => {
@@ -109,9 +133,11 @@ afterEach(() => {
 async function render() {
   await act(async () => {
     root.render(
-      <QueryClientProvider client={client}>
-        <Decision />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <Decision />
+        </QueryClientProvider>
+      </MemoryRouter>,
     )
   })
   // react-query 的 promise 解析 + 重渲染要跨几个微任务/宏任务，单次 await 不够
@@ -249,11 +275,37 @@ it('名单落后时显示落后天数——status=ready 不许盖住 stale', asy
   // 「有效」和「最新」是两根轴，合并任何一根都会让停滞变成沉默。
   await render()
   const text = host.textContent ?? ''
-  expect(text).toContain('今日名单')
+  expect(text).toContain('每日名单')
   expect(text).toContain('600519.SH')
   expect(text).toContain('名单就绪')
   expect(text).toContain('落后 2 个交易日')
   expect(text).toContain('2026-11-13')  // 行情已到的日期必须出现在告警里
+})
+
+it('最近一次运行没成立时，仍给出最近一份成立的名单并说明病因', async () => {
+  // 两件事必须同时成立：可执行的名单不许被一条运行状态藏掉，
+  // 而「这不是今天新算的」也不许被藏掉。只用其中一句都会骗人。
+  vi.mocked(api.decisionSlate).mockResolvedValue({
+    ...slateResponse,
+    head: {
+      ...slateResponse.slate,
+      as_of: '2026-11-13',
+      status: 'skipped_not_closed',
+      rows: [],
+      n_rows: 0,
+      reason: 'quote_ts=11:20:00 早于 15:00:00，是盘中快照',
+    },
+    series: { ...slateResponse.series, holes: ['2026-11-13'], not_ready: ['2026-11-13'] },
+  })
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('最近一次运行')
+  expect(text).toContain('2026-11-13')
+  expect(text).toContain('盘中快照')
+  expect(text).toContain('600519.SH')          // 可执行名单仍在页面上
+  expect(text).toContain('缺口')
+  // 有更具体的病因时不再用笼统的「落后 N 天 + 去查管道」盖住它。
+  expect(text).not.toContain('先查盘后管道 Step 2.9')
 })
 
 it('名单不存在时说的是「还没生成」，不是「加载中」', async () => {

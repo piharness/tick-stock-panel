@@ -211,25 +211,48 @@ def adjustment_check(data_root: Path, days: list[str], entry: str,
     }
 
 
-def median_from_raw(data_root: Path, entry: str, exit_: str) -> tuple[float | None, int]:
+def median_from_raw(data_root: Path, entry: str, exit_: str, *,
+                    entry_price: str = "close") -> tuple[float | None, int]:
     """全市场收益中位数，由不复权价 + 事件因子重算。
 
     只保留两端都有正价、且窗口内因子已算清的标的；样本数一并返回，因为
     `settle._median_ret` 在样本不足时给 None，两边要能对齐「为什么是 None」。
+
+    `entry_price="open"` 是**必须**的一支，不是可选优化：被测收益是
+    `close(exit) / open(entry) − 1` 时，基准也得从 `open(entry)` 起算。
+    两边都用 `close` 的话，`entry == exit` 时基准恒为 0，median 口径会静默
+    退化成 abs——而两条路径会**一致地错**，测试因此是绿的。
+    这里反推不复权开盘：`raw_open = open × raw_close / close`（同一根 bar 上
+    复权因子对 OHLC 一致）。
     """
-    a = day_frame(data_root, entry, ["symbol", "raw_close"])
+    cols = ["symbol", "raw_close"]
+    if entry_price == "open":
+        cols += ["open", "close"]
+    a = day_frame(data_root, entry, cols)
     b = day_frame(data_root, exit_, ["symbol", "raw_close"])
     if a.is_empty() or b.is_empty():
         return None, 0
-    j = a.join(b, on="symbol", suffix="_end")
-    j = j.filter((pl.col("raw_close") > 0) & (pl.col("raw_close_end") > 0))
+    if entry_price == "open" and {"open", "close"} <= set(a.columns):
+        o = a["open"].cast(pl.Float64)
+        c = a["close"].cast(pl.Float64)
+        rc = a["raw_close"].cast(pl.Float64)
+        px_in = (o * rc / c).cast(pl.Float64)
+    else:
+        px_in = a["raw_close"].cast(pl.Float64)
+    j = (
+        pl.DataFrame({"symbol": a["symbol"], "px_in": px_in})
+        .join(b.rename({"raw_close": "raw_close_end"}), on="symbol")
+    )
+    j = j.filter((pl.col("px_in") > 0) & (pl.col("raw_close_end") > 0))
     if j.height < 100:
         return None, j.height
     syms = j["symbol"].to_list()
     factors = factor_product(data_root, syms, entry, exit_)
     fac = pl.Series("fac", [factors.get(str(s), 1.0) for s in syms], dtype=pl.Float64)
     j = j.with_columns(fac)
-    ret = (j["raw_close_end"] * j["fac"] / j["raw_close"] - 1.0)
+    # `px_in` 已是不复权开盘（有因子时）或原始收盘；`fac` 只修正出场端，
+    # 与 `settle` 的 EVENT 口径同式：exit_raw × fac / entry_px − 1。
+    ret = (j["raw_close_end"] * j["fac"] / j["px_in"] - 1.0)
     return float(ret.median()), j.height
 
 
@@ -366,8 +389,14 @@ def replay(data_root: Path, *, as_of: str | None = None, horizon: int = 5,
         summary = settle.settle(sandbox) if made.get("status") == "created" else {}
         rows = ledger.load_settlements(sandbox)
 
-        # (3) 第二路径重算。
-        med_recomputed, med_n = median_from_raw(data_root, entry, exit_day)
+        # (3) 第二路径重算。基准的入场价跟着成交依据走：`basis=OPEN` 用开盘，
+        # 其余用收盘。两版都算，因为同一张卡里可能混着两种成交。
+        med_by_basis: dict[str, float | None] = {}
+        med_n = 0
+        for px in ("open", "close"):
+            med_by_basis[px], med_n = median_from_raw(
+                data_root, entry, exit_day, entry_price=px)
+        med_recomputed = med_by_basis["open"]
         adj = adjustment_check(data_root, calendar[as_of_i + 1: as_of_i + 2 + horizon],
                                entry, exit_day)
         by_symbol = {str(r["symbol"]): r for r in rows}
@@ -384,7 +413,10 @@ def replay(data_root: Path, *, as_of: str | None = None, horizon: int = 5,
                 d_ret = abs(ret_stored - mine["ret"])
                 d_fill = abs(float(rec["fill"]["price"]) - mine["fill_price"])
                 med_stored = rec.get("median_ret")
-                d_med = (abs(float(med_stored) - float(med_recomputed))
+                med_expect = med_by_basis[
+                    "open" if str((rec.get("fill") or {}).get("basis")) == "OPEN"
+                    else "close"]
+                d_med = (abs(float(med_stored) - float(med_expect))
                          if med_stored is not None and med_recomputed is not None else None)
                 item["settled"] = {
                     "fill_basis": rec["fill"]["basis"],

@@ -11,7 +11,9 @@
  * 修改本清单需同步回归 navOrder.test.ts。
  */
 export const DEFAULT_NAV_PATHS = [
-  '/', '/watchlist', '/screener', '/factors', '/backtest',
+  // 2026-11 新增 /battle（博弈链路）插在 / 之后：它承担"今天该看什么"的入口
+  // 职责，沉底会让新用户找不到。这是有意的顺序决策，其余路径相对次序未动。
+  '/', '/battle', '/watchlist', '/screener', '/factors', '/backtest',
   '/stock-analysis', '/limit-ladder', '/concept-analysis', '/industry-analysis', '/financials',
   '/monitor', '/regime', '/abnormal', '/lots', '/paper', '/signals', '/review',
   '/indices', '/data',

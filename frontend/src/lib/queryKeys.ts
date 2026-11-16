@@ -12,6 +12,7 @@ export const DAILY_DATA_QUERY_PREFIXES = new Set([
   'screener-cached', 'screener-kline-batch', 'market-snapshot', 'overview-market',
   'index-quotes', 'index-daily', 'watchlist-enriched', 'kline-batch', 'kline', 'kline-latest', 'stock-levels',
   'regime-history', 'regime-latest', 'regime-states', 'regime-coverage', 'regime-phases', 'regime-mainline',
+  'regime-context',
 ])
 
 /** 分钟落盘补拉后的体检与直接消费查询, 不影响日K/财务或独立的指数分钟数据。 */
@@ -172,6 +173,7 @@ export const QK = {
   // 失效用裸前缀: 前缀匹配所有历史查询变体 (regimeHistory() 带哨兵值匹配不到任何键)
   regimeHistoryPrefix:  ['regime-history'] as const,
   regimeLatest:         ['regime-latest'] as const,
+  regimeContext:        ['regime-context'] as const,
   regimeStates:         (days: number) => ['regime-states', days] as const,
   regimeCoverage:       ['regime-coverage'] as const,
   regimePhases:         (start?: string, end?: string) => ['regime-phases', start ?? '', end ?? ''] as const,
