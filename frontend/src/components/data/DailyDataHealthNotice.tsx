@@ -21,11 +21,26 @@ export function DailyDataHealthNotice() {
     previous.current = version
   }, [version, qc])
   const assets = health.data?.blocking_assets ?? []
+  const entries = health.data?.blocking_entries ?? []
+  const total = health.data?.blocking_total ?? entries.length
   if (!assets.length) return null
+  // 横幅是这条信息的**唯一**常驻出口（请求侧不再为 daily_integrity 弹 toast），
+  // 所以它必须说清「哪一天、哪一类、什么毛病」，而不是只说「有东西没修完」。
+  const shown = entries.slice(0, 3)
   return (
     <div role="alert" className="mx-3 mt-2 flex flex-wrap items-center gap-2 rounded-btn border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
       <span>{assets.map(a => LABELS[a]).join('、')}日K存在未完成的修补或重算，受影响的计算暂不可用。</span>
+      {shown.length > 0 && (
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-warning/80">
+          {shown.map(e => (
+            <span key={`${e.asset_type}-${e.day}-${e.kind}`} className="font-mono">
+              {LABELS[e.asset_type]} {e.day} · {e.reason}
+            </span>
+          ))}
+          {total > shown.length && <span>等 {total} 条</span>}
+        </span>
+      )}
       <Link className="ml-auto shrink-0 underline underline-offset-2" to="/data">前往数据页处理</Link>
     </div>
   )

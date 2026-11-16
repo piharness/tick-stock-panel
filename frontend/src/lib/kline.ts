@@ -79,7 +79,7 @@ const CLOSE_MINUTE = '15:00'
 const MARKET_ALL_OVER = '15:30'
 
 /** 北京时间今日 YYYY-MM-DD (与后端 cn_today 同口径; 不用 UTC toISOString, 避免傍晚错日)。 */
-function cnToday(): string {
+export function cnToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
 }
 

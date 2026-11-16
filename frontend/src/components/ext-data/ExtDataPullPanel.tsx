@@ -1,3 +1,6 @@
+import { DateInput } from '@/components/DateInput'
+import { cnToday } from '@/lib/kline'
+import { shiftMonths } from '@/lib/chartRange'
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Loader2, Search, Check, Clock, Zap, Settings2, AlertCircle, CheckCircle2, Calendar, History, Layers, X, Database } from 'lucide-react'
@@ -300,8 +303,9 @@ function ExtPullConfigDialog({ config, onSaved, onClose }: {
   const [error, setError] = useState('')
 
   // 历史回补 (仅 timeseries + 接口支持按日查询)
-  const today = new Date().toISOString().slice(0, 10)
-  const monthAgo = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10)
+  // 北京日期；toISOString() 是 UTC，北京时间 00:00-08:00 会算成昨天
+  const today = cnToday()
+  const monthAgo = shiftMonths(today, -1)
   const [bfStart, setBfStart] = useState(monthAgo)
   const [bfEnd, setBfEnd] = useState(today)
   const [bfRunning, setBfRunning] = useState(false)
@@ -939,14 +943,16 @@ function ExtPullConfigDialog({ config, onSaved, onClose }: {
               </SectionHead>
               <div className="rounded-xl border border-border/60 bg-elevated/20 p-3.5 space-y-2">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="date" value={bfStart} onChange={e => setBfStart(e.target.value)}
-                    className="h-9 flex-1 min-w-0 rounded-lg border border-border bg-base px-2.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-accent/25"
+                  <DateInput
+                    value={bfStart} onChange={setBfStart} ariaLabel="回补起点" allowEmpty={false}
+                    focusClassName="focus-within:ring-1 focus-within:ring-accent/25"
+                    className="h-9 flex-1 min-w-0 rounded-lg border border-border bg-base px-2.5 text-xs font-mono text-foreground"
                   />
                   <span className="text-xs text-muted shrink-0">至</span>
-                  <input
-                    type="date" value={bfEnd} onChange={e => setBfEnd(e.target.value)}
-                    className="h-9 flex-1 min-w-0 rounded-lg border border-border bg-base px-2.5 text-xs font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-accent/25"
+                  <DateInput
+                    value={bfEnd} onChange={setBfEnd} ariaLabel="回补终点" allowEmpty={false}
+                    focusClassName="focus-within:ring-1 focus-within:ring-accent/25"
+                    className="h-9 flex-1 min-w-0 rounded-lg border border-border bg-base px-2.5 text-xs font-mono text-foreground"
                   />
                   <button
                     onClick={handleBackfill}

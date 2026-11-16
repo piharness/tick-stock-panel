@@ -9,6 +9,20 @@ let _queue: ToastItem[] = []
 function _emit() { _listeners.forEach(fn => fn([..._queue])) }
 
 function toast(msg: string, kind: 'error' | 'success' = 'error') {
+  // 同一条消息已经在屏幕上：刷新它的存在时间，不再叠一条。
+  // 轮询型请求失败时会连续命中同一个错误，去重前 4 秒内能叠出十几条一样的红条，
+  // 用户看到的是「页面一直在弹」，而不是「有一个问题一直存在」。
+  const dup = _queue.find(t => t.msg === msg && t.kind === kind)
+  if (dup) {
+    _queue = _queue.filter(t => t.id !== dup.id)
+    _queue = [..._queue, { ...dup, id: ++_id }]
+    _emit()
+    setTimeout(() => {
+      _queue = _queue.filter(t => t.msg !== msg || t.kind !== kind)
+      _emit()
+    }, 4000)
+    return
+  }
   const item = { id: ++_id, msg, kind }
   _queue = [..._queue, item]
   _emit()

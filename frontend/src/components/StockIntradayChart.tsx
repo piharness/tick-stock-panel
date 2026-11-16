@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { api, type MinuteKlineRow } from '@/lib/api'
+import { api, type MinuteKlineRow, type MinuteNoneReason, minuteNoneRetryable } from '@/lib/api'
 import { QK } from '@/lib/queryKeys'
 import { klineMinuteQueryOptions, minuteRefetchInterval } from '@/lib/kline'
 import { EChartsIntraday } from '@/components/EChartsIntraday'
 import type { DailySummary } from '@/lib/intraday-chart'
+
+/** 空数据的病因 → 给用户看的一句话 (与后端 reason 码一一对应) */
+const NONE_REASON_TEXT: Record<MinuteNoneReason, string> = {
+  provider_call_failed: '分钟源这次请求抛错, 多为通道临时故障, 稍等再试',
+  provider_unavailable: '分钟源插件当前不可用 (依赖缺失或未配置)',
+  provider_no_dataset: '当前分钟源没有声明分钟数据集',
+  provider_bad_datetime: '分钟源返回的时间口径不合法, 已被契约拒绝',
+  no_minute_capability: '未选中可用分钟源, 且 TickFlow 无分钟权限',
+  provider_no_rows: '分钟源没有这一天的数据 (停牌, 或超出该源历史深度)',
+  no_rows: '本地与数据源都没有这一天的分钟数据',
+}
 
 interface Props {
   symbol: string
@@ -61,6 +72,9 @@ export function StockIntradayChart({
   const sourceIsNone = minute.data?.source === 'none'
   // 指数分钟K无本地存储且不支持落库获取 (后端 sync_minute_single 显式拒绝), 不显示获取按钮
   const isIndex = minute.data?.asset_type === 'index'
+  const noneReason = minute.data?.reason
+  const retryable = minuteNoneRetryable(noneReason)
+  const reasonText = NONE_REASON_TEXT[noneReason ?? 'no_rows']
 
   useEffect(() => {
     setMinuteDismissed(false)
@@ -83,14 +97,23 @@ export function StockIntradayChart({
             // 指数: 分钟K仅支持实时读取, 无落库获取入口
             <div className="flex items-center justify-center h-full text-xs text-muted">指数暂无分钟数据</div>
           ) : sourceIsNone ? (
-            // 数据源确认无此日分钟数据 (停牌/复牌延迟等): 静态提示 + 保留重试
+            // 拉空分两档: 「这次没拉到」可重试, 「源给不出这一天」重试无用。
+            // 二者原来合成一句「数据源未提供」—— 通道故障被说成源的能力缺失,
+            // 用户于是去换数据源, 而正确动作是再拉一次。
             <div className="flex flex-col items-center justify-center h-full gap-3">
-              <div className="text-xs text-muted">该日暂无分钟数据（数据源未提供）</div>
+              <div className="text-xs text-muted">
+                {retryable
+                  ? '分钟数据暂时没取到（数据源请求失败）'
+                  : '该日暂无分钟数据（数据源未提供）'}
+              </div>
+              {retryable && minute.data?.reason && (
+                <div className="text-[10px] text-muted/70">{reasonText}</div>
+              )}
               <button
                 onClick={() => fetchMinute.mutate()}
                 className="px-4 py-1.5 rounded-btn bg-elevated text-secondary text-xs font-medium hover:bg-elevated/80 transition-colors duration-150"
               >
-                重新获取
+                {retryable ? '重新获取' : '再试一次'}
               </button>
             </div>
           ) : minuteDismissed ? (

@@ -7,13 +7,13 @@ import { QK } from '@/lib/queryKeys'
 import { useCapabilities } from '@/lib/useSharedQueries'
 import { EChartsCandlestick, type OHLC } from '@/components/EChartsCandlestick'
 import { EChartsIntraday } from '@/components/EChartsIntraday'
+import { DateInput } from '@/components/DateInput'
+import { cnToday } from '@/lib/kline'
+import { presetRange } from '@/lib/chartRange'
 
 function defaultRange() {
-  const now = new Date()
-  const end = now.toISOString().slice(0, 10)
-  const s = new Date(now)
-  s.setMonth(s.getMonth() - 6)
-  return { start: s.toISOString().slice(0, 10), end }
+  // 北京日期 + 日历月回溯（toISOString 是 UTC，北京时间 00:00-08:00 会差一天）
+  return presetRange('6M') ?? { start: cnToday(), end: cnToday() }
 }
 
 function toOHLC(rows: KlineRow[]): OHLC[] {
@@ -217,18 +217,20 @@ export function Indices() {
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs">
-              <input
-                type="date"
+              <DateInput
                 value={range.start}
-                onChange={e => setRange(r => ({ ...r, start: e.target.value }))}
-                className="rounded-btn border border-border bg-base px-2 py-1 text-secondary outline-none focus:border-accent"
+                onChange={v => setRange(r => ({ ...r, start: v }))}
+                className="rounded-btn border border-border bg-base px-2 py-1 text-secondary"
+                ariaLabel="区间起点"
+                allowEmpty={false}
               />
               <span className="text-muted">至</span>
-              <input
-                type="date"
+              <DateInput
                 value={range.end}
-                onChange={e => setRange(r => ({ ...r, end: e.target.value }))}
-                className="rounded-btn border border-border bg-base px-2 py-1 text-secondary outline-none focus:border-accent"
+                onChange={v => setRange(r => ({ ...r, end: v }))}
+                className="rounded-btn border border-border bg-base px-2 py-1 text-secondary"
+                ariaLabel="区间终点"
+                allowEmpty={false}
               />
             </div>
           </div>

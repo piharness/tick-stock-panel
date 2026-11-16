@@ -20,9 +20,10 @@ beforeEach(() => {
 })
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove() })
 
-function health(blocking: string[] = [], stock = 'new', etf = '0') {
+function health(blocking: string[] = [], stock = 'new', etf = '0', entries: unknown[] = []) {
   vi.mocked(useDailyIntegrity).mockReturnValue({ data: {
     report: null, blocking_assets: blocking, data_revisions: { stock, etf },
+    blocking_entries: entries, blocking_total: entries.length,
   } } as ReturnType<typeof useDailyIntegrity>)
 }
 
@@ -31,6 +32,18 @@ it('已知异常可在其他页面看到处理入口', async () => {
   await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter><DailyDataHealthNotice /></MemoryRouter></QueryClientProvider>))
   expect(host.textContent).toContain('股票日K存在未完成的修补或重算')
   expect(host.querySelector('a')?.getAttribute('href')).toBe('/data')
+})
+
+it('横幅要说清哪一天、什么毛病——请求侧已经不弹 toast 了', async () => {
+  health(['index'], '0', '0', [{
+    asset_type: 'index', day: '2026-11-13', kind: 'sparse',
+    reason: '分区仅覆盖 8 只, 低于同族应有个数量级 449', needs_raw: true,
+  }])
+  await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter><DailyDataHealthNotice /></MemoryRouter></QueryClientProvider>))
+  expect(host.textContent).toContain('2026-11-13')
+  expect(host.textContent).toContain('分区仅覆盖 8 只')
+  // 只有 asset 名单时读者不知道该修哪一天，那正是以前只能靠 toast 找线索的原因
+  expect(host.textContent).not.toContain('等 1 条')
 })
 
 it('仅对应资产的数据修正使结果过期', async () => {

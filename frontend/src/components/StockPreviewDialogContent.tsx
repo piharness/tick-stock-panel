@@ -8,6 +8,8 @@ import { cn } from '@/lib/cn'
 import { cnSignal } from '@/lib/signals'
 import { useCustomSignalNames } from '@/lib/useCustomSignalNames'
 import { fmtPct, cnDateFromUtc } from '@/lib/format'
+import { cnToday } from '@/lib/kline'
+import { shiftMonths } from '@/lib/chartRange'
 import { StockPanel, getDefaultRange } from '@/components/StockPanel'
 import { NavPager, NavWrapToast } from '@/components/NavPager'
 import { WatchlistAddMenu } from '@/components/WatchlistAddMenu'
@@ -323,19 +325,15 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
                   <div className="inline-flex items-center gap-2">
                     <div className="inline-flex items-center rounded border border-border/60 bg-base/60 p-0.5">
                     {PRESETS.map(p => {
-                      const now = new Date()
-                      const s = new Date(now)
-                      s.setMonth(s.getMonth() - p.months)
-                      const expected = s.toISOString().slice(0, 10)
+                      // 北京日期 + 日历月回溯（toISOString 是 UTC，北京时间 00:00-08:00 差一天）
+                      const today = cnToday()
+                      const expected = shiftMonths(today, -p.months)
                       const isActive = dateRange.start === expected
                       return (
                         <button
                           key={p.label}
                           onClick={() => {
-                            const end = new Date().toISOString().slice(0, 10)
-                            const ns = new Date()
-                            ns.setMonth(ns.getMonth() - p.months)
-                            setDateRange({ start: ns.toISOString().slice(0, 10), end })
+                            setDateRange({ start: shiftMonths(today, -p.months), end: today })
                           }}
                           className={`h-6 rounded px-2.5 text-[11px] transition-colors cursor-pointer
                             ${isActive

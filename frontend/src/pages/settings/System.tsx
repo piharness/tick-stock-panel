@@ -493,9 +493,9 @@ export function SettingsSystemPanel() {
 
         <BatchSymbolsRow
           label="回测内存上限"
-          desc="默认 6 · 0 = 不限制"
+          desc="默认 6 · 0 = 不限制 · 上限随容器内存（60%）"
           min={BACKTEST_RSS_LIMIT_GIB_MIN}
-          max={BACKTEST_RSS_LIMIT_GIB_MAX}
+          max={prefs?.backtest_worker_rss_limit_max_gib ?? BACKTEST_RSS_LIMIT_GIB_MAX}
           value={prefs?.backtest_worker_rss_limit_gib ?? 6}
           saving={saveBacktestRssLimit.isPending}
           onSave={(gib) => saveBacktestRssLimit.mutate(gib)}

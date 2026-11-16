@@ -1,16 +1,29 @@
-import { useState, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Sparkles, LineChart, History as HistoryIcon, Loader2, ExternalLink, Bell, AlertTriangle } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Sparkles, LineChart, History as HistoryIcon, Loader2, ExternalLink, Bell, AlertTriangle,
+} from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { StockFinancialSearch } from '@/components/financials/StockFinancialSearch'
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
 import { LastStockChip } from '@/components/LastStockChip'
-import { AnalysisKChart, type PriceLevel, type LevelType } from '@/components/stock-analysis/AnalysisKChart'
+import {
+  AnalysisKChart, type AnalysisKChartHandle,
+  type PriceLevel, type LevelType, type ChartRange, type ChartVLine,
+} from '@/components/stock-analysis/AnalysisKChart'
 import { PriceAlertDialog } from '@/components/stock-analysis/PriceAlertDialog'
-import { api } from '@/lib/api'
+import { BarReadout, RangeBar, RangeStatsStrip, NameTrace } from '@/components/stock-analysis/RangeControls'
+import { api, type ChartSegment, type ChartSeries } from '@/lib/api'
 import { useLastStock } from '@/lib/useLastStock'
 import { QK } from '@/lib/queryKeys'
+import { klineDailyQueryOptions } from '@/lib/kline'
+import {
+  coverageGap, loadStoredRange, normalizeRange, presetRange, rangeStats, saveStoredRange,
+  windowToIndex,
+  type DateRange, type RangePreset, type StoredRange,
+} from '@/lib/chartRange'
 import { toast } from '@/components/Toast'
 import {
   startAnalysis, findTodayReport, useHistoryReports,
@@ -24,27 +37,66 @@ import {
  *  - 以【行情 + 关键价位】为视觉主体(专用日 K 图表,不复用个股对话框图表)
  *  - AI 分析输出客观技术状态与风险提示(非买卖建议、非财务质量评级)
  *  - 报告胶囊用蓝色系,与财务分析(紫色)并存
+ *
+ * 时间轴(2026-11 加): 这一页原来固定"最近 250 根"，等于只承认一个窗口。
+ * 要看「从华夏幸福到*ST华幸」这种跨年形态，必须能指定起止日；而指定之后
+ * 立刻出现两个新问题，页面必须当场回答，不能假装没有：
+ *   1. 这一段本地到底有没有？（日K表覆盖 2025-05 起，2024-09 起就是缺口）
+ *   2. 缺口是谁的？（本地没铺到 → 可以整市场向前扩展；这只票没数据 → 补也没用）
+ * 入口走 URL：?symbol=600340.SH&name=*ST华幸，博弈链路那边一键点进来。
  */
+
+const DEFAULT_PRESET: RangePreset = '1Y'
+
+function rangeFor(symbol: string): StoredRange {
+  const stored = loadStoredRange(symbol)
+  if (stored) return stored
+  const r = presetRange(DEFAULT_PRESET)!
+  return { preset: DEFAULT_PRESET, start: r.start, end: r.end }
+}
+
+function resolveRequested(value: StoredRange, tableEarliest: string | null | undefined): DateRange {
+  if (value.preset === 'ALL') {
+    return { start: tableEarliest || '1990-01-01', end: value.end }
+  }
+  if (value.preset === 'CUSTOM') {
+    const fallback = presetRange(DEFAULT_PRESET)!
+    return normalizeRange({ start: value.start, end: value.end }, fallback)
+  }
+  return presetRange(value.preset) ?? normalizeRange({ start: value.start, end: value.end }, presetRange(DEFAULT_PRESET)!)
+}
+
 export function StockAnalysis() {
-  const [symbol, setSymbol] = useState<string>('')
-  const [name, setName] = useState<string>('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { last: lastStock, remember: rememberStock } = useLastStock('stock-analysis')
+
+  // 入口参数优先于"上次看的票"：从博弈链路点进来必须落到那一只，
+  // 否则用户会看到自己三天前看过的一只不相干的票，还以为点错了。
+  const [symbol, setSymbol] = useState<string>(() => searchParams.get('symbol') || lastStock?.symbol || '')
+  const [name, setName] = useState<string>(() => {
+    const fromUrl = searchParams.get('name') || ''
+    if (fromUrl) return fromUrl
+    const sym = searchParams.get('symbol')
+    return sym && sym === lastStock?.symbol ? lastStock.name : ''
+  })
+
   const [checking, setChecking] = useState(false)
   const [confirmReport, setConfirmReport] = useState<{ id: string; created_at: string; focus: string } | null>(null)
   const [previewSymbol, setPreviewSymbol] = useState<string | null>(null)
   const [showPriceAlerts, setShowPriceAlerts] = useState(false)
-  const { last: lastStock, remember: rememberStock } = useLastStock('stock-analysis')
 
   // 进入页面立即加载历史报告(供右侧常驻列表)。store 内部有 historyLoaded 去重, 重复调用安全。
   useEffect(() => { loadHistory() }, [])
 
-  // 自动恢复上次选中的股票(切走再回来不丢)。useLastStock 的 last 来自 localStorage, 同步可用。
+  // 外部改 URL（浏览器前进/后退、别的页面带参跳转）也要落到那只票
   useEffect(() => {
-    if (!symbol && lastStock) {
-      setSymbol(lastStock.symbol)
-      setName(lastStock.name)
-    }
+    const sym = searchParams.get('symbol') || ''
+    if (!sym || sym === symbol) return
+    setSymbol(sym)
+    setName(searchParams.get('name') || '')
+    rememberStock(sym, searchParams.get('name') || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [searchParams])
 
   const onSelect = (sym: string, nm: string) => {
     setSymbol(sym)
@@ -52,6 +104,10 @@ export function StockAnalysis() {
     setConfirmReport(null)
     setShowPriceAlerts(false)
     rememberStock(sym, nm)
+    const next = new URLSearchParams(searchParams)
+    next.set('symbol', sym)
+    if (nm) next.set('name', nm); else next.delete('name')
+    setSearchParams(next, { replace: true })
   }
 
   const handleAnalyze = async () => {
@@ -81,7 +137,7 @@ export function StockAnalysis() {
     <>
       <PageHeader
         title="个股分析"
-        subtitle="日 K · 关键价位 · AI 四维分析(技术 / 基本面 / 财务 / 消息面)"
+        subtitle="日 K · 任意区间 · 关键价位 · AI 四维分析(技术 / 基本面 / 财务 / 消息面)"
         right={
           <div className="flex items-center gap-2">
             <LastStockChip stock={lastStock} onSelect={onSelect} />
@@ -109,6 +165,7 @@ export function StockAnalysis() {
               <button
                 onClick={handleAnalyze}
                 disabled={checking}
+                title="让模型读这只票的日K+关键价位+财务表，输出技术/基本面/财务/消息面四维分析（客观状态与风险，不是买卖建议）。需要先在设置里配好 AI key；当天已生成过会先问你要看历史还是重算。"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn bg-gradient-to-r from-sky-500/25 to-blue-500/15 border border-sky-400/30 text-sky-300 text-xs font-medium hover:from-sky-500/35 hover:to-blue-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {checking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
@@ -117,7 +174,7 @@ export function StockAnalysis() {
               <button
                 onClick={() => setShowPriceAlerts(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn border border-sky-400/25 bg-sky-400/[0.08] text-sky-300 text-xs font-medium hover:border-sky-400/40 hover:bg-sky-400/[0.12] transition-all"
-                title="设置价格点位提醒"
+                title="给这只票设价格上穿/下穿提醒（本地轮询触发，到点弹通知与声音）"
               >
                 <Bell className="h-3.5 w-3.5" />
                 点位提醒
@@ -136,7 +193,12 @@ export function StockAnalysis() {
                 hint="搜索代码或名称,查看日 K 与关键价位,并可让 AI 进行技术面 / 基本面 / 财务面 / 消息面四维综合分析。"
               />
             ) : (
-              <StockAnalysisBoard symbol={symbol} />
+              <StockAnalysisBoard
+                key={symbol}
+                symbol={symbol}
+                name={name}
+                onName={nm => { setName(nm); rememberStock(symbol, nm) }}
+              />
             )}
           </div>
           <HistorySidebar />
@@ -173,19 +235,82 @@ export function StockAnalysis() {
   )
 }
 
-// ===== 分析看板:日 K + 关键价位 =====
-function StockAnalysisBoard({ symbol }: { symbol: string }) {
-  const kline = useQuery({
-    // QK 集中键 (start/end 空串 = 滚动最近窗口, 无日期边界)。收益: 键进集中
-    // 管理, 且 useQuoteStream 的焦点股增量合并对无边界键生效 — 此前私拼 3 元
-    // 键永远修补不到; 注意合并依赖 _focusSymbol (预览弹窗设置焦点), 看板单独
-    // 打开时仍靠 60s staleTime 重拉, 与其他日K入口的键 (带真实日期) 不共享。
-    queryKey: QK.kline(symbol, '', ''),
-    queryFn: () => api.klineDaily(symbol, 250),
-    enabled: !!symbol,
+// ===== 分析看板:区间 + 日 K + 关键价位 =====
+function StockAnalysisBoard({ symbol, name, onName }: {
+  symbol: string
+  name: string
+  onName: (name: string) => void
+}) {
+  const qc = useQueryClient()
+
+  // 区间按标的记忆:换股票回到默认 1 年,切走再回来还是上次那一段
+  const [range, setRange] = useState<StoredRange>(() => rangeFor(symbol))
+  const chartRef = useRef<AnalysisKChartHandle>(null)
+  /** 光标所在那根 K 的日期（null=鼠标不在图上，读数条回落到最后一根） */
+  const [hoverDate, setHoverDate] = useState<string | null>(null)
+  /** 当前可视窗口（百分比）。null = 还没拖过，等于整个所选区间 */
+  const [viewport, setViewport] = useState<{ start: number; end: number } | null>(null)
+  const changeRange = (next: StoredRange) => {
+    const v = next.preset === 'CUSTOM' ? next : { ...next }
+    setRange(v)
+    saveStoredRange(symbol, v)
+  }
+
+  // 点过「向前补历史」之后记下时刻：缺口消失前每 20s 看一眼覆盖边界，
+  // 后台任务落盘的那一刻这一页就自己恢复，不需要用户记住回来刷新。
+  const [extendWatch, setExtendWatch] = useState<number | null>(null)
+  const requestedRef = useRef<DateRange>({ start: '', end: '' })
+
+  // 本地日K表的覆盖边界（不是这只票的边界）：缺口到底能不能补，全靠这个数
+  const status = useQuery({
+    queryKey: QK.dataStatus,
+    queryFn: api.dataStatus,
     staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    refetchInterval: q => {
+      if (!extendWatch) return false
+      const earliest = (q.state.data as { daily?: { earliest_date?: string | null } } | undefined)?.daily?.earliest_date
+      const ask = requestedRef.current.start
+      // '1990-01-01' 这种无界起点（ALL）永远"缺口存在"，不参与轮询
+      const stillMissing = !!earliest && ask > '1991-01-01' && earliest >= ask
+      const withinBudget = Date.now() - extendWatch < 30 * 60_000
+      return stillMissing && withinBudget ? 20_000 : false
+    },
+  })
+  const tableEarliest = status.data?.daily?.earliest_date ?? null
+
+  const requested = useMemo(() => resolveRequested(range, tableEarliest), [range, tableEarliest])
+  requestedRef.current = requested
+
+  // 换区间 = 换了一批 K 线，上一批的缩放百分比对新数据没有意义（更别说统计条会用错段）。
+  // 图表内部按数据签名自己会重置视图，这里同步把页面的视窗/光标清掉。
+  useEffect(() => {
+    setViewport(null)
+    setHoverDate(null)
+  }, [requested.start, requested.end])
+
+  /**
+   * 请求起点早于本地日K覆盖 → 走「本地 + 上游前复权补齐」那条接口。
+   *
+   * 为什么不在本地为空时整段回退（`/api/kline/daily` 的做法）：那条回退分支用
+   * `days`（默认 120）而不是请求区间，一个两年的请求会静默拿到 150 根；而且
+   * 它返回的是上游原始价，遇到送转就是一根假跳空。`/history` 明确按区间分段
+   * 拼接，并把每段来源写进响应。
+   */
+  const fillMode = !!tableEarliest && requested.start < tableEarliest
+  const kline = useQuery<ChartSeries>({
+    ...(fillMode
+      ? {
+          queryKey: ['stock-analysis', 'history', symbol, requested.start, requested.end],
+          queryFn: () => api.stockAnalysisHistory(symbol, requested.start, requested.end),
+        }
+      : klineDailyQueryOptions(symbol, requested)),
+    enabled: !!symbol,
+    // 补齐段是"临时取来的"，5 分钟内不复取；入库路径走「向前补历史」那个按钮
+    staleTime: fillMode ? 5 * 60_000 : 60_000,
+    refetchOnWindowFocus: false,
     placeholderData: (prev: any, prevQuery: any) =>
-      (prevQuery?.queryKey as readonly unknown[] | undefined)?.[1] === symbol ? prev : undefined,
+      (prevQuery?.queryKey?.[1] === symbol ? prev : undefined),
   })
 
   const levelsQ = useQuery({
@@ -195,7 +320,36 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
     staleTime: 60_000,
   })
 
-  if (kline.isLoading) {
+  // 简称轨迹：只在龙虎榜快照见过 ≥2 个简称时才有内容（有证据才显示）
+  const nameHistory = useQuery({
+    queryKey: ['stock-analysis', 'name-history', symbol],
+    queryFn: () => api.stockAnalysisNameHistory(symbol),
+    enabled: !!symbol,
+    staleTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
+  // 名称以接口/维表为准（URL 里带的名字可能来自另一张表或旧缓存）
+  useEffect(() => {
+    const nm = kline.data?.name || nameHistory.data?.current
+    if (nm && nm !== name) onName(nm)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kline.data?.name, nameHistory.data?.current])
+
+  const extend = useMutation({
+    mutationFn: (months: number) => api.extendHistory(months, 'month'),
+    onSuccess: () => {
+      setExtendWatch(Date.now())
+      toast('已开始「向前扩展历史」（整市场后台任务）—— 落盘后本页会自动重取', 'success')
+      void qc.invalidateQueries({ queryKey: QK.pipelineJobs })
+      void qc.invalidateQueries({ queryKey: QK.dataStatus })
+    },
+    // 失败不在这里再弹一次：`request()` 已把后端 detail 原样 toast 出来。
+    // 409 的 detail 本身写清了原因（缺除权因子 → 会写入未复权价 → 假跳空）与两条正路。
+  })
+
+  if (kline.isLoading && !kline.data) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-5 w-5 animate-spin text-muted" /></div>
   }
 
@@ -210,17 +364,63 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
   }
 
   const rows = kline.data?.rows ?? []
-  if (rows.length === 0) {
-    return <EmptyState icon={LineChart} title="暂无日 K 数据" hint="该标的尚未同步日 K,请先在数据页或自选页同步。" />
-  }
+  const rowsFirst = rows.length ? String(rows[0].date).slice(0, 10) : null
+  const rowsLast = rows.length ? String(rows[rows.length - 1].date).slice(0, 10) : null
+  const segments: ChartSegment[] = kline.data?.segments ?? []
+  const upstreamSeg = segments.find(s => s.source === 'upstream') ?? null
+  // 维表里没有这只票 ⇒ 空态该说"没有这只票"，而不是"换一段区间"（换了也没用）
+  const unknownSymbol = kline.data?.known === false
+  const gap = coverageGap(requested.start, rowsFirst, tableEarliest)
+  const stats = rangeStats(rows)
+
+  // 视窗统计：拖动缩放条之后，"现在看见的这段"才是他在判断的那段。
+  // 下标换算与图表的平移/缩放共用 chartRange 里的同一组纯函数。
+  const viewSlice = (() => {
+    if (!viewport || rows.length === 0) return null
+    const [i0, i1] = windowToIndex(viewport, rows.length)
+    if (i1 - i0 + 1 >= rows.length) return null   // 和整个区间一样，就别再算一遍
+    return { i0, i1 }
+  })()
+  const visibleStats = viewSlice ? rangeStats(rows.slice(viewSlice.i0, viewSlice.i1 + 1)) : stats
+
+  // 读数条：光标那根；没有光标就是最后一根
+  const readIdx = (() => {
+    if (!hoverDate) return rows.length - 1
+    const idx = rows.findIndex(r => String(r.date).slice(0, 10) === hoverDate)
+    return idx >= 0 ? idx : rows.length - 1
+  })()
+  const readRow = readIdx >= 0 ? rows[readIdx] : null
+  const readPrev = readIdx > 0 ? rows[readIdx - 1] : undefined
 
   const levels = (levelsQ.data?.levels ?? {}) as Record<LevelType, PriceLevel[]>
+  const levelDates = levelsQ.data?.dates ?? []
+  const levelSpan = levelDates.length > 1
+    ? `${levelDates[0].slice(0, 10)} ~ ${levelDates[levelDates.length - 1].slice(0, 10)}`
+    : null
 
   // 涨跌色:最后一根 K 线收 vs 前一根收(无前日则按开收判断)
+  // rows 可能为空（该股在该区间没有K线 / 停牌 / 退市）：这里必须留空态分支，
+  // 否则 `last.close` 直接抛 TypeError，被 ExtensionBoundary 吞成
+  // 「扩展 official.stock-analysis 暂时不可用」—— 一句让人以为扩展坏了的话。
   const last = rows[rows.length - 1]
   const prev = rows[rows.length - 2]
   const curClose = levelsQ.data?.close
-  const isUp = prev ? (last.close >= prev.close) : (last.close >= last.open)
+  const isUp = last ? (prev ? last.close >= prev.close : last.close >= last.open) : true
+
+  // 简称变更竖线 + 名称区间：只画有证据的事实，日期落在非交易日的由图表吸附
+  const vlines: ChartVLine[] = []
+  const nameRanges: ChartRange[] = []
+  const nh = nameHistory.data
+  if (nh?.renamed) {
+    for (const c of nh.changes) {
+      vlines.push({ date: c.before, label: `${c.to}?`, color: '#EAB308' })
+    }
+    // 同一简称的观测区间画成底纹（不写字：名字已经在下方"简称轨迹"里说过一次，
+    // 图上再写一遍既重复又和 K 线抢位置）。越界端点由图表钳到首/末根。
+    for (const b of nh.bands) {
+      nameRanges.push({ start: b.first_seen, end: b.last_seen, color: 'rgba(148,163,184,0.06)' })
+    }
+  }
 
   return (
     <div className="rounded-card border border-border/60 bg-surface/40 overflow-hidden">
@@ -229,9 +429,25 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
           <div className="flex items-center gap-2 min-w-0">
             <LineChart className="h-4 w-4 text-sky-400 shrink-0" />
             <span className="text-sm font-medium text-foreground">关键价位分析</span>
+            {kline.data?.source === 'live' && (
+              <span
+                className="rounded bg-warning/10 px-1 py-0.5 text-[9px] text-warning"
+                title={kline.data?.degraded_reason || '本地没有这只票的日K，已改用上游实时拉取'}
+              >
+                非本地
+              </span>
+            )}
+            {upstreamSeg && (
+              <span
+                className="rounded bg-sky-400/10 px-1 py-0.5 text-[9px] text-sky-300"
+                title={`${upstreamSeg.start} ~ ${upstreamSeg.end} 来自上游前复权（未入库）`}
+              >
+                含上游段
+              </span>
+            )}
           </div>
           <div className="flex items-baseline gap-2 shrink-0">
-            <span className="text-[10px] text-muted">{rows.length} 个交易日</span>
+            <span className="text-[10px] text-muted">{stats.n} 个交易日</span>
             <span className="text-[10px] text-muted/60">·</span>
             <span className="text-[10px] text-muted">当前价</span>
             <span className={`text-[16px] leading-6 font-mono font-bold ${isUp ? 'text-bull' : 'text-bear'}`}>
@@ -239,16 +455,111 @@ function StockAnalysisBoard({ symbol }: { symbol: string }) {
             </span>
           </div>
         </div>
+
+        <div className="mt-2.5">
+          <RangeBar
+            value={range}
+            onChange={changeRange}
+            requested={requested}
+            tableEarliest={tableEarliest}
+            rowsFirst={rowsFirst}
+            rowsLast={rowsLast}
+            tradeDays={stats.n}
+            gap={gap}
+            loading={kline.isFetching}
+            onExtend={m => extend.mutate(m)}
+            extending={extend.isPending}
+            upstream={upstreamSeg
+              ? {
+                  start: upstreamSeg.start,
+                  end: upstreamSeg.end,
+                  n: upstreamSeg.n,
+                  error: kline.data?.upstream?.error ?? null,
+                }
+              : (kline.data?.upstream?.error
+                  ? { start: requested.start, end: tableEarliest ?? requested.end, n: 0, error: kline.data.upstream.error }
+                  : null)}
+          />
+        </div>
       </div>
-      <div className="p-3">
-        <AnalysisKChart
-          rows={rows}
-          levels={levels}
-          series={levelsQ.data?.series}
-          seriesDates={levelsQ.data?.dates}
-          defaultLevelTypes={['sr', 'pivot', 'keltner_s']}
-          height={480}
+
+      <div className="p-3 space-y-2">
+        <RangeStatsStrip
+          stats={visibleStats}
+          scope={viewSlice ? 'visible' : 'selected'}
         />
+
+        {rows.length === 0 ? (
+          // 空态要分清"这段区间没有"还是"这只票根本没有"：
+          // 上游也补不出东西（attempted 是真的、且拿到 0 行）就不是区间选错了。
+          unknownSymbol ? (
+            <EmptyState
+              icon={LineChart}
+              title="没有这只票"
+              hint="本地维表里查不到该代码 —— 多半是写错了，或已退市并从维表中移除。换一只试试。"
+            />
+          ) : (
+            <EmptyState
+              icon={LineChart}
+              title="所选区间没有日 K"
+              hint="换一段区间试试；把起点移到本地覆盖之前也可以 —— 那一段会从上游前复权临时补齐。"
+            />
+          )
+        ) : (
+          <>
+            <BarReadout
+              row={readRow}
+              prevClose={readPrev?.close}
+              hovered={!!hoverDate}
+            />
+            {/* 点一下图区（获得焦点）之后：←/→ 平移、+/- 缩放、0 复位。
+                不做全局监听 —— 那会把页面滚动和输入框里的方向键一起吃掉。 */}
+            <div
+              tabIndex={0}
+              data-testid="chart-keyboard"
+              onKeyDown={e => {
+                const h = chartRef.current
+                if (!h) return
+                if (e.key === 'ArrowLeft') { e.preventDefault(); h.pan(-0.25) }
+                else if (e.key === 'ArrowRight') { e.preventDefault(); h.pan(0.25) }
+                else if (e.key === '+' || e.key === '=') { e.preventDefault(); h.zoom(0.7) }
+                else if (e.key === '-' || e.key === '_') { e.preventDefault(); h.zoom(1.4) }
+                else if (e.key === '0') { e.preventDefault(); h.reset() }
+              }}
+              className="rounded-md outline-none focus-visible:ring-1 focus-visible:ring-sky-400/40"
+              title="点一下图区后可用键盘：←/→ 平移、+/- 缩放、0 复位"
+            >
+              <AnalysisKChart
+                ref={chartRef}
+                rows={rows}
+                levels={levels}
+                series={levelsQ.data?.series}
+                seriesDates={levelsQ.data?.dates}
+                defaultLevelTypes={['sr', 'pivot', 'keltner_s']}
+                initialRange={requested}
+                ranges={nameRanges}
+                vlines={vlines}
+                onHoverDate={setHoverDate}
+                onViewportChange={setViewport}
+                height={480}
+              />
+            </div>
+            <p className="text-[9px] leading-relaxed text-muted">
+              点一下图区后可用键盘：←/→ 平移 · <kbd className="font-mono">+</kbd>/<kbd className="font-mono">-</kbd> 缩放 ·
+              <kbd className="font-mono"> 0 </kbd> 复位。纵轴可切「对数」——两年看腰斩/翻倍时，
+              线性轴会把低价段压成一条直线。
+            </p>
+          </>
+        )}
+
+        <NameTrace data={nh} />
+
+        {levelSpan && (
+          <p className="text-[9px] leading-relaxed text-muted">
+            关键价位（压力支撑 / 枢轴 / 通道）按最近 {levelDates.length} 个交易日重算，
+            样本 {levelSpan}，与上面选的区间无关 —— 它们是"今天的位置"，不是那一段的历史水位。
+          </p>
+        )}
       </div>
     </div>
   )

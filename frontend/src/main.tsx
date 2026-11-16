@@ -26,6 +26,22 @@ import '@fontsource/jetbrains-mono/600.css'
 import '@fontsource/jetbrains-mono/700.css'
 import './index.css'
 
+// 部署后的懒加载分块 404 —— 旧标签页里 index.html 还是上一版，chunk 哈希已变，
+// 点进「个股分析」这类按需路由时 import() 直接失败，被扩展边界接住后显示
+// 「扩展 official.stock-analysis 暂时不可用」（看起来像功能坏了，其实只是版本错位）。
+// Vite 把这类失败包装成 `vite:preloadError` 事件；接管它并自动重载一次，
+// 一分钟内不重复（避免真断网时无限刷新）。
+window.addEventListener('vite:preloadError', (e) => {
+  e.preventDefault?.()
+  try {
+    const KEY = 'tsp:chunk-reload-at'
+    const last = Number(sessionStorage.getItem(KEY) ?? 0)
+    if (Date.now() - last < 60_000) return
+    sessionStorage.setItem(KEY, String(Date.now()))
+  } catch { /* sessionStorage 不可用时仍然重载一次 */ }
+  window.location.reload()
+})
+
 // 全局认证拦截: 任何 query/mutation 收到 401 (未登录/会话过期) → 跳登录页。
 // api.ts 的 request() 已对 401 静默 (不弹 toast), 这里统一负责跳转。
 // 排除 /login 自身的请求, 避免登录页请求失败又跳登录形成死循环。

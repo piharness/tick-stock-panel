@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { type KlineRow } from '@/lib/api'
-import { klineDailyQueryOptions } from '@/lib/kline'
+import { cnToday, klineDailyQueryOptions } from '@/lib/kline'
+import { presetRange } from '@/lib/chartRange'
 import { storage } from '@/lib/storage'
 import {
   EChartsCandlestick,
@@ -96,12 +97,9 @@ function buildLimitUpMarkers(rows: KlineRow[]): ChartMarker[] {
 }
 
 export function getDefaultRange(): { start: string; end: string } {
-  const now = new Date()
-  const end = now.toISOString().slice(0, 10)
-  const s = new Date(now)
-  s.setMonth(s.getMonth() - 6)
-  const start = s.toISOString().slice(0, 10)
-  return { start, end }
+  // 用北京日期 + 日历月回溯：`toISOString()` 是 UTC，北京时间 00:00-08:00 会算成昨天，
+  // 而这段时间正好是开盘前设区间的时候。口径与个股分析的区间条统一到 chartRange。
+  return presetRange('6M') ?? { start: cnToday(), end: cnToday() }
 }
 
 /** 工具栏小胶囊开关（指标与标注开关共用一套尺寸/关闭态样式，激活色由调用方给字面量）。 */

@@ -14,6 +14,7 @@ export const STAGE_LABELS: Record<string, string> = {
   sync_adj: '同步除权因子',
   compute_enriched: '计算技术指标',
   sync_minute: '同步分钟 K',
+  minute_audit: '验收分钟 K',
   extend_history: '扩展日K历史',
   extend_minute: '扩展分钟K历史',
   rebuild_enriched: '全量计算',
