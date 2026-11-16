@@ -819,12 +819,9 @@ class QuoteService:
 
         try:
             from app.services import preferences
-            all_index_symbols = set(self._repo.get_index_symbol_set()) if self._repo else set()
-            core_index_symbols = set(CORE_INDEX_SYMBOLS)
-            all_index_symbols.update(core_index_symbols)
-            # 指数监控规则标的并入显式拉取 (quotes.get 按码覆盖)
-            monitor_index_symbols = self._collect_monitor_index_symbols()
-            all_index_symbols.update(monitor_index_symbols)
+            # 显式拉取集合: core + 偏离值基准 + 监控规则标的 (同一产地见
+            # _explicit_index_symbols；分类端 _index_universe 是它的超集)
+            _core_syms = sorted(self._explicit_index_symbols())
             all_etf_symbols = set()
             if self._repo:
                 etf_inst = self._repo.get_etf_instruments()
@@ -844,10 +841,6 @@ class QuoteService:
                 resp.extend(tf.quotes.get_by_universes(universes=universes) or [])
                 logger.info("全市场行情拉取完成: %d 条 (%.2fs)", len(resp), time.perf_counter() - _u0)
             # 指数: 固定核心四只 + 偏离值基准指数 + 监控规则标的, 按码显式拉取
-            from app.indicators.pipeline import BENCHMARK_INDEX_SYMBOLS
-            _core_syms = sorted(
-                core_index_symbols | BENCHMARK_INDEX_SYMBOLS | monitor_index_symbols
-            )
             if _core_syms:
                 _i0 = time.perf_counter()
                 resp.extend(tf.quotes.get(symbols=_core_syms) or [])
@@ -912,9 +905,7 @@ class QuoteService:
         返回竞价前旧价时把陈旧收盘价固化到当日分区。
         """
         from app.services import preferences
-        all_index_symbols = set(self._repo.get_index_symbol_set()) if self._repo else set()
-        core_index_symbols = set(CORE_INDEX_SYMBOLS)
-        all_index_symbols.update(core_index_symbols)
+        all_index_symbols = self._index_universe()
         all_etf_symbols = set()
         if self._repo:
             etf_inst = self._repo.get_etf_instruments()
@@ -1023,13 +1014,44 @@ class QuoteService:
     # 工具
     # ================================================================
 
+    def _explicit_index_symbols(self) -> set[str]:
+        """本轮**按码显式拉取**的指数集合。
+
+        拉取端与分类端必须用同一个产地：只并了 `BENCHMARK_INDEX_SYMBOLS` 的
+        拉取集合、配一个只并 `CORE_INDEX_SYMBOLS` 的分类集合，会让基准指数
+        在 instruments 列表退化时被当成个股写进 `kline_daily`
+        (2026-11-05/06/11/12 四个分区因此混进 `000002.SH`/`000688.SH`)。
+        """
+        from app.indicators.pipeline import BENCHMARK_INDEX_SYMBOLS
+
+        return (
+            set(CORE_INDEX_SYMBOLS)
+            | set(BENCHMARK_INDEX_SYMBOLS)
+            | self._collect_monitor_index_symbols()
+        )
+
+    def _index_universe(self) -> set[str]:
+        """**分类口径**的指数集合：instruments 声明的指数 ∪ 显式拉取集合。
+
+        取并集而不是只读 instruments：后者是外部数据源给的，规模在 376 / 599
+        之间摇摆（付费 `CN_Index` 补充未生效时退化成免费通道的窄表），
+        任何依赖它「碰巧包含某个基准」的判据都会安静失效。
+        """
+        out = set(self._repo.get_index_symbol_set()) if self._repo else set()
+        out |= self._explicit_index_symbols()
+        return out
+
     def _collect_monitor_index_symbols(self) -> set[str]:
         """启用中的指数监控规则标的 (asset_type=index & scope=symbols)。"""
         engine = getattr(self._app_state, "monitor_engine", None) if self._app_state else None
         if not engine:
             return set()
+        # 分类端现在也读这个集合 (见 _index_universe)，所以这里不能假设
+        # 引擎已完整初始化: 缺 rules 时退化为「没有监控指数」，而不是让
+        # 整条行情链路抛 AttributeError。
+        rules = getattr(engine, "rules", None) or {}
         out: set[str] = set()
-        for _r in list(engine.rules.values()):
+        for _r in list(rules.values()):
             if _r.get("enabled", True) and _r.get("asset_type") == "index" and _r.get("scope") == "symbols":
                 out.update(s for s in _r.get("symbols", []) if s)
         return out
