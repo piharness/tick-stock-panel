@@ -225,3 +225,57 @@ def test_repair_refuses_linked_daily_directories(tmp_path, monkeypatch, linked_t
     with pytest.raises(ValueError, match="包含链接"):
         integrity_check.run_repair(repo, object(), report["id"])
     assert not calls and original.read_bytes() == b"keep original"
+
+
+def test_repair_reaches_entries_registered_for_today(tmp_path, monkeypatch):
+    """登记在「今天」的异常必须能被修补看见并清除。
+
+    现场：盘后管道重算发现今天（2026-11-13）的日K是盘中快照，`record_issues`
+    把条目写进 daily_integrity_state；但自检报告右端恒为「今天-1」，修补按
+    `day <= end` 过滤就把今天那条永久漏掉 ⇒ `assert_usable` 一直拦、修补每次
+    都说「没问题」，横幅弹个不停。
+    """
+    from app.services import daily_health, integrity_check, kline_sync
+    from app.tickflow.repository import DataStore, KlineRepository
+
+    # 昨天（10-29）是坏文件，先正常走一遍自检得到报告
+    monkeypatch.setattr(integrity_check, "cn_today", lambda: TODAY)
+    path = write_day(tmp_path, date(2026, 10, 29))
+    original = pl.read_parquet(path)
+    path.write_bytes(b"broken original")
+    repo = KlineRepository(DataStore(tmp_path))
+    monkeypatch.setattr(repo, "get_instruments_asset", lambda asset: original.select("symbol"))
+    report = integrity_check.run_check(tmp_path, lookback_days=7, asset_types=["stock"])
+    assert report["repairable_count"] == 1
+
+    # 报告之后，今天的快照条目被登记（这是盘后管道发现的「今天数据坏」）。
+    # 写一份真实存在、数值合法、quote_ts 为空的「盘中快照」，让修补能真正修好今天。
+    today_part = tmp_path / "kline_daily" / f"date={TODAY}"
+    today_part.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({
+        "symbol": ["600001.SH"], "date": [TODAY],
+        "open": [10.0], "high": [11.0], "low": [9.0], "close": [10.5],
+        "volume": [100.0], "amount": [100000.0],
+        "quote_ts": pl.Series([None], dtype=pl.Int64),
+    }).write_parquet(today_part / "part.parquet")
+    daily_health.record_scan(
+        tmp_path,
+        [data_integrity.IntegrityIssue(
+            TODAY, "kline_daily", "snapshot", symbols=("600001.SH",), reason="盘中快照未定版")],
+        assets=["stock"], start=TODAY, end=TODAY,
+    )
+
+    calls = []
+
+    def fetch(symbols, capset, **kwargs):
+        calls.append(kwargs["start_time"].date())
+        yield original
+
+    monkeypatch.setattr(kline_sync, "iter_daily_frames", fetch)
+    repaired = integrity_check.run_repair(repo, object(), report["id"])
+    assert repaired["status"] == "clean"
+    # 核心断言：状态文件里今天（报告右端之后）的那条待修补记录被看见了并清掉了。
+    # 旧实现里 _known_issues 按 day <= 报告右端(昨天) 过滤，今天这条永久漏掉，
+    # 修补每次报「没问题」，横幅却一直弹——这里断言它真的被清掉了。
+    remaining = daily_health.snapshot(tmp_path)["entries"]
+    assert all(not (e["day"] == TODAY.isoformat()) for e in remaining), remaining

@@ -21,7 +21,7 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -43,6 +43,7 @@ from app.polars_guard import guarded_collect
 from app.services.minute_adjust import apply_minute_adjustment, minute_basis_is_raw
 from app.tickflow.partitions import (
     is_monthly_daily_table,
+    list_partition_dates,
     locate_partition_dir,
     parse_partition_range,
     partition_dirname,
@@ -401,6 +402,9 @@ class KlineRepository:
         # 序列化 parquet 分区的读-改-写: 实时轮询线程、手动 refresh、盘后管道
         # 可能并发 merge/flush 同一分区文件, 无锁会互相覆盖丢数据
         self._write_lock = threading.Lock()
+        # 本线程最近一次 parquet 扫描的失败原因(见下 _scan_failed); 线程本地,
+        # 因为"哪次扫描失败了"是单次调用的属性, 不能用一个共享字段表达。
+        self._scan_error = threading.local()
 
         # ---- Polars 缓存 ----
         self._enriched_cache: pl.DataFrame | None = None       # 最新一天 (~5500行)
@@ -1096,14 +1100,14 @@ class KlineRepository:
         """盘中递推基准日期。当天实时分区存在时使用上一可用交易日。"""
         if latest != cn_today():
             return latest
+        # 上一可用交易日走分区目录名 (月分区读一次 date 列); 原
+        # `SELECT max(date) FROM kline_enriched WHERE date < ?` 要展开 372 个
+        # 文件的元数据 (9p 实测 2.9s), 而它只想要"昨天是哪天"。
         try:
-            row = self.execute_one(
-                "SELECT max(date) FROM kline_enriched WHERE date < ?",
-                [latest],
-            )
-            if row and row[0]:
-                d = row[0]
-                return d if isinstance(d, date) else date.fromisoformat(str(d))
+            dates = list_partition_dates(self.store.data_dir / "kline_enriched")
+            earlier = [d for d in dates if d < latest]
+            if earlier:
+                return max(earlier)
         except Exception:  # noqa: BLE001
             pass
         return latest
@@ -1598,17 +1602,22 @@ class KlineRepository:
         # 仍用 enriched_latest 缓存覆盖最新日 (盘中更准), 只保留请求列。
         # 试探 scan 仅读请求的列; 缺列时回退到下方完整计算路径 (代价仅一次轻量 scan)。
         if columns:
-            df = self._scan_daily_symbol(symbol, start, end, columns)
-            if not df.is_empty() and all(c in df.columns for c in columns):
+            # `date` 必须进扫描列: 与「最新日缓存」合并时要按它去重。调用方通常只要
+            # close/volume, 少了这一列会在下面的 filter 处抛 ColumnNotFoundError
+            # (实测: columns=["close"] + 缓存覆盖当日 ⇒ 500)。返回前再裁回请求列。
+            want = list(columns)
+            fetch = want if "date" in want else ["date", *want]
+            df = self._scan_daily_symbol(symbol, start, end, fetch)
+            if not df.is_empty() and all(c in df.columns for c in want):
                 cached, cache_date = self.get_enriched_latest(symbols=[symbol], end=end)
                 if cached is not None and not cached.is_empty() and cache_date:
                     if start <= cache_date <= end:
-                        cached_part = self._filter_cached(cached, symbol, columns)
+                        cached_part = self._filter_cached(cached, symbol, fetch)
                         if not cached_part.is_empty():
                             df = df.filter(pl.col("date") != cache_date)
                             common_cols = [c for c in df.columns if c in cached_part.columns]
                             df = pl.concat([df.select(common_cols), cached_part.select(common_cols)])
-                return df
+                return df.select([c for c in want if c in df.columns])
 
         # 扩展范围用于指标预热 (MA60 需要 ~60 交易日 ≈ 120 日历日)
         warmup_start = start - timedelta(days=150)
@@ -1984,9 +1993,99 @@ class KlineRepository:
             df = df.select(existing)
         return df.sort(["symbol", "date"])
 
-    def _scan_daily_symbol(self, symbol: str, start: date, end: date, columns: list[str] | None) -> pl.DataFrame:
+    # ===== 本地读失败的可观测性 =====
+    # 扫描失败被吞成空表的真实代价: 端点会静默改从上游拉数。实测 2026-11-13,
+    # 一个分区的 quote_ts 是 double ⇒ 全表 glob 扫描抛 SchemaError ⇒ 冷启动第一张
+    # 图 4.8~9.0s、source=live、turnover_rate 缺失; 预热后同一请求 25ms、字段齐全。
+    # 症状在账本上都只是"慢", 所以把失败原因记到线程本地, 由端点在响应里标注。
+
+    _EMPTY_GLOB_MARK = "expanded paths were empty"
+
+    def _partition_files_in_range(self, table: str, start: date, end: date) -> list[str] | None:
+        """把「整表 glob」裁剪成「[start, end] 触及的分区文件」。
+
+        为什么要裁: 一次单票查询要付**每个分区一次 footer 读**, 9p 上实测 1.63s/372 文件;
+        裁到 178 个分区只要 0.43s, 裁到 81 个只要 0.20s(外加 0.12~0.25s 的目录枚举)。
+
+        **保守原则**: 认不出的目录一律**包含**进来 —— 多读一份只是慢, 少读一份是静默丢行。
+        返回 None 表示无法裁剪(目录不存在/没有文件), 调用方回退到原 glob。
+        """
+        base = Path(self.store.data_dir) / table
         try:
-            lf = scan_enriched_parquet(self._enriched_glob,
+            with os.scandir(base) as it:
+                entries = [e for e in it if e.is_dir() and e.name.startswith("date=")]
+        except OSError:
+            return None
+        files: list[str] = []
+        for e in entries:
+            raw = e.name[5:]
+            month = len(raw) == 7 and raw[4] == "-"
+            if month:
+                # 月分区(如 date=2026-11)覆盖整月; 与该月有交集就整份纳入,
+                # 越界的行由下游 date 过滤兜底(记忆 #25: 月分区名不是日期)。
+                try:
+                    first = date(int(raw[:4]), int(raw[5:]), 1)
+                except ValueError:
+                    files.extend(self._parquet_in(e.path))
+                    continue
+                last = date(first.year + (first.month == 12), (first.month % 12) + 1, 1) - timedelta(days=1)
+                if first <= end and last >= start:
+                    files.extend(self._parquet_in(e.path))
+                continue
+            try:
+                day = date.fromisoformat(raw)
+            except ValueError:
+                files.extend(self._parquet_in(e.path))   # 认不出就纳入, 不猜
+                continue
+            if start <= day <= end:
+                files.extend(self._parquet_in(e.path))
+        # 目录读到了就返回(可能是空列表): 区间内确实没有分区 ⇒ 结果就是空, 不必
+        # 回退去扫全表。空列表交给下游当"无数据"处理(expanded paths were empty)。
+        return files
+
+    @staticmethod
+    def _parquet_in(path: str) -> list[str]:
+        try:
+            with os.scandir(path) as it:
+                return [os.path.join(path, e.name) for e in it if e.name.endswith(".parquet")]
+        except OSError:
+            return []
+
+    def _daily_scan_source(self, table: str, glob: str, start: date, end: date):
+        """裁剪成功用文件列表(可能是空), 目录读不到时回退 glob(与裁剪前一致)。"""
+        files = self._partition_files_in_range(table, start, end)
+        return glob if files is None else files
+
+    def _scan_failed(
+        self, exc: Exception, *, table: str, symbol: str | None, start: date, end: date,
+    ) -> pl.DataFrame:
+        """统一处理扫描异常: 空目录是"还没数据", 其余才是"读坏了"。"""
+        if self._EMPTY_GLOB_MARK in str(exc):
+            logger.debug("%s 无数据(%s .. %s): %s", table, start, end, exc)
+            return pl.DataFrame()
+        logger.error("%s 读取失败 %s [%s .. %s]: %s", table, symbol, start, end, exc)
+        self._scan_error.last = {"table": table, "symbol": symbol, "detail": str(exc)}
+        return pl.DataFrame()
+
+    def take_scan_error(self) -> str | None:
+        """取出并清空本线程最近一次扫描失败原因; 没有失败则返回 None。
+
+        调用点只在"本地结果为空、即将改走上游"时读取 —— 那条路径是唯一需要
+        区分"没有数据"与"读坏了"的地方。
+        """
+        info = getattr(self._scan_error, "last", None)
+        self._scan_error.last = None
+        if not info:
+            return None
+        detail = str(info.get("detail") or "")
+        if len(detail) > 240:
+            detail = detail[:240] + "…"
+        return f"{info['table']} 读取失败({info['symbol']}): {detail}"
+
+    def _scan_daily_symbol(self, symbol: str, start: date, end: date, columns: list[str] | None) -> pl.DataFrame:
+        self._scan_error.last = None
+        try:
+            lf = scan_enriched_parquet(self._daily_scan_source("kline_daily_enriched", self._enriched_glob, start, end),
                                  cast_options=pl.ScanCastOptions(integer_cast="allow-float")).filter(
                 (pl.col("symbol") == symbol)
                 & (pl.col("date") >= start)
@@ -1998,12 +2097,14 @@ class KlineRepository:
                 lf = lf.select(existing)
             return guarded_collect(lf)
         except Exception as e:  # noqa: BLE001
-            logger.warning("日K查询失败: %s", e)
-            return pl.DataFrame()
+            return self._scan_failed(
+                e, table="kline_daily_enriched", symbol=symbol, start=start, end=end,
+            )
 
     def _scan_daily_batch(self, symbols: list[str], start: date, end: date, columns: list[str] | None) -> pl.DataFrame:
+        self._scan_error.last = None
         try:
-            lf = scan_enriched_parquet(self._enriched_glob,
+            lf = scan_enriched_parquet(self._daily_scan_source("kline_daily_enriched", self._enriched_glob, start, end),
                                  cast_options=pl.ScanCastOptions(integer_cast="allow-float")).filter(
                 (pl.col("symbol").is_in(symbols))
                 & (pl.col("date") >= start)
@@ -2015,12 +2116,15 @@ class KlineRepository:
                 lf = lf.select(existing)
             return guarded_collect(lf)
         except Exception as e:  # noqa: BLE001
-            logger.warning("日K批量查询失败: %s", e)
-            return pl.DataFrame()
+            return self._scan_failed(
+                e, table="kline_daily_enriched", symbol=f"{len(symbols)} 只",
+                start=start, end=end,
+            )
 
     def _scan_index_daily_symbol(self, symbol: str, start: date, end: date, columns: list[str] | None) -> pl.DataFrame:
+        self._scan_error.last = None
         try:
-            lf = scan_enriched_parquet(self._index_enriched_glob,
+            lf = scan_enriched_parquet(self._daily_scan_source("kline_index_enriched", self._index_enriched_glob, start, end),
                                  cast_options=pl.ScanCastOptions(integer_cast="allow-float")).filter(
                 (pl.col("symbol") == symbol)
                 & (pl.col("date") >= start)
@@ -2032,12 +2136,14 @@ class KlineRepository:
                 lf = lf.select(existing)
             return guarded_collect(lf)
         except Exception as e:  # noqa: BLE001
-            logger.warning("指数日K查询失败: %s", e)
-            return pl.DataFrame()
+            return self._scan_failed(
+                e, table="kline_index_enriched", symbol=symbol, start=start, end=end,
+            )
 
     def _scan_etf_daily_symbol(self, symbol: str, start: date, end: date, columns: list[str] | None) -> pl.DataFrame:
+        self._scan_error.last = None
         try:
-            lf = scan_enriched_parquet(self._etf_enriched_glob,
+            lf = scan_enriched_parquet(self._daily_scan_source("kline_etf_enriched", self._etf_enriched_glob, start, end),
                                  cast_options=pl.ScanCastOptions(integer_cast="allow-float")).filter(
                 (pl.col("symbol") == symbol)
                 & (pl.col("date") >= start)
@@ -2049,8 +2155,9 @@ class KlineRepository:
                 lf = lf.select(existing)
             return guarded_collect(lf)
         except Exception as e:  # noqa: BLE001
-            logger.debug("ETF 日K查询跳过: %s", e)
-            return pl.DataFrame()
+            return self._scan_failed(
+                e, table="kline_etf_enriched", symbol=symbol, start=start, end=end,
+            )
 
     def _merge_cached_and_scan(
         self,
@@ -2168,16 +2275,13 @@ class KlineRepository:
         return out
 
     def latest_daily_date(self) -> date | None:
-        """本地日K数据的最新日期。"""
+        """本地日K数据的最新日期。走分区目录名, 不展开 parquet 元数据。"""
         try:
-            res = self.execute_one(
-                "SELECT max(date) FROM kline_daily",
-            )
-            if res and res[0]:
-                d = res[0]
-                return d if isinstance(d, date) else date.fromisoformat(str(d))
-        except Exception:
-            return None
+            dates = list_partition_dates(self.store.data_dir / "kline_daily")
+            if dates:
+                return max(dates)
+        except Exception:  # noqa: BLE001
+            pass
         return None
 
     def latest_enriched_date(self, asset_type: str = "stock") -> date | None:
@@ -2225,16 +2329,8 @@ class KlineRepository:
             return []
 
     def _latest_enriched_date_duckdb(self) -> date | None:
-        try:
-            res = self.execute_one(
-                "SELECT max(date) FROM kline_enriched",
-            )
-            if res and res[0]:
-                d = res[0]
-                return d if isinstance(d, date) else date.fromisoformat(str(d))
-        except Exception:  # noqa: BLE001
-            return None
-        return None
+        """enriched 最新日期。名字沿用历史调用点, 实现改为读分区目录名。"""
+        return self.latest_enriched_date("stock")
 
     # ================================================================
     # 写入 (Pipeline / Sync)

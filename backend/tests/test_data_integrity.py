@@ -775,3 +775,71 @@ def test_scan_no_false_missing_when_etf_lags_over_holiday(tmp_path, monkeypatch)
     for day in (date(2026, 9, 22), date(2026, 9, 23), date(2026, 9, 24)):
         _write_daily_partition(tmp_path, "kline_etf_daily", day, None)
     assert scan_recent_integrity(tmp_path, today=date(2026, 9, 28)) == []
+
+
+# ── 覆盖度判据: 分区"存在且可读"不等于写全 ──────────────────────────────
+
+
+def _write_instruments(root, table: str, n: int) -> None:
+    d = root / table
+    d.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({"symbol": [f"{i:06d}.SH" for i in range(n)]}).write_parquet(
+        d / f"{table}.parquet"
+    )
+
+
+def test_sparse_partition_flagged(tmp_path):
+    """指数分区只写进 3 只 (实时快照先落盘、盘后 batch 整批超时被丢弃)。
+
+    2026-11-05..11-12 实证: 599 只的维表, 当日分区只有 6/6/378/378/6/8 行,
+    字段完整、行数非零、quote_ts 已过收盘线 ⇒ 既有判据全绿。
+    """
+    _write_instruments(tmp_path, "instruments_index", 100)
+    _write_daily_partition(
+        tmp_path, "kline_index_daily", FRIDAY, None,
+        symbols=("000001.SH", "399001.SZ", "000300.SH"),
+    )
+    issue = di.inspect_daily_partition(tmp_path, "kline_index_daily", FRIDAY, deep=False)
+    assert issue is not None
+    assert issue.kind == "sparse"
+    assert "3" in issue.reason
+    # 缺陷标的留空: 缺的是没写进来的那些, 不是写坏的这些
+    assert issue.symbols == ()
+
+
+def test_coverage_at_floor_is_clean(tmp_path):
+    """刚好达到 75% 下限不报 —— 停牌/新股不该被判成缺口。"""
+    _write_instruments(tmp_path, "instruments_index", 100)
+    syms = tuple(f"{i:06d}.SH" for i in range(75))
+    _write_daily_partition(tmp_path, "kline_index_daily", FRIDAY, None, symbols=syms)
+    assert di.inspect_daily_partition(tmp_path, "kline_index_daily", FRIDAY, deep=False) is None
+
+
+def test_sparse_skipped_without_instrument_table(tmp_path):
+    """维表缺席不做覆盖度判定 —— 否则所有单标的夹具都会被判 sparse。"""
+    _write_daily_partition(
+        tmp_path, "kline_index_daily", FRIDAY, None, symbols=("000001.SH",),
+    )
+    assert di.inspect_daily_partition(tmp_path, "kline_index_daily", FRIDAY, deep=False) is None
+
+
+def test_sparse_covers_stock_table(tmp_path):
+    """个股表同样适用: 5572 只的族里只写进 10 只。"""
+    _write_instruments(tmp_path, "instruments", 100)
+    _write_daily_partition(
+        tmp_path, "kline_daily", FRIDAY, None,
+        symbols=tuple(f"6000{i:02d}.SH" for i in range(10)),
+    )
+    issue = di.inspect_daily_partition(tmp_path, "kline_daily", FRIDAY, deep=False)
+    assert issue is not None and issue.kind == "sparse"
+
+
+def test_sparse_detected_on_deep_path_too(tmp_path):
+    """深扫与浅扫必须给出同一结论, 否则手动自检与自动巡检会互相矛盾。"""
+    _write_instruments(tmp_path, "instruments_index", 100)
+    _write_daily_partition(
+        tmp_path, "kline_index_daily", FRIDAY, None,
+        symbols=("000001.SH", "399001.SZ"),
+    )
+    issue = di.inspect_daily_partition(tmp_path, "kline_index_daily", FRIDAY, deep=True)
+    assert issue is not None and issue.kind == "sparse"

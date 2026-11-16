@@ -94,6 +94,43 @@ def active_daily_tables() -> tuple[str, ...]:
 
 DAILY_REQUIRED = ("symbol", "date", "open", "high", "low", "close", "volume")
 
+#: 分区覆盖度下限 (相对同族维表行数)。低于此比例判 `sparse`。
+#:
+#: 为什么需要这条判据: 分区"存在、字段合法、行数 > 0"挡住的是文件级损坏,
+#: 挡不住「只写进了几条」。实时行情轮询会先把 6~8 只基准指数落成当日分区,
+#: 盘后 batch 若整批超时被静默丢弃, 这一天就以 6/599 的形态留在盘上 ——
+#: 下游按日读到的是一份残缺横截面, 而所有既有判据全绿 (2026-11-05..11-12
+#: 实证: 指数 6/6/378/378/6/8, 体检报 clean)。
+#:
+#: 0.75 的取法: 正常交易日停牌+新股未上市约影响 1~5%; 取 75% 既能容忍,
+#: 也能在「少了一半以上」时必响。阈值偏高只会多报一次可修的稀疏分区,
+#: 偏低则重演上面那六天 —— 两侧代价不对称, 故取宽。
+MIN_COVERAGE_RATIO = 0.75
+
+#: 日K表 → 同族维表 (相对 data 目录)。维表缺席时不做稀疏判定。
+_INSTRUMENT_TABLE = {
+    "kline_daily": ("instruments", "instruments.parquet"),
+    "kline_etf_daily": ("instruments_etf", "instruments_etf.parquet"),
+    "kline_index_daily": ("instruments_index", "instruments_index.parquet"),
+}
+
+
+def _symbol_floor(data_dir: Path, table: str) -> int | None:
+    """同族维表量级 × `MIN_COVERAGE_RATIO`；维表缺失/不可读时返回 None (不判定)。"""
+    rel = _INSTRUMENT_TABLE.get(table)
+    if rel is None:
+        return None
+    path = Path(data_dir) / rel[0] / rel[1]
+    if not path.is_file():
+        return None
+    try:
+        total = pl.scan_parquet(str(path)).select(pl.len()).collect().item()
+    except Exception:  # noqa: BLE001 — 维表坏掉是另一个问题, 不在这里误判缺口
+        return None
+    if not total:
+        return None
+    return max(1, int(total * MIN_COVERAGE_RATIO))
+
 
 def _daily_validation(frame: pl.DataFrame, day: date | None) -> tuple[pl.DataFrame, dict[str, pl.Expr]]:
     """数值判据同时用于拦截与错误说明, 停牌零价沿用现有规则。"""
@@ -216,6 +253,9 @@ def _partition_problem(
     kind = "invalid"
     rows = 0
     symbols: set[str] = set()
+    #: 分区内实际出现过的 symbol（不论数值是否合法）。只服务覆盖度判据,
+    #: 与 `symbols`（缺陷标的）语义不同 —— 后者会喂给定向修复。
+    seen: set[str] = set()
     unknown_symbols = False
     for path in paths:
         if not path.resolve().is_relative_to(root.resolve()):
@@ -230,6 +270,21 @@ def _partition_problem(
                 parquet = pq.ParquetFile(source)
                 rows += parquet.metadata.num_rows
                 if not deep:
+                    # 浅扫也要读 symbol 列: 覆盖度判据挡的是「分区写了几条就
+                    # 再没补过」, 这类分区字段完整、行数非零, 只看元数据看不见。
+                    # 单列读取不碰数值页, 代价远小于把残缺横截面判成干净。
+                    if "symbol" in parquet.schema.names:
+                        try:
+                            # 必须走 ParquetFile.read 而非 pq.read_table(path, ...):
+                            # 后者见到 columns 参数会按 dataset 打开, 把单文件路径
+                            # 当成分区目录去合并 schema, 遇 date 列类型不一致直接
+                            # 抛错 (dictionary<string> vs date32), 覆盖度恒为 0。
+                            seen.update(
+                                s for s in parquet.read(columns=["symbol"])
+                                .column("symbol").to_pylist() if s
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning("日K symbol 列读取失败 %s: %s", path, exc)
                     continue
                 if not set(DAILY_REQUIRED).issubset(parquet.schema.names):
                     bad.append(path.name)
@@ -241,6 +296,7 @@ def _partition_problem(
                     frame = pl.from_arrow(batch)
                     if monthly:
                         frame = frame.filter(pl.col("date") == day)
+                    seen.update(s for s in frame["symbol"].to_list() if s)
                     invalid = invalid_daily_rows(frame, day)
                     if not invalid.is_empty():
                         bad.append(path.name)
@@ -259,7 +315,172 @@ def _partition_problem(
                 () if unknown_symbols else tuple(sorted(symbols)))
     if rows == 0:
         return "corrupt", "日期目录内的日K文件为空", tuple(p.name for p in paths), ()
+    floor = _symbol_floor(root, part.parent.name)
+    if floor is not None and len(seen) < floor:
+        # 只报覆盖度, 不把 seen 当缺陷标的: 缺的是「没写进来的那些」,
+        # 而定向修复需要的是「写坏了的那些」。调用方据此走整日全量重拉。
+        return ("sparse", f"分区仅覆盖 {len(seen)} 只, 低于同族应有个数量级 {floor}",
+                tuple(p.name for p in paths), ())
     return None
+
+
+def _read_day_frame(part: Path, day: date) -> pl.DataFrame | None:
+    """把分区里属于 day 的行读成一张表; 任何读取失败返回 None。
+
+    失败不在这里报 —— 文件级损坏由 `_partition_problem` 负责, 这里只做
+    「事实之间是否自洽」的判定。读不到就不下结论 (无证据 ≠ 干净)。
+    """
+    frames: list[pl.DataFrame] = []
+    for path in sorted(part.glob("*.parquet")):
+        try:
+            frames.append(pl.read_parquet(path))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("事实判据跳过 %s: %s", path, exc)
+            return None
+    if not frames:
+        return None
+    try:
+        frame = pl.concat(frames, how="diagonal_relaxed")
+        if "date" in frame.columns:
+            frame = frame.filter(pl.col("date") == day)
+        return frame
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("事实判据合并失败 %s: %s", part, exc)
+        return None
+
+
+def _instrument_symbols(root: Path) -> set[str]:
+    """个股维表的代码集合; 维表缺失/读不了返回空集 (不判定, 由其它判据报)。"""
+    path = Path(root) / "instruments" / "instruments.parquet"
+    try:
+        return set(pl.read_parquet(path, columns=["symbol"])["symbol"].to_list())
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def audit_fact_violations(root: Path, table: str, day: date) -> IntegrityIssue | None:
+    """落盘事实之间的三条恒等式 —— 独立审计通道, **不驱动自动修补**。
+
+    1. **主键唯一**: 同一 (date, symbol) 至多「一行权威 + 一行实时」。
+       两行同类 = 真重复, 会让后续每一次 join 放大行数 (2026-11-05 staging 残留)。
+       「权威 + 残留」并存是 #514 认可的既有形态 (残留已被覆盖, 只影响修补范围),
+       故不在此判坏。
+    2. **指数不混入个股表**: `kline_daily` 只装个股。指数行的 close 是点位,
+       一旦进入个股排序就被当作价格 (2026-11-05..11-12 实证 4 个分区混入)。
+    3. **维表覆盖面板**: 面板里出现的每个代码都必须能在 `instruments` 里找到。
+       零容差 —— 代码已上市才会出现在面板, 维表没有它只能是维表被写残
+       (2026-11-13: BJ 端点 503 后用 SH+SZ 覆盖, 355 只北交所消失, 当天
+       `panel - instruments` 从 0 直接变成 355)。
+
+    均价类恒等式 (`amount/(volume*100) ∈ [low, high]`) **故意不在这里** ——
+    `minute_audit` 的 S 轴已经用 ±1 手 / 2bp 的口径在做, 并已落盘进管道。
+    同一判据写两遍、阈值还不同, 就是下一场「两个数都对不上」的来源。
+
+    ## 为什么单独一条通道
+
+    `inspect_daily_partition` 的返回值会进 `daily_health` → 触发自动重拉 → 未清除
+    则退避重试。而这两条**重拉修不掉**: 指数行混入只有整日重写才消失, 定向修补
+    会去把指数当个股拉; 重复行则取决于写入方, 拉回来还是会被再写一遍。
+    塞进修补链 = 制造永不收敛的红灯。
+    """
+    part = locate_partition_dir(Path(root) / table, table, day)
+    if not part.is_dir():
+        return None
+    frame = _read_day_frame(part, day)
+    if frame is None or frame.is_empty():
+        return None
+
+    if {"symbol", "date"}.issubset(frame.columns):
+        cols = ["symbol", "date"] + (["quote_ts"] if "quote_ts" in frame.columns else [])
+        keyed = frame.select(cols)
+        if "quote_ts" in keyed.columns:
+            keyed = keyed.with_columns(pl.col("quote_ts").is_null().alias("__auth"))
+        else:
+            keyed = keyed.with_columns(pl.lit(True).alias("__auth"))
+        dup = (
+            keyed.group_by(["symbol", "date", "__auth"]).len()
+            .filter(pl.col("len") > 1).sort("len", descending=True)
+        )
+        if not dup.is_empty():
+            symbols = tuple(sorted(s for s in dup["symbol"].to_list() if s))
+            most = int(dup["len"].max() or 0)
+            return IntegrityIssue(
+                day, table, "corrupt", symbols=symbols,
+                reason=f"同一 (日期,股票) 同类重复最多 {most} 行, 共 {len(symbols)} 只",
+                files=tuple(p.name for p in sorted(part.glob("*.parquet"))),
+            )
+
+    if table == "kline_daily" and "symbol" in frame.columns:
+        index_path = Path(root) / "instruments_index" / "instruments_index.parquet"
+        try:
+            index_symbols = set(pl.read_parquet(index_path, columns=["symbol"])["symbol"].to_list())
+        except Exception:  # noqa: BLE001 — 维表缺失是另一个问题, 不在这里误判
+            index_symbols = set()
+        mixed = sorted(set(frame["symbol"].drop_nulls().to_list()) & index_symbols)
+        if mixed:
+            return IntegrityIssue(
+                day, table, "invalid",
+                reason=f"指数代码混入个股日线: {', '.join(mixed[:5])}",
+                files=tuple(p.name for p in sorted(part.glob("*.parquet"))),
+            )
+
+        # 维表必须覆盖面板的每一个代码。零容差, 不需要阈值: 面板里出现的代码
+        # 一定已上市, 维表没有它只可能是维表被写残 (2026-11-13: BJ 端点 503 后
+        # 用 SH+SZ 整表覆盖, 355 只北交所消失, 而任何 join instruments 都静默丢它们)。
+        instruments = _instrument_symbols(root)
+        if instruments:
+            absent = sorted(set(frame["symbol"].drop_nulls().to_list()) - instruments)
+            if absent:
+                return IntegrityIssue(
+                    day, table, "invalid",
+                    reason=f"标的维表缺 {len(absent)} 只面板代码: {', '.join(absent[:5])}",
+                )
+    return None
+
+
+FACT_REPORT_REL = ("user_data", "source_facts_report.json")
+
+
+def audit_recent_facts(
+    data_dir: Path, *, today: date | None = None, days: int = SCAN_WINDOW_DAYS,
+) -> list[IntegrityIssue]:
+    """近 N 个交易日的恒等式审计 + 落盘报告。
+
+    报告必须落盘而不是只写日志: 日志里的 WARNING 没人读 (2026-11-05..11-12 的
+    指数 6/599 就是"体检报 clean"期间一直存在)。文件供 API/前端读取,
+    也供「今天与昨天是否一样」这类跨日对比使用。
+    """
+    today = today or cn_today()
+    issues: list[IntegrityIssue] = []
+    for table in active_daily_tables():
+        for day in _candidate_days(today, days):
+            part = locate_partition_dir(Path(data_dir) / table, table, day)
+            if not part.is_dir():
+                continue
+            try:
+                issue = audit_fact_violations(Path(data_dir), table, day)
+            except Exception as exc:  # noqa: BLE001 — 审计失败不能影响管道
+                logger.warning("fact audit failed %s %s: %s", table, day, exc)
+                continue
+            if issue is not None:
+                issues.append(issue)
+    path = Path(data_dir).joinpath(*FACT_REPORT_REL)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        from app.services.fs_utils import atomic_write_text
+
+        atomic_write_text(path, json.dumps({
+            "generated_at": datetime.now(CN_TZ).isoformat(timespec="seconds"),
+            "today": today.isoformat(),
+            "window_days": days,
+            "issues": [{
+                "day": i.day.isoformat(), "table": i.table, "kind": i.kind,
+                "reason": i.reason, "symbols": list(i.symbols),
+            } for i in issues],
+        }, ensure_ascii=False, indent=2))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("fact report write failed: %s", exc)
+    return issues
 
 
 def _quote_ts_max_ms(part_dir: Path, day: date | None = None) -> int | None:
@@ -341,14 +562,28 @@ def _partition_snapshot_defects(
     零成交记录写入分区; 后续 batch 会过滤停牌日, merge-upsert 因而留下这些
     孤立行。旧逻辑「任一行有成交即判坏整分区」会让 4 行残留触发全市场重拉。
 
+    ## 为什么不再以 max(quote_ts) 作入口 (2026-11-13)
+
+    旧入口是 `_is_snapshot(day, max(quote_ts))`: 只要分区里有**一行**盘后时间戳,
+    symbol 级残留扫描就整体跳过。真实数据正好撞在这上面 —— 2026-11-05/06/11/12
+    四个分区的 quote_ts 全部是 17:47~21:10 的盘后快照 (非 null 且 ≥15:30),
+    于是这四天从不进入逐 symbol 判定; 任何一只停在 11:30 的股票都会被判干净。
+    判据的灵敏度不该由同一分区里另一行的时间戳决定。
+
+    现在逐行分类, **当日盘前/盘中的时间戳**即「可疑」。跨日时间戳仍沿用既有
+    契约不判 (见 `tests/test_data_integrity.py::test_issue_from_other_day_timestamp_not_flagged`):
+    现有源里有跨天写入的脏行, 也有盘后补写带前一日时间戳的行, 在拿到源端
+    时间戳语义的证据之前, 把跨日一律判坏会制造无法收敛的修补。
+
     返回语义:
     - None      : 无法判定但按坏处理 (volume/amount 列缺失 / 读失败 / 无 symbol
                   列却有成交残留) — 保守 fail-closed, 修复回退全市场;
     - 空集合    : 分区干净 (残留 symbol 均已有权威行, 或仅零成交残留且权威行占多数);
-    - 非空集合  : 恰好这些 symbol 在窗口内写了有成交实时行且无权威行 → 只修它们。
+    - 非空集合  : 恰好这些 symbol 写了有成交实时行且无权威行 → 只修它们。
+
+    `quote_ts_max_ms` 仅为兼容既有调用方保留; 判定不再依赖它。
     """
-    if not _is_snapshot(day, quote_ts_max_ms):
-        return set()
+    del quote_ts_max_ms  # 保留参数语义, 判定只看逐行事实
 
     start_ms = int(datetime.combine(day, dt_time.min, tzinfo=CN_TZ).timestamp() * 1000)
     cutoff_ms = int(datetime.combine(day, CLOSE_CUTOFF, tzinfo=CN_TZ).timestamp() * 1000)

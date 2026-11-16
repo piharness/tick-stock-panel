@@ -1,0 +1,108 @@
+{
+  "how": "定位 → 归因 → 在临时副本上验证修复；不改 data/",
+  "stray": [
+    {
+      "partition": "date=2026-11-05",
+      "files": [
+        {
+          "name": "part-stream-0.parquet",
+          "bytes": 100248
+        },
+        {
+          "name": "part.parquet",
+          "bytes": 118483
+        }
+      ]
+    }
+  ],
+  "dup": {
+    "n_rows": 2022819,
+    "n_duplicate_keys": 3,
+    "keys": [
+      {
+        "date": "2026-11-05",
+        "symbol": "301559.SZ",
+        "rows": 2,
+        "diff": {
+          "amount": [
+            "24942584.0",
+            "24942583.73"
+          ],
+          "quote_ts": [
+            "1793874982000",
+            "None"
+          ]
+        }
+      },
+      {
+        "date": "2026-11-05",
+        "symbol": "688777.SH",
+        "rows": 2,
+        "diff": {
+          "amount": [
+            "1529214500.0",
+            "1529214523.93"
+          ],
+          "quote_ts": [
+            "1793874982000",
+            "None"
+          ]
+        }
+      },
+      {
+        "date": "2026-11-05",
+        "symbol": "301608.SZ",
+        "rows": 2,
+        "diff": {
+          "amount": [
+            "150943530.0",
+            "150943531.77"
+          ],
+          "quote_ts": [
+            "1793874982000",
+            "None"
+          ]
+        }
+      }
+    ],
+    "dates": [
+      "2026-11-05"
+    ]
+  },
+  "folder_read": {
+    "partition": "date=2026-11-05",
+    "rows": 9641,
+    "uniq_symbols": 5572,
+    "files": [
+      "part-stream-0.parquet",
+      "part.parquet"
+    ]
+  },
+  "refusal": {
+    "2026-10-30": {
+      "ok": false,
+      "err": "ValueError: (date, symbol) 存在重复行——矩阵法会静默丢样本，拒绝继续"
+    },
+    "2026-11-11": {
+      "ok": false,
+      "err": "ValueError: (date, symbol) 存在重复行——矩阵法会静默丢样本，拒绝继续"
+    },
+    "2026-11-12": {
+      "ok": false,
+      "err": "ValueError: (date, symbol) 存在重复行——矩阵法会静默丢样本，拒绝继续"
+    }
+  },
+  "repair": {
+    "partition": ".workbuddy\\tmp\\dupkey\\data\\kline_daily_enriched\\date=2026-11-05\\part.parquet",
+    "rows_before": 5575,
+    "rows_after": 5572
+  },
+  "repaired": {
+    "n": 20,
+    "entry_date": "2026-11-12",
+    "same_as_frozen": true,
+    "only_in_repaired": [],
+    "only_in_frozen": []
+  },
+  "verdict": "repair_preserves_the_answer"
+}

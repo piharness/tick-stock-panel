@@ -106,20 +106,36 @@ def _isolated_prefs(tmp_path, monkeypatch):
     preferences._invalidate_cache()
 
 
-def test_backtest_rss_limit_pref_roundtrip_and_clamp(_isolated_prefs):
+@pytest.fixture()
+def _box_12gib(monkeypatch):
+    """把容器内存预算固定为 12 GiB, 让上限推导与跑测试的机器无关。
+
+    上限 = 总内存 × 0.6 = 7 GiB。真实机器的 cgroup 值不参与断言 ——
+    否则同一条用例在 12 GiB 笔记本和 128 GiB 服务器上会得出不同数字。
+    """
+    from app.services import memory_budget as mb
+
+    monkeypatch.setattr(
+        mb, "memory_budget",
+        lambda vm=None: mb.MemoryBudget(total_bytes=12 * 1024**3, available_bytes=8 * 1024**3),
+    )
+    return 7
+
+
+def test_backtest_rss_limit_pref_roundtrip_and_clamp(_isolated_prefs, _box_12gib):
     from app.services import preferences
 
     assert preferences.get_backtest_worker_rss_limit_gib() == 6  # 缺省默认
 
-    assert preferences.set_backtest_worker_rss_limit_gib(8) == 8
-    assert preferences.get_backtest_worker_rss_limit_gib() == 8
+    assert preferences.set_backtest_worker_rss_limit_gib(5) == 5
+    assert preferences.get_backtest_worker_rss_limit_gib() == 5
     assert json.loads(_isolated_prefs.read_text(encoding="utf-8"))[
         "backtest_worker_rss_limit_gib"
-    ] == 8
+    ] == 5
 
-    # 越界钳制: 0 是合法值 (不限制), 负数按 0、超上限按 64 收口
+    # 越界钳制: 0 是合法值 (不限制), 负数按 0、超上限按本机容器余量收口
     assert preferences.set_backtest_worker_rss_limit_gib(-3) == 0
-    assert preferences.set_backtest_worker_rss_limit_gib(999) == 64
+    assert preferences.set_backtest_worker_rss_limit_gib(999) == _box_12gib
 
     # 手改 JSON 出现非法值时自愈回默认
     _isolated_prefs.write_text(
@@ -127,6 +143,33 @@ def test_backtest_rss_limit_pref_roundtrip_and_clamp(_isolated_prefs):
     )
     preferences._invalidate_cache()
     assert preferences.get_backtest_worker_rss_limit_gib() == 6
+
+
+def test_rss_limit_from_bigger_box_is_capped_by_container(_isolated_prefs, _box_12gib):
+    """从 128 GiB 机器带来的 64 GiB 配置, 在 12 GiB 容器里必须被收紧。
+
+    不收紧的后果不是「worker 超限」, 而是 worker 还没到自己上限、容器先被
+    OOM —— 后者会把 API 进程一起带走, 且现场没有任何报错文案。
+    """
+    _isolated_prefs.write_text(
+        json.dumps({"backtest_worker_rss_limit_gib": 64}), encoding="utf-8"
+    )
+    from app.services import preferences
+
+    preferences._invalidate_cache()
+    assert preferences.get_backtest_worker_rss_limit_gib() == _box_12gib
+
+
+def test_rss_limit_keeps_default_when_budget_unreadable(_isolated_prefs, monkeypatch):
+    """探测失败时退回通用上限 64, 不许把合法配置压成 1 GiB。"""
+    from app.services import memory_budget as mb
+    from app.services import preferences
+
+    def _boom(vm=None):
+        raise RuntimeError("no cgroup")
+
+    monkeypatch.setattr(mb, "memory_budget", _boom)
+    assert preferences.set_backtest_worker_rss_limit_gib(999) == 64
 
 
 def test_effective_rss_limit_env_beats_preference(monkeypatch, _isolated_prefs):

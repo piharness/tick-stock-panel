@@ -19,7 +19,7 @@ ASSET_LABELS = {"stock": "股票", "etf": "ETF", "index": "指数"}
 KIND_LABELS = {
     "missing": "日期缺失", "snapshot": "盘中快照未定版", "corrupt": "文件损坏或为空",
     "invalid": "日K数值异常", "unconfirmed": "缺失日期待核实",
-    "recompute": "依赖指标待重算",
+    "recompute": "依赖指标待重算", "sparse": "分区覆盖不全",
 }
 
 
@@ -135,17 +135,30 @@ def run_repair(repo, capset, report_id: str, on_progress: Callable | None = None
     if previous is None or previous.get("id") != report_id:
         raise ValueError("自检报告已变化, 请重新自检后再修补")
     days, assets = previous["lookback_days"], previous["asset_types"]
-    end = date.fromisoformat(previous["end_date"])
+    scan_end = date.fromisoformat(previous["end_date"])
+    # 自检只能扫「已定版」的历史日（盘中扫今天会把每只票都判成快照），所以
+    # 报告右端恒为昨天。但登记在「今天」的异常——盘后管道重算发现今天的数据
+    # 坏、`record_issues` 落盘——必须也能被本轮修补**看见并清除**，否则
+    # `_known_issues` 按 `day <= end` 过滤把今天那几条永久漏掉，`assert_usable`
+    # 一直拦着，而修补每次都报告「没有问题」——这正是提示弹个不停的根因。
+    # 因此「看见/清除」的右端取两者较大值，而「扫描发现新问题」的右端仍是昨天。
+    repair_end = scan_end
+    # entries 用 asset_type("stock"/"etf"/"index")，与 assets 同口径（都是族名）。
+    for e in daily_health.snapshot(root)["entries"]:
+        if e["asset_type"] in assets:
+            d = date.fromisoformat(e["day"])
+            if d > repair_end:
+                repair_end = d
     # 报告只作确认凭证。实际修补范围重新读当前文件及持久化的待重算状态。
-    raw = _scan(root, days, assets, end, on_progress)
-    _make_report(root, days, assets, end, raw)
+    raw = _scan(root, days, assets, scan_end, on_progress)
+    _make_report(root, days, assets, scan_end, raw)
     # 更早自检已发现的异常也会影响当前窗口, 逐日重读以区分取数和仅需重算。
-    for known in _known_issues(root, assets, end):
+    for known in _known_issues(root, assets, repair_end):
         current = data_integrity.inspect_daily_partition(root, known.table, known.day)
         found = [current] if current else []
         daily_health.record_scan(root, found, assets=[data_integrity.TABLE_FAMILY[known.table]],
                                 start=known.day, end=known.day)
-    known = _known_issues(root, assets, end)
+    known = _known_issues(root, assets, repair_end)
     blocked = [i for i in known if not _repairable(i) and "目录以外" in i.reason]
     if blocked:
         # 链接指向数据目录以外时不能在原文件上修补。静默跳过会让调用方以为
@@ -153,7 +166,7 @@ def run_repair(repo, capset, report_id: str, on_progress: Callable | None = None
         raise ValueError(blocked[0].reason)
     issues = [i for i in known if _repairable(i)]
     if not issues:
-        return run_check(root, lookback_days=days, asset_types=assets, end_date=end)
+        return run_check(root, lookback_days=days, asset_types=assets, end_date=scan_end)
     backup_id = uuid.uuid4().hex
     failure: BaseException | None = None
     try:
@@ -164,7 +177,7 @@ def run_repair(repo, capset, report_id: str, on_progress: Callable | None = None
     except BaseException as exc:  # noqa: BLE001 — 取消也保留可重试状态, 保存报告后原样抛出
         failure = exc
 
-    report = run_check(root, lookback_days=days, asset_types=assets, end_date=end)
+    report = run_check(root, lookback_days=days, asset_types=assets, end_date=scan_end)
     if (root / "integrity_backups" / backup_id).exists():
         report["backup_dir"] = f"integrity_backups/{backup_id}"
     if failure is not None:

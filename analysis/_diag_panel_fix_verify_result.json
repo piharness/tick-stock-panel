@@ -1,0 +1,83 @@
+{
+  "as_of": "2026-11-11",
+  "how": "临时目录副本；data/ 零改动",
+  "A_asis": {
+    "ok": false,
+    "error": "ValueError: (date, symbol) 存在重复行——矩阵法会静默丢样本，拒绝继续"
+  },
+  "dedup_only": {
+    "tag": "dedup_only",
+    "drop_index": false,
+    "rows_raw": 2022819,
+    "rows_after_dedup": 2022816,
+    "dup_keys_before": 6,
+    "index_rows_dropped": 0,
+    "rows_final": 2022816,
+    "uniq_symbols_raw": 5582,
+    "uniq_symbols_final": 5582,
+    "ok": true,
+    "n": 20,
+    "symbols": [
+      "000530.SZ",
+      "000678.SZ",
+      "001219.SZ",
+      "002086.SZ",
+      "002708.SZ",
+      "002724.SZ",
+      "300949.SZ",
+      "301313.SZ",
+      "301413.SZ",
+      "301502.SZ",
+      "600261.SH",
+      "600327.SH",
+      "600715.SH",
+      "603278.SH",
+      "605488.SH",
+      "688286.SH",
+      "688386.SH",
+      "688585.SH",
+      "688787.SH",
+      "688836.SH"
+    ]
+  },
+  "dedup_noindex": {
+    "tag": "dedup_noindex",
+    "drop_index": true,
+    "rows_raw": 2022819,
+    "rows_after_dedup": 2022816,
+    "dup_keys_before": 6,
+    "index_rows_dropped": 8,
+    "rows_final": 2022808,
+    "uniq_symbols_raw": 5582,
+    "uniq_symbols_final": 5580,
+    "ok": true,
+    "n": 20,
+    "symbols": [
+      "000530.SZ",
+      "000678.SZ",
+      "001219.SZ",
+      "002086.SZ",
+      "002708.SZ",
+      "002724.SZ",
+      "300949.SZ",
+      "301313.SZ",
+      "301413.SZ",
+      "301502.SZ",
+      "600261.SH",
+      "600327.SH",
+      "600715.SH",
+      "603278.SH",
+      "605488.SH",
+      "688286.SH",
+      "688386.SH",
+      "688585.SH",
+      "688787.SH",
+      "688836.SH"
+    ]
+  },
+  "identity": {
+    "dedup_only_vs_dedup_noindex": true,
+    "n_dedup_only": 20,
+    "n_dedup_noindex": 20
+  }
+}

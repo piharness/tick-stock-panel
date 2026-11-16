@@ -239,3 +239,113 @@ def test_persist_daily_chunks_commits_into_month_dirs(tmp_path: Path, repo: Klin
     friday = stored2.filter(pl.col("date") == FRIDAY)
     assert friday.height == 2
     assert friday.filter(pl.col("symbol") == "600001.SH")["close"][0] == 20.0
+
+
+def test_persist_daily_chunks_merges_legacy_day_dir_not_duplicate(
+    tmp_path: Path, repo: KlineRepository,
+):
+    """迁移窗口: 本地某天还是旧日分区, staging 把同一个月写进新月分区时,
+    同一天不能同时落在日分区和月分区 (glob 会读成两份, 回测矩阵崩)。
+    """
+    from app.services.kline_sync import _persist_daily_chunks
+
+    base = tmp_path / "kline_daily"
+    # 本地旧日分区: 2026-08-20 已有 600001.SH (close=10)
+    legacy_day = THURSDAY  # 2026-08-20
+    legacy_dir = base / f"date={legacy_day.isoformat()}"
+    legacy_dir.mkdir(parents=True)
+    _daily_frame(legacy_day, ("600001.SH",), close=10.0).write_parquet(legacy_dir / "part.parquet")
+
+    # staging 要写进月分区 date=2026-08, 覆盖 08-20(同日) 与 08-19(新的一天)
+    prev = date(2026, 8, 19)
+    written = _persist_daily_chunks(
+        [
+            _daily_frame(prev, ("600001.SH",), close=9.0),          # 新月分区内全新的一天
+            _daily_frame(legacy_day, ("600001.SH",), close=11.0),   # 与旧日分区撞车的一天
+        ],
+        repo,
+    )
+    assert written == 2
+
+    # 月分区里应有 2 天 (08-19 + 08-20), 且 08-20 只一份 (upsert 到 close=11)
+    month = pl.read_parquet(base / f"date={MONTH}" / "**" / "*.parquet")
+    assert month.height == 2
+    assert set(month["date"].to_list()) == {prev, legacy_day}
+    assert month.filter(pl.col("date") == legacy_day)["close"][0] == 11.0
+
+    # 旧日分区必须被清掉: 不再有双布局残留
+    assert not legacy_dir.exists()
+
+    # 关键: 全表 (date,symbol) 唯一 —— 回测矩阵判据不会崩
+    all_rows = pl.concat([
+        pl.read_parquet(base / f"date={MONTH}" / "**" / "*.parquet"),
+    ])
+    assert all_rows.height == all_rows.unique(subset=["date", "symbol"]).height
+
+
+def test_persist_daily_chunks_no_legacy_stays_partstream(
+    tmp_path: Path, repo: KlineRepository,
+):
+    """没有旧日分区时, 首次提交仍是 part-stream 搬运 (不改变既有文件布局约定)。"""
+    from app.services.kline_sync import _persist_daily_chunks
+
+    base = tmp_path / "kline_daily"
+    _persist_daily_chunks([_daily_frame(THURSDAY, ("600001.SH",))], repo)
+    month_dir = base / f"date={MONTH}"
+    assert sorted(p.name for p in month_dir.glob("part-stream-*.parquet"))
+    assert not (month_dir / "part.parquet").exists()
+
+
+def test_persist_daily_chunks_merges_legacy_day_dir_not_duplicate(
+    tmp_path: Path, repo: KlineRepository,
+):
+    """迁移窗口: 本地某天还是旧日分区, staging 把同一个月写进新月分区时,
+    同一天不能同时落在日分区和月分区 (glob 会读成两份, 回测矩阵崩)。
+    """
+    from app.services.kline_sync import _persist_daily_chunks
+
+    base = tmp_path / "kline_daily"
+    # 本地旧日分区: 2026-08-20 已有 600001.SH (close=10)
+    legacy_day = THURSDAY  # 2026-08-20
+    legacy_dir = base / f"date={legacy_day.isoformat()}"
+    legacy_dir.mkdir(parents=True)
+    _daily_frame(legacy_day, ("600001.SH",), close=10.0).write_parquet(legacy_dir / "part.parquet")
+
+    # staging 要写进月分区 date=2026-08, 覆盖 08-20(同日) 与 08-19(新的一天)
+    prev = date(2026, 8, 19)
+    written = _persist_daily_chunks(
+        [
+            _daily_frame(prev, ("600001.SH",), close=9.0),          # 新月分区内全新的一天
+            _daily_frame(legacy_day, ("600001.SH",), close=11.0),   # 与旧日分区撞车的一天
+        ],
+        repo,
+    )
+    assert written == 2
+
+    # 月分区里应有 2 天 (08-19 + 08-20), 且 08-20 只一份 (upsert 到 close=11)
+    month = pl.read_parquet(base / f"date={MONTH}" / "**" / "*.parquet")
+    assert month.height == 2
+    assert set(month["date"].to_list()) == {prev, legacy_day}
+    assert month.filter(pl.col("date") == legacy_day)["close"][0] == 11.0
+
+    # 旧日分区必须被清掉: 不再有双布局残留
+    assert not legacy_dir.exists()
+
+    # 关键: 全表 (date,symbol) 唯一 —— 回测矩阵判据不会崩
+    all_rows = pl.concat([
+        pl.read_parquet(base / f"date={MONTH}" / "**" / "*.parquet"),
+    ])
+    assert all_rows.height == all_rows.unique(subset=["date", "symbol"]).height
+
+
+def test_persist_daily_chunks_no_legacy_stays_partstream(
+    tmp_path: Path, repo: KlineRepository,
+):
+    """没有旧日分区时, 首次提交仍是 part-stream 搬运 (不改变既有文件布局约定)。"""
+    from app.services.kline_sync import _persist_daily_chunks
+
+    base = tmp_path / "kline_daily"
+    _persist_daily_chunks([_daily_frame(THURSDAY, ("600001.SH",))], repo)
+    month_dir = base / f"date={MONTH}"
+    assert sorted(p.name for p in month_dir.glob("part-stream-*.parquet"))
+    assert not (month_dir / "part.parquet").exists()

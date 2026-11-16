@@ -24,6 +24,7 @@ import polars as pl
 from app.services.ext_data import ExtConfig, ExtConfigStore
 from app.services.index_const import CORE_INDEX_NAMES, CORE_INDEX_SYMBOLS
 from app.services.screener import ScreenerService
+from app.tickflow.partitions import iter_partition_dirs, parse_partition_range
 
 # ================================================================
 # 常量(核心指数清单单一权威: app.services.index_const)
@@ -86,6 +87,70 @@ def _quote_status(quote_service) -> dict:
     return qs.status()
 
 
+def _index_daily_tail(
+    repo, symbols: tuple[str, ...], as_of: date | None, *, max_partitions: int = 8
+) -> list[tuple[str, Any, float, float | None]]:
+    """最近两个交易日的 (symbol, date, last_close, prev_close)。
+
+    为什么不直接查 `kline_index_daily` 视图: 那是一条只带 4 个 symbol 的
+    `row_number()` 查询, 但 DuckDB 在绑定阶段仍要展开整张表的分区 glob ——
+    250 个文件、每个一次元数据往返。data/ 走 9p 绑定挂载时实测 2.06s,
+    而这 2.06s 是整块 Dashboard 的 spinner 时间 (前端在 overview 未返回时
+    整页只渲染"加载市场看板…")。
+
+    这里改成按分区倒序按需读: 通常读 2~3 个分区就能让每个 symbol 凑满
+    两个收盘价。分区目录名由 `iter_partition_dirs` 走 readdir 拿到 (零 stat),
+    单个分区一次 parquet 读 (6ms)。读满 max_partitions 仍不齐时返回已拿到的
+    部分, 调用方据此回退原 SQL —— 停牌导致的稀疏是真实情况, 不能无限翻。
+    """
+    dirpath = repo.store.data_dir / "kline_index_daily"
+    parts = iter_partition_dirs(dirpath)
+    if not parts:
+        return []
+
+    def _end(part: Any) -> date:
+        rng = parse_partition_range(part.name)
+        return rng[1] if rng else date.min
+
+    if as_of is not None:
+        parts = [p for p in parts if _end(p) <= as_of]
+    parts.sort(key=_end, reverse=True)
+
+    wanted = set(symbols)
+    got: dict[str, list[tuple[Any, float]]] = {s: [] for s in symbols}
+    for part in parts[:max_partitions]:
+        files = [str(p) for p in sorted(part.glob("*.parquet"))]
+        if not files:
+            continue
+        try:
+            df = pl.read_parquet(files, columns=["symbol", "date", "close"])
+        except Exception:  # noqa: BLE001 — 单分区损坏不该让整块总览失败
+            continue
+        df = df.filter(pl.col("symbol").is_in(list(wanted)))
+        if as_of is not None:
+            df = df.filter(pl.col("date") <= as_of)
+        if df.is_empty():
+            continue
+        for sym, d, c in df.iter_rows():
+            bucket = got.get(sym)
+            if bucket is None or len(bucket) >= 2:
+                continue
+            bucket.append((d, c))
+        if all(len(v) >= 2 for v in got.values()):
+            break
+
+    out: list[tuple[str, Any, float, float | None]] = []
+    for sym in symbols:
+        bucket = got.get(sym) or []
+        if not bucket:
+            continue
+        bucket.sort(key=lambda item: item[0], reverse=True)
+        last_d, last_c = bucket[0]
+        prev_c = bucket[1][1] if len(bucket) > 1 else None
+        out.append((sym, last_d, last_c, prev_c))
+    return out
+
+
 def _index_quotes(repo, quote_service, as_of: date | None = None) -> list[dict]:
     rows: list[dict] = []
     if quote_service and as_of is None:
@@ -94,32 +159,35 @@ def _index_quotes(repo, quote_service, as_of: date | None = None) -> list[dict]:
             rows = df.to_dicts()
 
     if not rows and repo:
-        placeholders = ", ".join("?" for _ in CORE_INDEX_SYMBOLS)
-        try:
-            db_rows = repo.execute_all(
-                f"""
-                WITH ranked AS (
-                    SELECT symbol, date, close,
-                           row_number() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-                    FROM kline_index_daily
-                    WHERE symbol IN ({placeholders})
-                      AND (? IS NULL OR date <= ?)
-                ), latest AS (
-                    SELECT symbol,
-                           max(CASE WHEN rn = 1 THEN date END) AS date,
-                           max(CASE WHEN rn = 1 THEN close END) AS last_price,
-                           max(CASE WHEN rn = 2 THEN close END) AS prev_close
-                    FROM ranked
-                    WHERE rn <= 2
-                    GROUP BY symbol
+        db_rows = _index_daily_tail(repo, CORE_INDEX_SYMBOLS, as_of)
+        if len(db_rows) < len(CORE_INDEX_SYMBOLS):
+            # 分区读不齐 (停牌稀疏/目录缺失) → 回退原视图 SQL, 保持原行为
+            placeholders = ", ".join("?" for _ in CORE_INDEX_SYMBOLS)
+            try:
+                db_rows = repo.execute_all(
+                    f"""
+                    WITH ranked AS (
+                        SELECT symbol, date, close,
+                               row_number() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+                        FROM kline_index_daily
+                        WHERE symbol IN ({placeholders})
+                          AND (? IS NULL OR date <= ?)
+                    ), latest AS (
+                        SELECT symbol,
+                               max(CASE WHEN rn = 1 THEN date END) AS date,
+                               max(CASE WHEN rn = 1 THEN close END) AS last_price,
+                               max(CASE WHEN rn = 2 THEN close END) AS prev_close
+                        FROM ranked
+                        WHERE rn <= 2
+                        GROUP BY symbol
+                    )
+                    SELECT symbol, date, last_price, prev_close
+                    FROM latest
+                    """,
+                    [*CORE_INDEX_SYMBOLS, as_of, as_of],
                 )
-                SELECT symbol, date, last_price, prev_close
-                FROM latest
-                """,
-                [*CORE_INDEX_SYMBOLS, as_of, as_of],
-            )
-        except Exception:  # noqa: BLE001
-            db_rows = []
+            except Exception:  # noqa: BLE001
+                db_rows = []
         for symbol, dt, last_price, prev_close in db_rows:
             change_amount = None
             change_pct = None

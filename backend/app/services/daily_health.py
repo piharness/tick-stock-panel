@@ -41,7 +41,7 @@ def _read(path: str, mtime: int, size: int) -> dict:
                 raise ValueError("invalid symbol")
             if (not isinstance(entry["needs_raw"], bool)
                     or not isinstance(entry.get("needs_enriched", True), bool)
-                    or entry["kind"] not in {"missing", "snapshot", "corrupt", "invalid"}
+                    or entry["kind"] not in {"missing", "snapshot", "corrupt", "invalid", "sparse"}
                     or not isinstance(entry["reason"], str)):
                 raise ValueError("invalid repair state")
         revisions = value.get("revisions", {})

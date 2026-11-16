@@ -1,0 +1,23 @@
+{
+  "symbol": "600340.SH",
+  "local_first": "2025-05-07",
+  "local_last": "2026-11-13",
+  "local_rows": 371,
+  "remote_first": "2024-08-20",
+  "remote_last": "2026-11-13",
+  "remote_rows": 539,
+  "overlap_rows": 371,
+  "overlap_first": "2025-05-07",
+  "overlap_last": "2026-11-13",
+  "adj_factor_rows_for_symbol": 0,
+  "adjusted": false,
+  "tol": 1e-06,
+  "volume_rounding": {
+    "max_abs": 1.0,
+    "n_rows": 165,
+    "n_total": 371,
+    "tol": 1.0
+  },
+  "mismatches": [],
+  "verdict": "seam-free"
+}

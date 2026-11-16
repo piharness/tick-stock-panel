@@ -6,7 +6,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.enriched_generation import EnrichedPublication
 from app.indicators.pipeline import ENRICHED_COLUMNS
 from app.services.pipeline_jobs import job_store
+from app.tickflow.partitions import iter_partition_dirs, list_partition_dates, parse_partition_range
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +88,26 @@ def get_integrity_report(request: Request) -> dict:
     from app.services.integrity_check import latest_report
 
     root = request.app.state.repo.store.data_dir
+    entries = daily_health.snapshot(root)["entries"]
+    # 前端横幅要说清「哪一天、哪一类、什么毛病」。只给 asset 列表的话，
+    # 读者只知道「有东西没修完」，不知道去修哪一天——于是只能把错误 toast
+    # 当成唯一的线索，而那正是刷屏的来源。
+    blocking = [
+        {
+            "asset_type": e["asset_type"],
+            "day": e["day"],
+            "kind": e["kind"],
+            "reason": e["reason"] or e["kind"],
+            "needs_raw": e["needs_raw"],
+        }
+        for e in entries
+    ]
     return {"report": latest_report(root), "blocking_assets": sorted({
-        e["asset_type"] for e in daily_health.snapshot(root)["entries"]
-    }), "data_revisions": {
-        asset: daily_health.revision(root, asset) for asset in daily_health.ASSET_LABELS
-    }}
+        e["asset_type"] for e in entries
+    }), "blocking_entries": blocking[:20], "blocking_total": len(blocking),
+        "data_revisions": {
+            asset: daily_health.revision(root, asset) for asset in daily_health.ASSET_LABELS
+        }}
 
 
 @router.post("/integrity/scan")
@@ -99,8 +115,11 @@ def scan_integrity(body: IntegrityScanIn, request: Request) -> dict:
     from app.services.integrity_check import run_check
 
     root = request.app.state.repo.store.data_dir
+    # end_date 交给 run_check 决定：盘中只到昨天，收盘定版后纳入今天。
+    # 这样「当天登记的异常当天可修」，而不是提示你去修补、报告里却没有这一天。
     return _start_integrity_job(request, lambda progress: run_check(
-        root, lookback_days=body.lookback_days, asset_types=body.asset_types, on_progress=progress,
+        root, lookback_days=body.lookback_days, asset_types=body.asset_types,
+        on_progress=progress,
     ), repair=False)
 
 
@@ -164,6 +183,65 @@ _table_cache_lock = threading.Lock()
 _last_finished_cache: dict[str, str | None] | None = None
 _last_finished_lock = threading.Lock()
 
+# 冷启动种子: 上一次进程算出的 storage 值。容器重启后首屏即可显示占用,
+# 不必等一次全目录遍历 (1500+ 文件 stat, 9p 挂载上 3.4s)。
+_SNAPSHOT_FILENAME = Path(".cache") / "data_status_snapshot.json"
+_SNAPSHOT_MAX_AGE_S = 7 * 24 * 3600.0
+_snapshot_loaded_for: Path | None = None
+_storage_refresh_lock = threading.Lock()
+_storage_refreshing = False
+
+
+def _snapshot_path(data_dir: Path) -> Path:
+    return data_dir / _SNAPSHOT_FILENAME
+
+
+def _load_snapshot(data_dir: Path) -> None:
+    """把上次进程落盘的 storage 统计灌进 stale 兜底槽。只做一次, 失败静默。"""
+    global _storage_cache_stale, _snapshot_loaded_for
+    if _snapshot_loaded_for == data_dir:
+        return
+    _snapshot_loaded_for = data_dir
+    path = _snapshot_path(data_dir)
+    try:
+        import json
+
+        if not path.is_file():
+            return
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if time.time() - float(payload.get("ts", 0)) > _SNAPSHOT_MAX_AGE_S:
+            return
+    except Exception as e:  # noqa: BLE001
+        logger.debug("status snapshot unreadable: %s", e)
+        return
+
+    storage = payload.get("storage")
+    if storage is not None:
+        with _storage_lock:
+            if _storage_cache_stale is None:
+                _storage_cache_stale = storage
+
+
+def _save_snapshot(data_dir: Path) -> None:
+    """落盘 storage 供下次进程冷启动使用。写失败不影响请求。"""
+    import json
+
+    try:
+        with _storage_lock:
+            storage = _storage_cache_stale
+        if storage is None:
+            return
+        path = _snapshot_path(data_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"ts": time.time(), "storage": storage}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("status snapshot write failed: %s", e)
+
 
 def invalidate_data_cache(table: str | None = None) -> None:
     """数据写入/清除后调用。
@@ -191,7 +269,10 @@ def invalidate_storage_cache() -> None:
 
 
 def _get_table_stats(
-    name: str, fetch: Callable[[], dict | None], *, busy: bool = False
+    name: str,
+    fetch: Callable[[], dict | None],
+    *,
+    busy: bool = False,
 ) -> dict | None:
     """走 TTL+事件 双重缓存。fetch 在锁外执行避免阻塞别的请求。
 
@@ -249,67 +330,107 @@ def _safe_aggregate(repo, view: str) -> dict | None:
 def _safe_aggregate_daily(repo, view: str = "kline_daily") -> dict | None:
     """日K轻量统计 — 零数据扫描。
 
-    从分区目录名获取日期范围和交易日数，不读任何 parquet。
+    日期范围与交易日数来自分区目录名 (月分区读一次 date 列), 不读行情数据。
     标的数从 instruments 小表获取（~5000行，毫秒级）。
     """
     daily_dir = repo.store.data_dir / "kline_daily"
     if not daily_dir.exists():
         return None
-    dates: list[str] = []
-    for d in daily_dir.iterdir():
-        if d.is_dir() and d.name.startswith("date="):
-            dates.append(d.name[5:])
+    dates = list_partition_dates(daily_dir)
     if not dates:
         return None
-    dates.sort()
+    ordered = sorted(dates)
 
     symbols = _count_instruments_symbols(repo)
 
     return {
         "rows": 0,
-        "earliest_date": dates[0],
-        "latest_date": dates[-1],
+        "earliest_date": ordered[0].isoformat(),
+        "latest_date": ordered[-1].isoformat(),
         "symbols_covered": symbols,
-        "trading_days": len(dates),
+        "trading_days": len(ordered),
     }
+
+
+def _partition_column_count(dirpath: Path, *, sample: int = 5) -> int | None:
+    """字段数 —— 读最近若干个分区各一个 parquet 的 schema 取并集。
+
+    为什么不 `DESCRIBE <view>`: DuckDB 的视图在**每次**绑定时都要把
+    `<dir>/**/*.parquet` 展开一遍, 每个文件一次元数据往返。data/ 走 9p
+    绑定挂载时单次约 6ms, 370 个分区就是 2.7s —— 与数据体积无关, 只与
+    文件数成正比。实测 2718ms → 约 30ms。
+
+    为什么不是只读最新一个: 视图用的是 `union_by_name=true`, 语义是**并集**,
+    而各分区 schema 会漂移 —— 2026-11-13 实测 `kline_etf_enriched` 的
+    date=2026-11-12 分区少了 `quote_ts` 列 (11 列), 其余分区 12 列。只读
+    最新一个会把字段数报成 11, 即"最新一天缺列"被静默成"这张表只有 11 列"。
+    取最近 sample 个分区的并集既便宜又更接近视图语义; 出现分歧时记 warning,
+    因为那是写入侧 schema 不一致的信号, 不该只体现在一个数字上。
+    """
+    parts = iter_partition_dirs(dirpath)
+    if not parts:
+        return None
+    parts.sort(key=lambda p: (parse_partition_range(p.name) or (date.min, date.min))[1])
+    names: set[str] = set()
+    per_part: list[int] = []
+    for part in reversed(parts[-sample:]):
+        files = sorted(part.glob("*.parquet"))
+        if not files:
+            continue
+        try:
+            import pyarrow.parquet as pq
+
+            # 必须用 ParquetFile 而不是 pq.read_table(单文件): 后者按 dataset
+            # 打开, 单文件会被当成目录展开, schema 合并失败, 异常被吞成空集合。
+            cols = pq.ParquetFile(files[0]).schema_arrow.names
+        except Exception as e:  # noqa: BLE001
+            logger.debug("partition schema read failed: %s", e)
+            continue
+        per_part.append(len(cols))
+        names.update(cols)
+    if not names:
+        return None
+    if len(set(per_part)) > 1:
+        logger.warning(
+            "enriched schema drift under %s: last %d partitions report %s columns; using union=%d",
+            dirpath.name, len(per_part), per_part, len(names),
+        )
+    return len(names)
 
 
 def _safe_aggregate_enriched(repo) -> dict | None:
     """Enriched 轻量统计 — 零数据扫描。
 
-    字段数从 DESCRIBE 读 schema（不碰数据），毫秒级。
-    日期范围从分区目录名获取（同 minute 策略），不读任何 parquet。
+    字段数从最新分区一个 parquet 的 schema 读（6ms, 不碰数据）;
+    日期范围从分区目录名获取（月分区读一次 date 列）;
     标的数从 instruments 小表取。
     """
-    # 字段数：读 schema，不碰数据
-    fields = 0
-    try:
-        cols = repo.execute_all("DESCRIBE kline_enriched")
-        fields = len(cols)
-    except Exception:  # noqa: BLE001
-        pass
-
-    # 日期范围：从分区目录名获取，不扫数据
     enriched_dir = repo.store.data_dir / "kline_daily_enriched"
     if not enriched_dir.exists():
         return None
-    dates: list[str] = []
-    for d in enriched_dir.iterdir():
-        if d.is_dir() and d.name.startswith("date="):
-            dates.append(d.name[5:])
+
+    # 字段数：读一个文件的 schema；失败回退视图 DESCRIBE
+    fields = _partition_column_count(enriched_dir)
+    if fields is None:
+        try:
+            fields = len(repo.execute_all("DESCRIBE kline_enriched"))
+        except Exception:  # noqa: BLE001
+            fields = 0
+
+    dates = list_partition_dates(enriched_dir)
     if not dates:
         return None
-    dates.sort()
+    ordered = sorted(dates)
 
     symbols = _count_instruments_symbols(repo)
 
     return {
         "rows": 0,
         "fields": fields,
-        "earliest_date": dates[0],
-        "latest_date": dates[-1],
+        "earliest_date": ordered[0].isoformat(),
+        "latest_date": ordered[-1].isoformat(),
         "symbols_covered": symbols,
-        "trading_days": len(dates),
+        "trading_days": len(ordered),
     }
 
 
@@ -347,25 +468,6 @@ def _safe_aggregate_instruments(repo) -> dict | None:
         "latest_as_of": str(row[2]) if row[2] else None,
         "named": int(row[3] or 0),
     }
-
-
-def _safe_aggregate_index_daily(repo) -> dict | None:
-    """指数日K统计。指数数据量较小，直接读取 parquet 元数据统计真实行数。"""
-    return _safe_aggregate(repo, "kline_index_daily")
-
-
-def _safe_aggregate_index_enriched(repo) -> dict | None:
-    """指数 enriched 统计。指数数据量较小，直接读取 parquet 元数据统计真实行数。"""
-    fields = 0
-    try:
-        cols = repo.execute_all("DESCRIBE kline_index_enriched")
-        fields = len(cols)
-    except Exception:  # noqa: BLE001
-        pass
-    stats = _safe_aggregate(repo, "kline_index_enriched")
-    if not stats:
-        return None
-    return {**stats, "fields": fields}
 
 
 def _safe_aggregate_index_instruments(repo) -> dict | None:
@@ -419,66 +521,107 @@ def _safe_aggregate_etf_instruments(repo) -> dict | None:
     return None
 
 
-def _safe_aggregate_etf_enriched(repo) -> dict | None:
-    """ETF enriched 统计 — 独立 kline_etf_enriched。"""
-    fields = 0
-    try:
-        cols = repo.execute_all("DESCRIBE kline_etf_enriched")
-        fields = len(cols)
-    except Exception:  # noqa: BLE001
-        pass
-    stats = _safe_aggregate(repo, "kline_etf_enriched")
-    if not stats:
+def _partition_table_stats(
+    dirpath: Path, symbols: int, *, fields: int | None = None
+) -> dict | None:
+    """按分区目录名汇总一张表的日期覆盖与交易日数（零 parquet 扫描）。
+
+    消费方只用 earliest/latest/symbols_covered/trading_days（前端 Data 页把
+    rows 硬编码为 0）, 因此不需要 `count(*)`。这与 `_safe_aggregate_daily`
+    同一口径 —— 全市场行数在 9p 挂载上要逐个打开数百个文件, 换来一个没人
+    显示的字段不值得。
+
+    口径提示: `symbols_covered` 取自维表 (instruments_index / instruments_etf),
+    是"登记在册的标的数", 不是"有日线的标的数"。两者实测不同 —— 2026-11-13
+    的 `kline_etf_daily` 数据里 1720 只, 维表 1769 只 (49 只没有日线)。
+    选维表口径的理由: 前端 `Data.tsx` 的兜底链条本来就是
+    `etf_daily.symbols_covered ?? etf_instruments.rows`, 即这张卡片在日K为空的
+    那天显示的就是维表数; 统一到维表口径反而消除了"同一个数字随有没有日K变"。
+    要改成"有数据的标的数"必须先解决"如何在不打开 249 个文件的前提下求得它"。
+    """
+    dates = list_partition_dates(dirpath)
+    if not dates:
         return None
-    return {**stats, "fields": fields}
+    ordered = sorted(dates)
+    out = {
+        "rows": 0,
+        "earliest_date": ordered[0].isoformat(),
+        "latest_date": ordered[-1].isoformat(),
+        "symbols_covered": symbols,
+        "trading_days": len(ordered),
+    }
+    if fields is not None:
+        out["fields"] = fields
+    return out
+
+
+def _safe_aggregate_index_daily(repo) -> dict | None:
+    """指数日K统计 — 分区目录名 + 维表，不扫描行情数据。"""
+    dirpath = repo.store.data_dir / "kline_index_daily"
+    symbols = (_safe_aggregate_index_instruments(repo) or {}).get("symbols_covered", 0)
+    return _partition_table_stats(dirpath, symbols)
+
+
+def _safe_aggregate_index_enriched(repo) -> dict | None:
+    """指数 enriched 统计 — 字段数读一个文件 schema，其余走目录名。"""
+    dirpath = repo.store.data_dir / "kline_index_enriched"
+    symbols = (_safe_aggregate_index_instruments(repo) or {}).get("symbols_covered", 0)
+    return _partition_table_stats(dirpath, symbols, fields=_partition_column_count(dirpath) or 0)
+
+
+def _safe_aggregate_etf_enriched(repo) -> dict | None:
+    """ETF enriched 统计 — 独立 kline_etf_enriched，口径同指数 enriched。"""
+    dirpath = repo.store.data_dir / "kline_etf_enriched"
+    symbols = (_safe_aggregate_etf_instruments(repo) or {}).get("symbols_covered", 0)
+    return _partition_table_stats(dirpath, symbols, fields=_partition_column_count(dirpath) or 0)
 
 
 def _safe_aggregate_etf_daily(repo) -> dict | None:
     """ETF 日K统计 — 优先独立 kline_etf_daily，兼容旧 index 存储。"""
-    queries = [
-        """SELECT count(*) AS rows,
-                  min(date) AS earliest,
-                  max(date) AS latest,
-                  count(DISTINCT symbol) AS symbols,
-                  count(DISTINCT date) AS trading_days
-           FROM kline_etf_daily""",
-        """SELECT count(*) AS rows,
-                  min(date) AS earliest,
-                  max(date) AS latest,
-                  count(DISTINCT symbol) AS symbols,
-                  count(DISTINCT date) AS trading_days
-           FROM kline_index_daily
-           WHERE symbol IN (
-               SELECT DISTINCT symbol FROM instruments_index WHERE asset_type = 'etf'
-           )""",
-    ]
-    for sql in queries:
-        try:
-            row = repo.execute_one(sql)
-        except Exception as e:  # noqa: BLE001
-            logger.debug("aggregate etf daily fallback failed: %s", e)
-            continue
-        if row and row[0]:
-            return {
-                "rows": int(row[0]),
-                "earliest_date": str(row[1]) if row[1] else None,
-                "latest_date": str(row[2]) if row[2] else None,
-                "symbols_covered": int(row[3] or 0),
-                "trading_days": int(row[4] or 0),
-            }
-    return None
+    dirpath = repo.store.data_dir / "kline_etf_daily"
+    if list_partition_dates(dirpath):
+        symbols = (_safe_aggregate_etf_instruments(repo) or {}).get("symbols_covered", 0)
+        return _partition_table_stats(dirpath, symbols)
+    # 旧布局: ETF 行混在 kline_index_daily 里, 只能走 SQL 过滤
+    try:
+        row = repo.execute_one(
+            """SELECT count(*) AS rows,
+                      min(date) AS earliest,
+                      max(date) AS latest,
+                      count(DISTINCT symbol) AS symbols,
+                      count(DISTINCT date) AS trading_days
+               FROM kline_index_daily
+               WHERE symbol IN (
+                   SELECT DISTINCT symbol FROM instruments_index WHERE asset_type = 'etf'
+               )"""
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("aggregate etf daily fallback failed: %s", e)
+        return None
+    if not row or not row[0]:
+        return None
+    return {
+        "rows": int(row[0]),
+        "earliest_date": str(row[1]) if row[1] else None,
+        "latest_date": str(row[2]) if row[2] else None,
+        "symbols_covered": int(row[3] or 0),
+        "trading_days": int(row[4] or 0),
+    }
 
 
 def _safe_aggregate_adj_factor(repo) -> dict | None:
-    """adj_factor 视图统计,日期范围对齐日 K 覆盖区间。"""
+    """adj_factor 视图统计,日期范围对齐日 K 覆盖区间。
+
+    日 K 区间走分区目录名 (月分区读一次 date 列), 不再 `SELECT min/max(date)
+    FROM kline_daily` —— 那条查询要展开 363 个文件的元数据, 实测 2.9s, 而它
+    只是想要两个日期。
+    """
+    daily_dir = repo.store.data_dir / "kline_daily"
+    daily_dates = list_partition_dates(daily_dir) if daily_dir.exists() else set()
+    if not daily_dates:
+        return None
+    d_min, d_max = min(daily_dates), max(daily_dates)
     try:
-        # 取日 K 的日期范围作为过滤条件
-        dr = repo.execute_one(
-            "SELECT min(date), max(date) FROM kline_daily"
-        )
-        if not dr or not dr[0]:
-            return None
-        d_min, d_max = dr[0], dr[1]
         row = repo.execute_one(
             """SELECT count(*) AS rows,
                       count(DISTINCT symbol) AS symbols,
@@ -492,8 +635,8 @@ def _safe_aggregate_adj_factor(repo) -> dict | None:
         return {
             "rows": int(row[0]),
             "symbols_covered": int(row[1]) if isinstance(row[1], (int, float)) else 0,
-            "earliest_date": str(d_min),
-            "latest_date": str(d_max),
+            "earliest_date": d_min.isoformat(),
+            "latest_date": d_max.isoformat(),
             "trading_days": int(row[2] or 0),
         }
     except Exception as e:  # noqa: BLE001
@@ -511,22 +654,17 @@ def _safe_aggregate_minute(repo) -> dict | None:
     if not minute_dir.exists():
         return None
 
-    # 从 date=YYYY-MM-DD 目录名提取交易日
-    dates: list[str] = []
-    for d in minute_dir.iterdir():
-        if d.is_dir() and d.name.startswith("date="):
-            dates.append(d.name[5:])
-
+    dates = list_partition_dates(minute_dir)
     if not dates:
         return None
+    ordered = sorted(dates)
 
-    dates.sort()
     return {
         "rows": 0,  # 不再查询行数
-        "earliest_date": dates[0],
-        "latest_date": dates[-1],
+        "earliest_date": ordered[0].isoformat(),
+        "latest_date": ordered[-1].isoformat(),
         "symbols_covered": 0,  # 不再查询标的数
-        "trading_days": len(dates),
+        "trading_days": len(ordered),
     }
 
 
@@ -668,11 +806,15 @@ def _next_cron_run(scheduler, job_id: str) -> str | None:
     return None
 
 
-def _get_storage(data_dir: Path, *, busy: bool = False) -> dict | None:
+def _get_storage(data_dir: Path, *, busy: bool = False, allow_block: bool = True) -> dict | None:
     """返回缓存的 storage 统计；走独立 TTL，stage 写完不触发重算。
 
     busy 时同样不重算 (目录 du 在同步写盘期间会显著变慢), 回最后一次值;
-    首次调用 (尚无缓存) 返回 None — 契约测试断言 is None, 注解勿再写 dict。"""
+    首次调用 (尚无缓存) 返回 None — 契约测试断言 is None, 注解勿再写 dict。
+
+    allow_block=False 时不在请求路径上遍历目录: 一次全量遍历要对 1500+ 个
+    parquet 逐个 stat, 9p 挂载上实测 3.4s, 而它只喂「存储占用」卡片。此时
+    立即返回上次的值 (冷启动为 None) 并起后台线程重算。"""
     global _storage_cache, _storage_cache_ts, _storage_cache_stale
     now = time.time()
     with _storage_lock:
@@ -680,12 +822,51 @@ def _get_storage(data_dir: Path, *, busy: bool = False) -> dict | None:
             return _storage_cache_stale
         if _storage_cache is not None and (now - _storage_cache_ts) < _STORAGE_TTL:
             return _storage_cache
+
+    if not allow_block:
+        _load_snapshot(data_dir)
+        _schedule_storage_refresh(data_dir)
+        with _storage_lock:
+            return _storage_cache if _storage_cache is not None else _storage_cache_stale
+
     fresh = _compute_storage(data_dir)
     with _storage_lock:
         _storage_cache = fresh
         _storage_cache_ts = now
         _storage_cache_stale = fresh
     return fresh
+
+
+def _schedule_storage_refresh(data_dir: Path) -> None:
+    """storage 的单飞后台刷新：并发请求最多触发一个遍历线程。
+
+    纯文件系统遍历，不进 DuckDB，因此不会与交互查询争锁 —— 这一点是它能
+    放到后台的前提。表统计那类聚合反而**不能**这么搬：实测把它们塞进后台
+    后，交互路径上的 `instruments_etf` 在小锁上等了 2.8s（2026-11-13 实测）。
+    """
+    global _storage_refreshing
+    with _storage_refresh_lock:
+        if _storage_refreshing:
+            return
+        _storage_refreshing = True
+
+    def _run() -> None:
+        global _storage_cache, _storage_cache_ts, _storage_cache_stale, _storage_refreshing
+        try:
+            fresh = _compute_storage(data_dir)
+            if fresh is not None:
+                with _storage_lock:
+                    _storage_cache = fresh
+                    _storage_cache_ts = time.time()
+                    _storage_cache_stale = fresh
+                _save_snapshot(data_dir)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("background storage scan failed: %s", e)
+        finally:
+            with _storage_refresh_lock:
+                _storage_refreshing = False
+
+    threading.Thread(target=_run, name="status-refresh-storage", daemon=True).start()
 
 
 def _last_finished(job_label: str) -> str | None:
@@ -727,23 +908,27 @@ def status(request: Request) -> dict:
     scheduler = getattr(request.app.state, "scheduler", None)
     data_dir = repo.store.data_dir
     busy = _data_pipeline_busy(request)
+    _load_snapshot(data_dir)
+
+    def table(name: str, fetch) -> dict | None:
+        return _get_table_stats(name, fetch, busy=busy)
 
     return {
-        "daily":       _get_table_stats("daily",       lambda: _safe_aggregate_daily(repo), busy=busy),
-        "enriched":    _get_table_stats("enriched",    lambda: _safe_aggregate_enriched(repo), busy=busy),
-    "index_daily":       _get_table_stats("index_daily",       lambda: _safe_aggregate_index_daily(repo), busy=busy),
-    "index_enriched":    _get_table_stats("index_enriched",    lambda: _safe_aggregate_index_enriched(repo), busy=busy),
-    "index_instruments": _get_table_stats("index_instruments", lambda: _safe_aggregate_index_instruments(repo), busy=busy),
-    "etf_daily":         _get_table_stats("etf_daily",         lambda: _safe_aggregate_etf_daily(repo), busy=busy),
-    "etf_enriched":      _get_table_stats("etf_enriched",      lambda: _safe_aggregate_etf_enriched(repo), busy=busy),
-    "etf_instruments":   _get_table_stats("etf_instruments",   lambda: _safe_aggregate_etf_instruments(repo), busy=busy),
-    "minute":      _get_table_stats("minute",      lambda: _safe_aggregate_minute(repo), busy=busy),
-        "adj_factor":  _get_table_stats("adj_factor",  lambda: _safe_aggregate_adj_factor(repo), busy=busy),
-        "instruments": _get_table_stats("instruments", lambda: _safe_aggregate_instruments(repo), busy=busy),
-        "financials":  _get_table_stats("financials",  lambda: _safe_aggregate_financials(repo), busy=busy),
+        "daily":       table("daily",       lambda: _safe_aggregate_daily(repo)),
+        "enriched":    table("enriched",    lambda: _safe_aggregate_enriched(repo)),
+    "index_daily":       table("index_daily",       lambda: _safe_aggregate_index_daily(repo)),
+    "index_enriched":    table("index_enriched",    lambda: _safe_aggregate_index_enriched(repo)),
+    "index_instruments": table("index_instruments", lambda: _safe_aggregate_index_instruments(repo)),
+    "etf_daily":         table("etf_daily",         lambda: _safe_aggregate_etf_daily(repo)),
+    "etf_enriched":      table("etf_enriched",      lambda: _safe_aggregate_etf_enriched(repo)),
+    "etf_instruments":   table("etf_instruments",   lambda: _safe_aggregate_etf_instruments(repo)),
+    "minute":      table("minute",      lambda: _safe_aggregate_minute(repo)),
+        "adj_factor":  table("adj_factor",  lambda: _safe_aggregate_adj_factor(repo)),
+        "instruments": table("instruments", lambda: _safe_aggregate_instruments(repo)),
+        "financials":  table("financials",  lambda: _safe_aggregate_financials(repo)),
 
-        # 文件层面信息(缓存)
-        "storage": _get_storage(data_dir, busy=busy),
+        # 文件层面信息(缓存; 请求路径不遍历目录)
+        "storage": _get_storage(data_dir, busy=busy, allow_block=False),
 
         # 调度
         "next_instruments_run": _next_cron_run(scheduler, "pre_market_instruments"),
