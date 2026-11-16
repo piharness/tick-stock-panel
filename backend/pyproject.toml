@@ -28,6 +28,10 @@ dependencies = [
     "tickflow[all]>=0.1.23",
     # TdxQuant 内置数据源插件的原生 TCP 客户端 (wheel 自带跨平台库, 无需系统依赖)
     "tdxaidata>=1.2.2",
+    # 通达信裸协议 (免费、无 Key) 的 Rust 实现; 只发 cp311 wheel, 3.12+ 装不上,
+    # 用 marker 跳过而不是让 uv 去源码编译 (需要 Rust 工具链)。
+    # 运行时插件自检 Python 版本并灰显, 不影响其他数据源。
+    "tdxrs>=0.6.10; python_version < '3.12'",
     # Scheduling
     "apscheduler>=3.10",
     # Config

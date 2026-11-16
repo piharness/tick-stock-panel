@@ -40,6 +40,7 @@ from zoneinfo import ZoneInfo
 
 import polars as pl
 
+from app.minute_labels import fix_morning_close_label
 from app.plugins.tdxquant.client import (
     SNAPSHOT_FIELDS,
     TdxQuantAuthError,
@@ -377,7 +378,11 @@ def _minute_rows(
             "volume": float(math.floor(volume / 100.0)) if volume is not None else None,
             "amount": amount * 10_000.0 if amount is not None else None,
         })
-    return out
+    return fix_morning_close_label(symbol, out)
+
+
+#: 兼容名（文档与旧脚本按这个名字找）。**实现只有一份**，在 `app.minute_labels`。
+_fix_morning_close_label = fix_morning_close_label
 
 
 def _minute_count_for_window(start_dt: datetime | None, end_dt: datetime) -> int:

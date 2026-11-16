@@ -1,0 +1,104 @@
+{
+  "measured_at": "2026-11-12T19:13:08",
+  "latency": {
+    "count_p50_ms": 0.0,
+    "quotes60_p50_ms": 34.6,
+    "bars800_p50_ms": 104.4
+  },
+  "market": {
+    "sh_stocks": 2319,
+    "sz_stocks": 2906,
+    "pool": 5225,
+    "rounds": [
+      {
+        "seconds": 3.01,
+        "rows": 5225
+      },
+      {
+        "seconds": 3.01,
+        "rows": 5225
+      },
+      {
+        "seconds": 3.0,
+        "rows": 5225
+      }
+    ],
+    "batch_cap": {
+      "60": 60,
+      "61": 60,
+      "80": 60
+    }
+  },
+  "minute_depth": {
+    "total_bars": 23520,
+    "trading_days": 98.0,
+    "pages": 30,
+    "earliest": "2026-06-22 09:31",
+    "latest": "2026-11-12 15:00",
+    "bars_per_day": 240,
+    "first_bar": "09:31",
+    "last_bar": "15:00"
+  },
+  "history_minute": {
+    "2026-10-13": {
+      "points": 240,
+      "sample": {
+        "time": "15:00",
+        "price": 1274.89,
+        "avg_price": 1277.0229631580926,
+        "vol": 814.0
+      }
+    },
+    "2025-11-12": {
+      "points": 240,
+      "sample": {
+        "time": "15:00",
+        "price": 1465.15,
+        "avg_price": 1469.991413979146,
+        "vol": 527.0
+      }
+    },
+    "2023-11-08": {
+      "points": 240,
+      "sample": {
+        "time": "15:00",
+        "price": 1798.3400000000001,
+        "avg_price": 1794.5189014161983,
+        "vol": 302.0
+      }
+    }
+  },
+  "bj": {
+    "430047": {
+      "returned_code": "600839",
+      "price": 0.0
+    },
+    "831010": {
+      "returned_code": "600839",
+      "price": 0.0
+    },
+    "832000": {
+      "returned_code": "600839",
+      "price": 0.0
+    },
+    "920002": {
+      "returned_code": "920002",
+      "price": 48.5
+    },
+    "920008": {
+      "returned_code": "920008",
+      "price": 17.78
+    },
+    "920099": {
+      "returned_code": "920099",
+      "price": 12.5
+    }
+  },
+  "minute_cost": {
+    "symbols": 200,
+    "rows": 48000,
+    "seconds": 19.6,
+    "ms_per_symbol": 98,
+    "full_market_estimate_s": 540
+  }
+}

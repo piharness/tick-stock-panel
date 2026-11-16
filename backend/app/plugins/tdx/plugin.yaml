@@ -1,0 +1,22 @@
+# 通达信裸协议 — 免费行情源 (行情主站 7709 端口, 无需 Key/积分)
+# 依赖 tdxrs (Rust/PyO3, 仅 cp311 wheel), runtime: python。
+# 与 tdxquant 的差别: 同一批行情主站数据, 但没有积分计费, 也不需要 API Key;
+# 代价是没有官方 SLA, 且北交所仅 920xxx 段可用。
+
+name: tdx
+display_name: "通达信(裸协议)"
+runtime: python
+entry: app.plugins.tdx.provider:TdxProvider
+check: app.plugins.tdx.provider:availability
+datasets: [realtime, depth5, minute, full_minute]
+description: "通达信行情主站裸协议: 全市场快照(含五档)、1分钟K(≈98个交易日)、全量分钟。零 Key 零积分; 未接入日K/复权/财务, 自动回退。"
+install_hint: "需 Python 3.11 + tdxrs (pip install tdxrs); Docker 镜像已是 3.11, 通常无需操作"
+homepage: "https://github.com/jiangtaovan/tdxrs"
+homepage_label: "tdxrs 协议实现"
+usage_notes:
+  - "实时快照: 60 只/请求, 全市场 5225 只一轮 3.4s (实测 3 轮 0 失败), 五档随快照返回"
+  - "分钟K: 800 根/页可翻页, 实测深度 23520 根 ≈ 98 个交易日; 每日 240 根 (09:31-15:00, 不含竞价)"
+  - "全量分钟: 逐标的拉取, 全市场一轮 ≈ 9~10 分钟 (分钟通道 10 req/s 限流)"
+  - "口径: 通达信分钟是前复权且基准为下一个除权日, 插件已按当日原始日线收盘逐日反算回原始价; 缺当日日线的标的该日不出分钟 (fail-closed), 不猜口径"
+  - "北交所仅 920xxx: 43x/83x/87x 服务端会返回别的代码, 已在映射层拦截 (本仓 355 只北交所均为 920xxx)"
+  - "无日K/复权/财务: 这三项继续由 fuyao 提供 (权威且口径已对齐)"

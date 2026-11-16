@@ -1,0 +1,21 @@
+# 新浪财经公开行情 — 零 Key、零积分的盘中流式源 (https://finance.sina.com.cn)
+# 纯 HTTP REST, 无额外依赖 (runtime: none)。无需配置 Key, 安装即用。
+#
+# 能力边界: 快照(含五档) + 浅分钟(≈4 个交易日)。权威日K/复权/财务仍应路由到
+# fuyao 等授权源; 全市场分钟落盘不声明 (逐标的端点, 全市场一轮 5000+ 请求)。
+
+name: sina
+display_name: "新浪财经"
+runtime: none
+entry: app.plugins.sina.provider:SinaProvider
+check: app.plugins.sina.provider:availability
+datasets: [realtime, depth5, minute]
+description: "新浪公开行情: 全市场快照(含买卖五档)、1分钟K(近4个交易日)。零 Key 零积分, 800只/请求; 未接入日K/复权/财务/全量分钟, 自动回退 TickFlow。"
+install_hint: "无需配置; 公开端点直连。个人自用可, 商用/再分发需自行解决数据授权。"
+homepage: "https://finance.sina.com.cn"
+homepage_label: "新浪财经"
+usage_notes:
+  - "实时快照: 800 只/请求, 全市场约 8 批 (实测单批 389ms, 900 只触发 HTTP 431)"
+  - "五档盘口: 随快照返回, 与实时同端点; 量纲 股→手 已归一"
+  - "分钟K: 逐标的, 单次最多 1023 根 (≈4.3 个交易日), 无翻页参数 ⇒ 拿不到更早历史"
+  - "覆盖: 沪深主板/创业板/科创板/北交所 + ETF + 指数 (指数走独立补充方法)"

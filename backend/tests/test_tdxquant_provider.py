@@ -660,8 +660,10 @@ def test_minute_integer_and_short_time_shapes():
         ["600519.SH"], datetime(2026, 10, 8), datetime(2026, 10, 9, 23, 59)
     )
     assert df.height == 5
+    # 13:00 那根是「上午最后一根」的错标: 当天没有 11:30 ⇒ 改标 (见 _fix_morning_close_label)。
+    # 这里测的是**时间串形态解析**, 所以只钉「没被丢」与「落到 11:30」。
     assert set(df["datetime"].to_list()) == {
-        datetime(2026, 10, 9, 9, 31, 0), datetime(2026, 10, 9, 13, 0, 0),
+        datetime(2026, 10, 9, 9, 31, 0), datetime(2026, 10, 9, 11, 30, 0),
     }
 
 
@@ -684,6 +686,93 @@ def test_minute_full_trading_day_integer_times_all_parse():
     dts = df["datetime"].to_list()
     assert dts[0] == datetime(2026, 10, 9, 9, 31, 0)
     assert dts[-1] == datetime(2026, 10, 9, 15, 0, 0)
+
+
+def test_minute_1300_duplicate_of_1130_is_dropped():
+    """上午最后一根被标成 13:00: 同日已有 11:30 时, 13:00 是它的副本, 不能落盘。
+
+    实证 2026-11-05 40 只 / 11-12 32 只 (OHLCV 逐字段全等, amount 是 11:30 的
+    万元两位小数重编码)。这条红了 ⇒ 双计会回来, 且落盘闸门要拿一整帧去兜。
+    """
+    fake = _FakeClient()
+    fake.his = {"600519.SH": _minute_raw([
+        ("20261009", "113000", 10.0, 10.1, 9.9, 10.0, 12_300.0, 1_500.0),
+        ("20261009", "130000", 10.0, 10.1, 9.9, 10.0, 12_300.0, 1_500.0),   # 副本
+        ("20261009", "130100", 10.1, 10.2, 10.0, 10.1, 8_800.0, 1_100.0),
+    ])}
+    df = _provider(fake).get_minute(["600519.SH"], None, datetime(2026, 10, 9, 23, 59))
+    assert df["datetime"].to_list() == [
+        datetime(2026, 10, 9, 11, 30), datetime(2026, 10, 9, 13, 1),
+    ]
+
+
+def test_minute_1300_without_1130_is_relabelled_not_dropped():
+    """停牌合成格 (11-12 那 7 只): 13:00 顶替了 11:30 ⇒ 改标, 丢弃会在网格上留洞。"""
+    fake = _FakeClient()
+    fake.his = {"600519.SH": _minute_raw([
+        ("20261009", "093100", 10.0, 10.1, 9.9, 10.0, 12_300.0, 1_500.0),
+        ("20261009", "130000", 10.0, 10.1, 9.9, 10.0, 0.0, 0.0),            # 0 量合成格
+    ])}
+    df = _provider(fake).get_minute(["600519.SH"], None, datetime(2026, 10, 9, 23, 59))
+    assert df.height == 2
+    assert df["datetime"].to_list() == [
+        datetime(2026, 10, 9, 9, 31), datetime(2026, 10, 9, 11, 30),
+    ]
+
+
+def test_minute_1300_that_is_not_a_duplicate_is_left_alone():
+    """11:30 在、但 OHLCV 不同 ⇒ 不猜。这一支交给落盘闸门与审计的 L 轴。"""
+    fake = _FakeClient()
+    fake.his = {"600519.SH": _minute_raw([
+        ("20261009", "113000", 10.0, 10.1, 9.9, 10.0, 12_300.0, 1_500.0),
+        ("20261009", "130000", 10.5, 10.6, 10.4, 10.5, 9_900.0, 1_200.0),   # 另一根 bar
+    ])}
+    df = _provider(fake).get_minute(["600519.SH"], None, datetime(2026, 10, 9, 23, 59))
+    assert df.height == 2, "判不了就不动: 猜错就是删掉一根真 bar"
+    assert datetime(2026, 10, 9, 13, 0) in df["datetime"].to_list()
+
+
+def test_minute_label_fix_feeds_the_write_path_without_quarantine(monkeypatch, tmp_path):
+    """端到端: 源修好之后, 落盘路径一天 240 根、隔离区为空。
+
+    绑定两处实现 —— 只在 provider 修而不验落盘, 就等于没验「双计没了」。
+    """
+    import polars as pl
+
+    from app.services import kline_sync
+
+    # 上游真实形态: 240 根, 但上午最后一根标的是 13:00 (不是 11:30)
+    stamps = [
+        int(t.strftime("%H%M%S")) for t in minute_grid_stamp()
+        if t.strftime("%H:%M") != "11:30"
+    ]
+    stamps.append(130000)
+    fake = _FakeClient()
+    fake.his = {"600519.SH": _minute_raw([
+        ("20261009", s, 10.0, 10.1, 9.9, 10.0, 12_300.0, 1_500.0) for s in stamps
+    ])}
+    provider = _provider(fake)
+    monkeypatch.setattr(kline_sync, "_selected_minute_provider_name", lambda: "tdxquant")
+    monkeypatch.setattr(kline_sync, "_resolve_minute_provider", lambda name: (provider, False, None))
+    monkeypatch.setattr(kline_sync, "get_client", lambda: pytest.fail("不得跨源请求"))
+    kline_sync.sync_minute_batch(
+        ["600519.SH"], datetime(2026, 10, 8, 9, 0, tzinfo=_BEIJING),
+        datetime(2026, 10, 9, 23, 59, tzinfo=_BEIJING),
+        on_segment=lambda frame: kline_sync._write_minute_partition(
+            frame, tmp_path / "kline_minute", origin="postclose"),
+    )
+    stored = pl.read_parquet(tmp_path / "kline_minute" / "date=2026-10-09" / "part.parquet")
+    assert stored.height == 240
+    assert (datetime(2026, 10, 9, 11, 30) in stored["datetime"].to_list())
+    assert (datetime(2026, 10, 9, 13, 0) not in stored["datetime"].to_list())
+    assert not (tmp_path / "_quarantine").exists()
+
+
+def minute_grid_stamp():
+    """240 根规范网格 (09:31..11:30 ∪ 13:01..15:00) —— 与 market_time.minute_grid 同一份。"""
+    from app.market_time import minute_grid
+
+    return list(minute_grid())
 
 
 def test_minute_and_daily_unwrap_value_envelope():
