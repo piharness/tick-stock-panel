@@ -81,6 +81,29 @@ def test_resolve_older_than_all_partitions_returns_target(data_dir):
     assert dt.resolve_trade_date(data_dir, date(2020, 1, 1)) == date(2020, 1, 1)
 
 
+def test_resolve_sees_monthly_partition(tmp_path: Path):
+    """月分区必须参与交易日解析 —— 回归 2026-11 的静默 14 天滞后。
+
+    旧实现按 `^date=YYYY-MM-DD$` 扫目录名。日 K 迁到月分区 (date=2026-11) 后
+    这道正则只看得见迁移边界前的日分区, 于是「≤目标日的最近交易日」永久返回
+    2026-10-30: 接口 state=ok、榜单是两周前的, 而上游当天的榜单就在一次请求
+    之外。判据用月分区真实 date 列, 不靠目录名声明。
+    """
+    import polars as pl
+
+    (tmp_path / "kline_daily" / "date=2026-10-30").mkdir(parents=True)
+    part = tmp_path / "kline_daily" / "date=2026-11"
+    part.mkdir(parents=True)
+    pl.DataFrame({
+        "date": [date(2026, 11, 2), date(2026, 11, 3), date(2026, 11, 11)],
+        "symbol": ["600519.SH"] * 3,
+    }).write_parquet(part / "part-0.parquet")
+
+    assert dt.resolve_trade_date(tmp_path, date(2026, 11, 13)) == date(2026, 11, 11)
+    # 月内命中同样要精确到日, 不能把整个月当成一个交易日
+    assert dt.resolve_trade_date(tmp_path, date(2026, 11, 3)) == date(2026, 11, 3)
+
+
 # ---- 状态与缓存 ----
 
 def test_source_unavailable_without_fuyao(data_dir, monkeypatch):

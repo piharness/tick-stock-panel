@@ -22,28 +22,20 @@ from datetime import date as date_cls
 from pathlib import Path
 
 from app.market_time import cn_today
+from app.services.trading_days import kline_trading_days
 
 logger = logging.getLogger(__name__)
 
 _BOARDS = ("all", "org", "hot_money")
-_DATE_DIR_RE = re.compile(r"^date=(\d{4}-\d{2}-\d{2})$")
 
 
 def _local_trading_days(data_dir: Path) -> list[date_cls]:
-    """本地日K分区日期 = 已知交易日集合 (升序)。扫描失败返回空。"""
-    root = data_dir / "kline_daily"
-    out: list[date_cls] = []
-    try:
-        for d in root.iterdir():
-            m = _DATE_DIR_RE.match(d.name)
-            if d.is_dir() and m:
-                try:
-                    out.append(date_cls.fromisoformat(m.group(1)))
-                except ValueError:
-                    continue
-    except OSError:
-        return []
-    return sorted(out)
+    """本地日K覆盖的交易日 (升序)。委托 trading_days —— 唯一取数点。
+
+    早期版本在这里自己扫 `date=YYYY-MM-DD` 目录名, 月分区 (date=2026-11)
+    因此不可见, 解析结果永久停在迁移边界 2026-10-30。
+    """
+    return kline_trading_days(data_dir)
 
 
 def resolve_trade_date(data_dir: Path, target: date_cls | None) -> date_cls | None:
@@ -270,6 +262,59 @@ def get_dragon_tiger(data_dir: Path, target: date_cls | None = None) -> dict:
                     pass
         logger.warning("龙虎榜拉取失败: %s", e)
         return {"state": "no_data", "message": str(e)}
+
+
+def has_cache(data_dir: Path, d: date_cls) -> bool:
+    """该交易日是否已有本地缓存 —— 增量任务的幂等判据。"""
+    return _cache_path(data_dir, d).exists()
+
+
+def pull_latest(data_dir: Path, expect: date_cls | None = None) -> dict:
+    """盘后增量: 把「服务端最近已发布交易日」的三榜写进本地缓存。
+
+    为什么不能复用 get_dragon_tiger: 那条在线路径只在 actual < today 时写缓存
+    (历史榜单不可变, 当日以现拉为准), 而增量任务跑的时刻「今天」正是目标日
+    ⇒ 拿它做每日增量永远写不出当日缓存。这是历史缓存长期缺失的直接原因。
+
+    expect 默认取今天。返回里的 is_expected_day 才是完成判据:
+    服务端尚未发布目标日时会返回上一交易日, state 仍是 ok, 只看 state 会得到
+    「每天都绿、但每天都没写今天」的假成功。
+    """
+    provider = _provider()
+    if provider is None:
+        return {"state": "source_unavailable"}
+
+    from app.plugins.fuyao.client import FuyaoError
+
+    try:
+        raw = {bt: _boards_of(provider, bt, None) for bt in _BOARDS}
+    except FuyaoError as e:
+        logger.warning("龙虎榜增量拉取失败: %s", e)
+        return {"state": "no_data", "message": str(e)}
+
+    iso = raw["all"].get("trade_date")
+    try:
+        actual = date_cls.fromisoformat(str(iso))
+    except ValueError:
+        return {"state": "no_data", "message": f"trade_date 不可解析: {iso!r}"}
+
+    payload = {"state": "ok", "requested_date": None, "trade_date": iso, **raw}
+    try:
+        _store_cache(_cache_path(data_dir, actual), payload)
+    except OSError as e:
+        # 拉到了但没存下来 ⇒ 必须显式失败, 不能当成功 (次日即超出一年窗口就永久缺)
+        logger.warning("龙虎榜缓存写入失败 %s: %s", actual, e)
+        return {"state": "store_failed", "trade_date": iso, "message": str(e)}
+
+    expected = expect if expect is not None else cn_today()
+    return {
+        "state": "ok",
+        "trade_date": iso,
+        "expected_date": expected.isoformat(),
+        "is_expected_day": actual == expected,
+        "stocks": len((raw.get("all") or {}).get("stock_items") or []),
+        "seats": len((raw.get("hot_money") or {}).get("hot_money_items") or []),
+    }
 
 
 def build_recap_context(data_dir: Path) -> str:
