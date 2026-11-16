@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { ScanSearch, Clock, TrendingUp, Star, Filter, Layers, Network, Sparkles, RefreshCw, Settings2, Store, RotateCcw, X, SlidersHorizontal } from 'lucide-react'
+import { ScanSearch, Clock, TrendingUp, Star, Filter, Layers, Network, Sparkles, RefreshCw, Settings2, Store, RotateCcw, X, SlidersHorizontal, Radar } from 'lucide-react'
 import { api, genRuleId, type ScreenerStrategy, type ScreenerResult } from '@/lib/api'
 import { fetchMinuteBatchIncremental } from '@/lib/minuteBatchIncremental'
 import { fetchDailyBatchChunked } from '@/lib/klineBatchChunked'
@@ -26,6 +26,7 @@ import { StrategySettingsDialog } from '@/components/screener/StrategySettingsDi
 import { DefaultStrategyParamsDialog } from '@/components/screener/DefaultStrategyParamsDialog'
 import { ResourceTransferButton } from '@/components/ResourceTransferDialog'
 import { StrategyPoolDialog } from '@/components/screener/StrategyPoolDialog'
+import { StrategyCaptureDialog } from '@/components/screener/StrategyCaptureDialog'
 import { StrategyBuilderDialog } from '@/components/screener/StrategyBuilderDialog'
 import { StrategyStoreDialog } from '@/components/screener/StrategyStoreDialog'
 import { CompositeStrategyDialog } from '@/components/screener/CompositeStrategyDialog'
@@ -65,6 +66,7 @@ export function Screener() {
   }, [])
   const [settingsStrategyId, setSettingsStrategyId] = useState<string | null>(null)
   const [showPoolDialog, setShowPoolDialog] = useState(false)
+  const [showCaptureDialog, setShowCaptureDialog] = useState(false)
   const [showBuilder, setShowBuilder] = useState(false)
   const [builderMode, setBuilderMode] = useState<'create' | 'modify'>('create')
   const [showStore, setShowStore] = useState(false)
@@ -977,6 +979,17 @@ export function Screener() {
                 {visiblePool.length}/{strategyPresets.length}
               </span>
             </button>
+            {/* 自动捕获按钮 */}
+            <button
+              onClick={() => setShowCaptureDialog(true)}
+              title="从社区文本自动捕获策略（生成 → 回测 → 五道门审计）"
+              className="inline-flex items-center gap-1.5 h-7 px-3 rounded-btn
+                border border-border bg-surface text-xs font-medium text-secondary
+                hover:text-accent hover:border-accent/50 transition-colors cursor-pointer"
+            >
+              <Radar className="h-3.5 w-3.5" />
+              自动捕获
+            </button>
             {/* 创建叠加策略 */}
             <button
               onClick={() => setShowComposite(true)}
@@ -1395,6 +1408,9 @@ export function Screener() {
           }}
           onClose={() => setShowPoolDialog(false)}
         />
+      )}
+      {showCaptureDialog && (
+        <StrategyCaptureDialog onClose={() => setShowCaptureDialog(false)} />
       )}
       <StrategyBuilderDialog
         open={showBuilder}
