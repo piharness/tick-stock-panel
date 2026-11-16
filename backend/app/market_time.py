@@ -18,6 +18,26 @@ _AFTERNOON_START = dt_time(13, 0)
 _AFTERNOON_END = dt_time(15, 0)
 
 
+def minute_grid() -> tuple[dt_time, ...]:
+    """日内分钟 K 的规范时刻: 09:31..11:30 ∪ 13:01..15:00, 共 240 格。
+
+    **按区间末日标注**, 与上面的会话边界 (`_MORNING_START=09:30`) 差的正是这 1 分钟:
+    一根分钟 K 用「这一分钟的结束时刻」命名, 所以首格是 09:31 与 13:01。
+    09:30 / 13:00 属于「区间首日标注」, 是另一套口径 —— 混进来会让同一天变成 241 根,
+    且那 1 根通常是 11:30 的副本, 金额被双计 (2026-11-05 40 只 / 2026-11-12 32 只)。
+
+    这是**全库落盘约定**, 不是本模块的选择: 2026-11-13 实测 6 个交易日 8,025,120 行
+    越界 0 行 (抽样 2026-10-08 亦为 0), 5,570 只/日里 5,530+ 只都落在网格上。
+
+    落盘闸门 `kline_sync._assert_minute_grid` 与审计脚本
+    `analysis/_diag_minute_audit_1113.py` 都取这一份, 不许各自再写一遍。
+    """
+    out: list[dt_time] = []
+    for start_min, n in ((9 * 60 + 31, 120), (13 * 60 + 1, 120)):
+        out.extend(dt_time((start_min + i) // 60, (start_min + i) % 60) for i in range(n))
+    return tuple(out)
+
+
 def cn_now() -> datetime:
     """当前北京时间 (带时区)。"""
     return datetime.now(CN_TZ)
