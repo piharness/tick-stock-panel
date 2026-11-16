@@ -621,6 +621,7 @@ PORT=3018                      # 服务端口
 | [docs/strategy.md](./docs/strategy.md)                                                             | 策略体系(全自定义化 + 三种扩展方式 + 文件结构)                      |
 | [docs/strategy-iteration.md](./docs/strategy-iteration.md)                                         | AI 策略迭代协议:台账 / 证据包 / 门槛判定 / 提示词卡片                |
 | [docs/mining.md](./docs/mining.md)                                                                 | 因子与策略挖掘口径、防泄漏、任务隔离和发布边界                       |
+| [docs/alpha-search.md](./docs/alpha-search.md)                                                     | 主动 Alpha 搜索：预注册公式族、发现/确认两段验证、试验台账与 DSR |
 | [docs/market-phase.md](./docs/market-phase.md)                                                     | 市场情绪周期 6 阶段与概念/行业主线识别的口径与设计                   |
 | [docs/decision-ledger.md](./docs/decision-ledger.md)                                               | 决策账本:预登记哈希 / K1–K4 三态门禁 / 结算与 Brier 校准口径         |
 | [docs/plugin-development.md](./docs/plugin-development.md)                                         | 数据源插件开发规范(以 fuyao 为参考实现)                  |
