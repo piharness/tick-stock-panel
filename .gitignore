@@ -138,7 +138,14 @@ data/strategies/custom/
 # 38 MB 量级；不挡住的话 `git add -A` 会把整份检出当成新增文件提交。
 .worktrees/
 # pytest junitxml 报告（人工指定的落点，跑完即弃）
+# 两种命名都要挡：`.junit*.xml` 是早期习惯，`junit_*.xml` 是后来 `--junitxml=junit_xxx.xml`
+# 的写法。只挡前者会让仓库根目录攒下 175 个报告，`git status` 里和源码改动混在一起，
+# 「哪些是这一轮的改动」要靠人眼筛——这正是 `git add -A` 把测试产物带进去的入口。
 .junit*.xml
+junit_*.xml
+# vite 每次启动配置重载都会在 frontend/ 落一个时间戳副本（含绝对路径），
+# 它是进程内的临时文件，不是配置：`vite.config.ts.timestamp-<ms>-<hash>.mjs`。
+frontend/vite.config.ts.timestamp-*.mjs
 backend._recheck*.py
 backend/_verify*.py
 backend/_desktop_run.log
