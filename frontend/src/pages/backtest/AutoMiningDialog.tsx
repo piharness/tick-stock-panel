@@ -7,6 +7,7 @@ import { toast } from '@/components/Toast'
 import { api, type MiningAvailability, type MiningBudgetProfile } from '@/lib/api'
 import { startAutoMining } from '@/lib/miningTask'
 import { QK } from '@/lib/queryKeys'
+import { DateInput } from '@/components/DateInput'
 
 const INPUT_CLS = 'h-8 w-full rounded-input border border-border bg-surface px-2.5 text-xs text-foreground focus:border-accent focus:outline-none'
 
@@ -158,11 +159,11 @@ export function AutoMiningDialog({
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
               <span className="mb-1 block text-[10px] text-muted">开始</span>
-              <input type="date" value={start} onChange={event => setStart(event.target.value)} className={INPUT_CLS} />
+              <DateInput value={start} onChange={setStart} className={INPUT_CLS} ariaLabel="回测起点" allowEmpty={false} />
             </label>
             <label className="block">
               <span className="mb-1 block text-[10px] text-muted">结束</span>
-              <input type="date" value={end} onChange={event => setEnd(event.target.value)} className={INPUT_CLS} />
+              <DateInput value={end} onChange={setEnd} className={INPUT_CLS} ariaLabel="回测终点" allowEmpty={false} />
             </label>
           </div>
           {currentAvailable === false && availability[profile] && (

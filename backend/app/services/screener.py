@@ -545,17 +545,9 @@ class ScreenerService:
         d = self.repo.enriched_latest_date()
         if d:
             return d
-        # 回退 DuckDB
-        try:
-            res = self.repo.execute_one(
-                "SELECT max(date) FROM kline_enriched",
-            )
-            if res and res[0]:
-                d = res[0]
-                return d if isinstance(d, date) else date.fromisoformat(str(d))
-        except Exception:  # noqa: BLE001
-            return None
-        return None
+        # 回退走分区目录名 (零 parquet 元数据扫描); 原 `SELECT max(date) FROM
+        # kline_enriched` 在 9p 绑定挂载上要 2.9s, 且每个冷进程都要付一次。
+        return self.repo.latest_enriched_date("stock")
 
     def coverage_warnings(self, as_of: date, *, required_bars: int | None = None) -> list[str]:
         """数据充足性提示 (#303): enriched 覆盖不足时返回用户可读警告, 充足返回 []。
