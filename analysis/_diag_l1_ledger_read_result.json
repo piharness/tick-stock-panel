@@ -1,0 +1,251 @@
+{
+ "_meta": {
+  "script": "analysis/_diag_l1_ledger_read.py",
+  "generated_at": "2026-11-13T14:01:39+08:00",
+  "strategy_id": "l1_gap_reversal",
+  "ledger_dir": "D:\\DSH\\tick-stock-panel\\data\\user_data\\decision"
+ },
+ "counts": {
+  "cards": 10,
+  "settlement_rows": 200,
+  "filled": 97,
+  "not_filled": 103,
+  "as_of_first": "2026-10-29",
+  "as_of_last": "2026-11-11"
+ },
+ "pwin_evolution": [
+  {
+   "as_of": "2026-10-29",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.5,
+   "source": "prior",
+   "n": 0,
+   "prior_weight": 1.0
+  },
+  {
+   "as_of": "2026-10-30",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.5,
+   "source": "prior",
+   "n": 0,
+   "prior_weight": 1.0
+  },
+  {
+   "as_of": "2026-11-02",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.457143,
+   "source": "ledger",
+   "n": 15,
+   "prior_weight": 0.571429
+  },
+  {
+   "as_of": "2026-11-03",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.468085,
+   "source": "ledger",
+   "n": 27,
+   "prior_weight": 0.425532
+  },
+  {
+   "as_of": "2026-11-04",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.428571,
+   "source": "ledger",
+   "n": 36,
+   "prior_weight": 0.357143
+  },
+  {
+   "as_of": "2026-11-05",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.390625,
+   "source": "ledger",
+   "n": 44,
+   "prior_weight": 0.3125
+  },
+  {
+   "as_of": "2026-11-06",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.466667,
+   "source": "ledger",
+   "n": 55,
+   "prior_weight": 0.266667
+  },
+  {
+   "as_of": "2026-11-09",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.483146,
+   "source": "ledger",
+   "n": 69,
+   "prior_weight": 0.224719
+  },
+  {
+   "as_of": "2026-11-10",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.515464,
+   "source": "ledger",
+   "n": 77,
+   "prior_weight": 0.206186
+  },
+  {
+   "as_of": "2026-11-11",
+   "horizon": 0,
+   "fill_mode": "open_only",
+   "backfill": true,
+   "p_win": 0.524752,
+   "source": "ledger",
+   "n": 81,
+   "prior_weight": 0.19802
+  }
+ ],
+ "execution": {
+  "account_id": "acc_mw2bc7suc",
+  "cash": 1000000.0,
+  "orders_total": 19,
+  "orders_by_source": {
+   "seed:inventory": 19
+  },
+  "orders_by_status": {
+   "pending": 19
+  },
+  "positions": 0
+ },
+ "score": {
+  "median": {
+   "basis": "median",
+   "n": 97,
+   "not_filled": 103,
+   "pending": 0,
+   "days": 10,
+   "hit_rate": 0.5155,
+   "brier": 0.2605,
+   "brier_const": 0.25,
+   "brier_random": 0.25,
+   "brier_clim": 0.2585,
+   "brier_insample": 0.2498,
+   "skill": -0.0418,
+   "skill_vs_clim": -0.0075,
+   "skill_lcb": -0.0856,
+   "skill_lcb_positive": false,
+   "significance": "UNKNOWN",
+   "significant": false,
+   "n_eff": 10,
+   "hac_lag": 0,
+   "n_eff_reliable": true,
+   "logloss": 0.7143,
+   "ret_median": 0.0013,
+   "excess_mean": 0.0025,
+   "excess_lcb": -0.0066,
+   "excess_se_hac": 0.010134,
+   "excess_lcb_hac": -0.01275,
+   "verdict": "NO_INFORMATION",
+   "reason": "Brier skill -4.18% ≤ 0（基线 随机 0.5）",
+   "by_source": {
+    "ledger": {
+     "n": 70,
+     "days": 8,
+     "hit_rate": 0.5429,
+     "brier": 0.2645,
+     "skill": -0.0579,
+     "verdict": "NO_INFORMATION"
+    },
+    "prior": {
+     "n": 27,
+     "days": 2,
+     "hit_rate": 0.4444,
+     "brier": 0.25,
+     "skill": 0.0,
+     "verdict": "NO_INFORMATION"
+    }
+   },
+   "by_price_basis": {
+    "EVENT": {
+     "n": 97,
+     "days": 10,
+     "hit_rate": 0.5155,
+     "brier": 0.2605,
+     "skill": -0.0418,
+     "verdict": "NO_INFORMATION"
+    }
+   },
+   "n_non_event": 0
+  },
+  "abs": {
+   "basis": "abs",
+   "n": 97,
+   "not_filled": 103,
+   "pending": 0,
+   "days": 10,
+   "hit_rate": 0.5155,
+   "brier": 0.2638,
+   "brier_const": 0.2653,
+   "brier_random": 0.25,
+   "brier_clim": 0.2653,
+   "brier_insample": 0.2498,
+   "skill": 0.0055,
+   "skill_vs_clim": 0.0055,
+   "skill_lcb": -0.0509,
+   "skill_lcb_positive": false,
+   "significance": "UNKNOWN",
+   "significant": false,
+   "n_eff": 10,
+   "hac_lag": 0,
+   "n_eff_reliable": true,
+   "logloss": 0.7212,
+   "ret_median": 0.0013,
+   "excess_mean": 0.0058,
+   "excess_lcb": -0.004,
+   "excess_se_hac": 0.011732,
+   "excess_lcb_hac": -0.012068,
+   "verdict": "BEATS_CONSTANT",
+   "reason": "Brier skill +0.55% > 0（基线 展开 climatology）",
+   "by_source": {
+    "ledger": {
+     "n": 70,
+     "days": 8,
+     "hit_rate": 0.5571,
+     "brier": 0.2692,
+     "skill": -0.0248,
+     "verdict": "NO_INFORMATION"
+    },
+    "prior": {
+     "n": 27,
+     "days": 2,
+     "hit_rate": 0.4074,
+     "brier": 0.25,
+     "skill": 0.0955,
+     "verdict": "BEATS_CONSTANT"
+    }
+   },
+   "by_price_basis": {
+    "EVENT": {
+     "n": 97,
+     "days": 10,
+     "hit_rate": 0.5155,
+     "brier": 0.2638,
+     "skill": 0.0055,
+     "verdict": "BEATS_CONSTANT"
+    }
+   },
+   "n_non_event": 0
+  }
+ },
+ "verdict_note": "n_eff < MIN_NEFF 时 significance 必为 UNKNOWN：那不是失败，是还没有分母"
+}

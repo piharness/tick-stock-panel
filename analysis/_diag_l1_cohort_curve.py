@@ -51,6 +51,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -173,6 +174,201 @@ def decide(t: float, thr: float = T_DECIDE) -> str:
     return "undetermined"
 
 
+def contiguous_blocks(days: list[str]) -> list[int]:
+    """把日期序列切成连续块并返回各块天数。
+
+    为什么必须有这个：抓取端断了配额之后，**缺的是整段时间**（2025-12 中旬→2026-10），
+    不是随机缺样。133 天里 119 天连成一片，把它当「316 天的随机子样」会让
+    `se·√(316/133)` 这类换算全部失效。块长是定义，不是描述。
+    """
+    if not days:
+        return []
+    ds = sorted(days)
+    blocks, cur = [], 1
+    for a, b in zip(ds, ds[1:]):
+        if (date.fromisoformat(b) - date.fromisoformat(a)).days <= 7:
+            cur += 1
+        else:
+            blocks.append(cur)
+            cur = 1
+    blocks.append(cur)
+    return blocks
+
+
+def split_stability(days: list[str], per_day: pl.DataFrame,
+                    breakeven: float) -> dict:
+    """按日期中位切成前后两半，各算日等权 Δ(kmaz) 的均值/se 与它们的差。
+
+    D2 的判据是**水平**（Δ(239) ≥ 打平线），水平是窗口的函数。若两半的水平差
+    已经达到 2σ，那么「用 119 天的水平代表 316 天」就是错的，哪怕 t 看起来显著。
+    """
+    if per_day.height < 8:
+        return {"applicable": False, "why": "天数不足 8，切不出两半"}
+    x = per_day.sort("date")
+    n = x.height
+    a = np.asarray(x["m"], float)[: n // 2]
+    b = np.asarray(x["m"], float)[n // 2:]
+    dates = x["date"].to_list()
+    ma, mb = float(a.mean()), float(b.mean())
+    sa = float(a.std(ddof=1) / np.sqrt(a.size))
+    sb = float(b.std(ddof=1) / np.sqrt(b.size))
+    gap = abs(ma - mb)
+    z = gap / float(np.hypot(sa, sb)) if np.hypot(sa, sb) > 0 else float("inf")
+    return {
+        "applicable": True,
+        "split_date": dates[n // 2],
+        "first_half": {"days": int(a.size), "date_min": dates[0],
+                       "date_max": dates[n // 2 - 1],
+                       "mean_bp": round(ma, 2), "se_bp": round(sa, 2),
+                       "margin_bp": round(ma - breakeven, 2)},
+        "second_half": {"days": int(b.size), "date_min": dates[n // 2],
+                        "date_max": dates[-1],
+                        "mean_bp": round(mb, 2), "se_bp": round(sb, 2),
+                        "margin_bp": round(mb - breakeven, 2)},
+        "gap_bp": round(gap, 2),
+        "z": round(z, 2),
+        "regime_stable": bool(z < T_DECIDE),
+        "why": "两半水平差 z≥2 ⇒ 水平不是常数，133 天不能代表 316 天",
+    }
+
+
+def caliber_crosscheck(cells: pl.DataFrame) -> dict:
+    """逐格对拍既有产物的两个端点（`_diag_l1_kcurve.endpoints`）的口径。
+
+    为什么必须逐格、不能比聚合：聚合均值会被**样本组成**污染（本样本 133 天 ≈ 2025-H2），
+    于是「口径对不对」与「这 133 天是否代表 316 天」两件事在聚合上完全混在一起。
+    逐格比只留口径差异，样本组成被配对消掉。没有这一步，D1 在子样本上一律
+    `applicable=false` ⇒ 口径从未被检验，只是安静地跳过。
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_kc", HERE / "_diag_l1_kcurve.py")
+    kc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(kc)
+    part, daily = kc.load_part(), kc.load_daily()
+    ref = part.join(
+        daily.select("symbol", "date", "open", "adjf", "dvwap"),
+        on=["symbol", "date"], how="inner",
+    ).with_columns(
+        (pl.col("b0_amt") / (pl.col("b0_vol") * 100.0)).alias("b0_vwap"),
+    ).with_columns(
+        ((pl.col("b0_vwap") / pl.col("b0_open") - 1.0) * 1e4).alias("d1_bp"),
+        ((pl.col("dvwap") / (pl.col("open") * pl.col("adjf")) - 1.0) * 1e4).alias("d240_bp"),
+    )
+    kmax = int(cells["k"].max())
+    mine = cells.filter(pl.col("k").is_in([0, kmax])).pivot(
+        values="delta_bp", index=["date", "symbol"], on="k").rename(
+        {"0": "d0_min", str(kmax): "d239_min"})
+    m = ref.join(mine, on=["date", "symbol"], how="inner")
+    if m.is_empty():
+        return {"applicable": False, "why": "与本脚本的 cell 无交集"}
+    e1 = (m["d1_bp"] - m["d0_min"]).to_numpy()
+    e2 = (m["d240_bp"] - m["d239_min"]).to_numpy()
+    return {
+        "applicable": True,
+        "cells_overlap": int(m.height),
+        "bar0": {
+            "max_abs_diff_bp": round(float(np.abs(e1).max()), 6),
+            "n_exact": int((e1 == 0).sum()),
+            "mean_diff_bp": round(float(e1.mean()), 4),
+            "identical": bool(np.abs(e1).max() < 1e-6),
+        },
+        "full_day": {
+            "max_abs_diff_bp": round(float(np.abs(e2).max()), 2),
+            "mean_diff_bp": round(float(e2.mean()), 2),
+            "median_diff_bp": round(float(np.median(e2)), 2),
+            "mine_mean_bp": round(float(m["d239_min"].mean()), 2),
+            "ref_mean_bp": round(float(m["d240_bp"].mean()), 2),
+            "why": "差在「240 根分钟求和 vs 日线全日 VWAP」，不是复权（adjf 已同乘）",
+        },
+        "verdict": "口径逐格一致 ⇒ 与已发布均值的缺口是样本组成，不是定义",
+    }
+
+
+def block_contrast(days: list[str], per_day: pl.DataFrame,
+                   breakeven: float) -> dict:
+    """最大连续块 vs 其余日：这是**窗口之间**的差，`split_stability` 只是窗口**之内**。
+
+    `split_stability` 在 2025-H2 内部前后切两半，两半当然一致；它无法说明
+    「这 133 天能否代表 316 天」。块对比用的是位置不同的两天群，
+    差值就是「换个窗口水平会移动多少」的可观测下界。
+    """
+    if per_day.height < 8:
+        return {"applicable": False, "why": "天数不足 8"}
+    ds = sorted(days)
+    blocks, cur = [], [ds[0]]
+    for a, b in zip(ds, ds[1:]):
+        if (date.fromisoformat(b) - date.fromisoformat(a)).days <= 7:
+            cur.append(b)
+        else:
+            blocks.append(cur)
+            cur = [b]
+    blocks.append(cur)
+    big = max(blocks, key=len)
+    rest = [d for blk in blocks if blk is not big for d in blk]
+    if len(rest) < 5 or len(big) < 5:
+        return {"applicable": False, "why": "块太短，对比无意义"}
+    a = np.asarray(per_day.filter(pl.col("date").is_in(big))["m"], float)
+    b = np.asarray(per_day.filter(pl.col("date").is_in(rest))["m"], float)
+    gap = float(b.mean() - a.mean())
+    se_gap = float(np.hypot(a.std(ddof=1) / np.sqrt(a.size), b.std(ddof=1) / np.sqrt(b.size)))
+    return {
+        "applicable": True,
+        "big_block": {"days": len(big), "date_min": big[0], "date_max": big[-1],
+                      "mean_bp": round(float(a.mean()), 2)},
+        "rest": {"days": len(rest), "mean_bp": round(float(b.mean()), 2)},
+        "gap_bp": round(gap, 2),
+        "se_gap_bp": round(se_gap, 2),
+        "z": round(gap / se_gap, 2) if se_gap else None,
+        "why": "窗口之间的水平差；若它与「本样本对已发布均值的缺口」同量级，"
+               "则那个缺口就是窗口效应，不是口径",
+    }
+
+
+def published_margin_check(line: float, d240_day_eq: float, se_day: float) -> dict:
+    """已发布的 **316 天全样本** 上，Δ(239) 到打平线还剩多少。
+
+    这是整条链最容易被跳过的一步：上游 `_diag_l1_kcurve` 已经算过全样本端点，
+    那里的余量决定「Δ 轴判据」是不是本来就立在线上。若余量 ≪ se，那么
+    「再抓 N 天」永远不会改变符号——n_days_for_2σ 会到 10^5 量级。
+    """
+    margin = d240_day_eq - line
+    sd = se_day * np.sqrt(316.0)          # 全样本 316 天
+    t = margin / se_day if se_day else float("nan")
+    n2 = float((2.0 * sd / margin) ** 2) if margin else float("inf")
+    return {
+        "full_sample_days": 316,
+        "d240_day_eq_bp": round(d240_day_eq, 2),
+        "line_bp": round(line, 2),
+        "margin_bp": round(margin, 2),
+        "se_day_bp": round(se_day, 2),
+        "t_vs_line": round(t, 2),
+        "margin_pct_of_line": round(abs(margin) / line * 100.0, 2),
+        "n_days_for_2sigma": int(n2) if np.isfinite(n2) else None,
+        "degenerate": bool(abs(t) < T_DECIDE),
+        "why": "全样本余量只有打平线的 0.4% 量级 ⇒ 符号由 121.49/20.00/6.43 "
+               "三个上游数的小数位决定，不由样本量决定",
+    }
+
+
+def gate(decision_raw: str, is_full: bool, regime_stable: bool,
+         threshold_degenerate: bool = False) -> str:
+    """判定门：`decide()` 只看 t，但 t 是**在给定窗口内**的 t。
+
+    三道非数据量必须挡在判定之前，否则「41% 的连续窗口」会被读成整体结论：
+      · 待测量在全样本上就贴着判据线（余量 ≪ se）⇒ 判据本身退化，加数据无用；
+      · 样本不是全量 ⇒ 只代表该窗口；
+      · 两半水平不一致 ⇒ 水平本身不稳定，任何窗口的水平都不外推。
+    三者都返回 `undetermined_*`，与 `breakeven_not_reachable` 严格区分。
+    """
+    if threshold_degenerate:
+        return "undetermined_threshold_degenerate"
+    if not is_full:
+        return "undetermined_partial_window"
+    if not regime_stable:
+        return "undetermined_regime_split"
+    return decision_raw
+
+
 def curve_matrix(cells: pl.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
     """把 90 万行长表压成 (n_cell, 240) 的 Δ 矩阵，供按天重采样整条曲线。
 
@@ -220,6 +416,8 @@ def main() -> None:
     breakeven = float(kc["breakeven"]["delta_breakeven_bp"])
     d1_pub = float(kc["endpoints"]["d1"]["cell_mean_bp"])
     d240_pub = float(kc["endpoints"]["d240"]["cell_mean_bp"])
+    d240_pub_dayeq = float(kc["endpoints"]["d240"]["day_eq_mean_bp"])
+    d240_pub_se = float(kc["endpoints"]["d240"]["se_day_bp"])
     bench_days = int(kc["endpoints"]["d240"]["days"])
     c_req = float(kc["kstar"]["c_required"])
     ref_span = float(sp["level_bracket"]["ref_span_bp"])
@@ -234,12 +432,15 @@ def main() -> None:
     ck = np.asarray(cur["c"], float)
     n_cell = cells["date", "symbol"].n_unique()
     n_day = cells["date"].n_unique()
+    all_days = sorted(cells["date"].unique().to_list())
+    blocks = contiguous_blocks(all_days)
+    is_full = bool(n_day >= bench_days)
 
     # ---- D1 接缝：与既有产物的唯一可比处
     cell_d0 = float(cells.filter(pl.col("k") == 0)["delta_bp"].mean())
     cell_d239 = float(cells.filter(pl.col("k") == kk.max())["delta_bp"].mean())
     d0_gap, d239_gap = abs(cell_d0 - d1_pub), abs(cell_d239 - d240_pub)
-    seam_applicable = bool(n_day >= bench_days)
+    seam_applicable = is_full
     seam_ok = bool(d0_gap <= 1.5 and d239_gap <= 1.5)
 
     # ---- 形状描述（不再是判据）
@@ -282,8 +483,15 @@ def main() -> None:
 
     _, se52, _ = day_se(cells.filter(pl.col("k") == 52), "delta_bp")
 
-    # ---- 判定：三档，不是 all_pass
-    decision = decide(t_margin)
+    # ---- 判定：三档，不是 all_pass；且先过「口径/窗口/分段/判据退化」四道门
+    decision_raw = decide(t_margin)
+    per_day_m = per_day.group_by("date").agg(pl.col("delta_bp").mean().alias("m")).sort("date")
+    stab = split_stability(all_days, per_day_m, breakeven)
+    regime_stable = bool(stab.get("regime_stable", False))
+    cc = caliber_crosscheck(cells)
+    pubb = published_margin_check(breakeven, d240_pub_dayeq, d240_pub_se)
+    bct = block_contrast(all_days, per_day_m, breakeven)
+    decision = gate(decision_raw, is_full, regime_stable, pubb["degenerate"])
 
     checkpoints = {
         f"k{k}": {
@@ -305,7 +513,14 @@ def main() -> None:
             "days": n_day,
             "rows": cells.height,
             "days_bench": bench_days,
-            "is_full_sample": bool(n_day >= bench_days),
+            "days_cohort": bench_days,
+            "is_full_sample": is_full,
+            "date_min": all_days[0] if all_days else None,
+            "date_max": all_days[-1] if all_days else None,
+            "contiguous_blocks": blocks,
+            "largest_block_days": max(blocks) if blocks else 0,
+            "window_note": "缺天是整段时间的缺口（抓取端配额中断），不是随机缺样："
+                           "块长与位置都决定这个水平代表哪段行情",
             "bars_min": int(cv.group_by(["date", "symbol"]).len()["len"].min()),
             "bars_max": int(cv.group_by(["date", "symbol"]).len()["len"].max()),
         },
@@ -384,11 +599,20 @@ def main() -> None:
         },
         "verdict": {
             "decision": decision,
+            "decision_raw_t_only": decision_raw,
+            "D0_window_full": is_full,
             "D1_seam_applicable": seam_applicable,
             "D1_seam_ok": seam_ok,
             "D2_t_abs_ge2": bool(np.isfinite(t_margin) and abs(t_margin) >= T_DECIDE),
             "D3_identifiable": bool(np.isfinite(n_2s) and n_2s <= d_days),
+            "gate_rule": "判据退化 → undetermined_threshold_degenerate；非全量 → "
+                         "undetermined_partial_window；两半水平 z≥2 → "
+                         "undetermined_regime_split；三者都与 breakeven_not_reachable 区分",
         },
+        "stability": stab,
+        "stability_between_blocks": bct,
+        "caliber_crosscheck": cc,
+        "published_margin": pubb,
         "noise": {
             "se_delta_k52_bp": round(se52, 2),
             "se_delta_k52_published_bp": se52_pub,
@@ -396,20 +620,49 @@ def main() -> None:
     }
 
     tpl = (
-        "cohort 自己曲线：{nc} 格 / {nd} 天（基准 {nb} 天，{full}）。"
+        "cohort 自己曲线：{nc} 格 / {nd} 天（{dmin}→{dmax}，基准 {nb} 天，{full}；"
+        "最长连续块 {blk} 天）⇒ 判定 {dec}（只看 t 的话是 {draw}）。\n"
+        "**逐格对拍**：bar0 端 {nex} 格与既有产物逐位相同（最大差 {b0d}bp），"
+        "全日端差 {fdd}bp（分钟求和 vs 日线全天 VWAP）⇒ 口径一致，"
+        "所以与已发布均值的 {d239g}bp 缺口是**样本组成**，不是定义。\n"
         "端点复现：Δ(0)={d0}bp、Δ(239)={d239}bp，对既有 {d0p}/{d240p} 差 "
-        "{d0g}/{d239g}bp（容差 {tol}bp，{seam}）。\n"
-        "**判据在 Δ 轴**：打平线 {be}bp，Δ(239) 日等权 {dm}bp（se {se}，t={t}）"
-        "⇒ 余量 {margin}bp。按天重采样整条曲线 {nboot} 次："
-        "P(均值破线)={p}，P(k* 有定义)={pe}，余量 95% 区间 [{cil},{cih}]bp。\n"
-        "**不可辨是结构性的**：日级 sd={sd}bp，要把 {am}bp 的余量判到 2σ 需要 "
-        "{n2s} 天（现有 {nd}，差 {ratio} 倍）⇒ 判定 = {dec}。"
+        "{d0g}/{d239g}bp（容差 {tol}bp；{seam}，因为子样本本来不同）。\n"
+        "**判据已经退化**：全样本 {pfd} 天上 Δ(239) 日等权 {pdm}bp、打平线 {be}bp，"
+        "余量只有 {pmar}bp（{pmarp}% 线，t={pt}）⇒ 2σ 需 {pn2} 天。"
+        "本样本余量 {margin}bp 是**窗口**给的，不是数据量：窗口间水平差 {bgap2}bp"
+        "（z={bz2}）与这个缺口同量级。\n"
+        "**本样本读数**：Δ(239) 日等权 {dm}bp（se {se}，t={t}）；按天重采样整条曲线 "
+        "{nboot} 次：P(均值破线)={p}，P(k* 有定义)={pe}，"
+        "余量 95% 区间 [{cil},{cih}]bp。日级 sd={sd}bp，"
+        "要把 {am}bp 判到 2σ 需 {n2s} 天（现有 {nd}，差 {ratio} 倍）——"
+        "这个天数只在**该窗口的余量**下成立，随余量趋 0 平方发散。\n"
         "c 轴只作描述：c(k) 在 k={kcreq} 就到 {creq}、k={kmax} 是 {cmax}，"
         "所以任何 `c(k*)≥{creq}` 都恒真。"
     )
     fields = {
         "nc": "$coverage.cells",
         "nd": "$coverage.days",
+        "dmin": "$coverage.date_min",
+        "dmax": "$coverage.date_max",
+        "blk": "$coverage.largest_block_days",
+        "dec": "$verdict.decision",
+        "draw": "$verdict.decision_raw_t_only",
+        "nex": "$caliber_crosscheck.cells_overlap",
+        "b0d": "$caliber_crosscheck.bar0.max_abs_diff_bp",
+        "fdd": "$caliber_crosscheck.full_day.mean_diff_bp",
+        "pfd": "$published_margin.full_sample_days",
+        "pdm": "$published_margin.d240_day_eq_bp",
+        "pmar": "$published_margin.margin_bp",
+        "pmarp": "$published_margin.margin_pct_of_line",
+        "pt": "$published_margin.t_vs_line",
+        "pn2": "$published_margin.n_days_for_2sigma",
+        "bgap2": "$stability_between_blocks.gap_bp",
+        "bz2": "$stability_between_blocks.z",
+        "ba": "$stability.first_half.mean_bp",
+        "bb": "$stability.second_half.mean_bp",
+        "bgap": "$stability.gap_bp",
+        "bz": "$stability.z",
+        "stab": "$stability.regime_stable",
         "nb": "$coverage.days_bench",
         "full": "$coverage.is_full_sample",
         "d0": "$reconcile.d0_curve_bp",
@@ -434,7 +687,6 @@ def main() -> None:
         "am": "$breakeven.margin_bp",
         "n2s": "$power.n_days_for_2sigma",
         "ratio": "$power.shortfall_ratio",
-        "dec": "$verdict.decision",
         "kcreq": "$kstar.k_at_c_required",
         "creq": "$kstar.c_required",
         "kmax": "$curve.k_max",

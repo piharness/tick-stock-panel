@@ -6,7 +6,18 @@
   "days": 133,
   "rows": 270568,
   "days_bench": 316,
+  "days_cohort": 316,
   "is_full_sample": false,
+  "date_min": "2025-06-06",
+  "date_max": "2026-05-08",
+  "contiguous_blocks": [
+   83,
+   40,
+   9,
+   1
+  ],
+  "largest_block_days": 83,
+  "window_note": "缺天是整段时间的缺口（抓取端配额中断），不是随机缺样：块长与位置都决定这个水平代表哪段行情",
   "bars_min": 240,
   "bars_max": 240
  },
@@ -842,20 +853,116 @@
   "note": "n_days_for_2sigma=(2·sd_day/|margin|)²，分母是本样本的余量；余量本身随样本变化，抓完后若趋近 0，所需天数按平方发散 —— 不是「再抓够这个天数就能判」"
  },
  "verdict": {
-  "decision": "undetermined",
+  "decision": "undetermined_threshold_degenerate",
+  "decision_raw_t_only": "undetermined",
+  "D0_window_full": false,
   "D1_seam_applicable": false,
   "D1_seam_ok": false,
   "D2_t_abs_ge2": false,
-  "D3_identifiable": false
+  "D3_identifiable": false,
+  "gate_rule": "判据退化 → undetermined_threshold_degenerate；非全量 → undetermined_partial_window；两半水平 z≥2 → undetermined_regime_split；三者都与 breakeven_not_reachable 区分"
+ },
+ "stability": {
+  "applicable": true,
+  "split_date": "2025-09-08",
+  "first_half": {
+   "days": 66,
+   "date_min": "2025-06-06",
+   "date_max": "2025-09-05",
+   "mean_bp": 94.82,
+   "se_bp": 25.17,
+   "margin_bp": -13.1
+  },
+  "second_half": {
+   "days": 67,
+   "date_min": "2025-09-08",
+   "date_max": "2026-05-08",
+   "mean_bp": 81.48,
+   "se_bp": 28.28,
+   "margin_bp": -26.44
+  },
+  "gap_bp": 13.34,
+  "z": 0.35,
+  "regime_stable": true,
+  "why": "两半水平差 z≥2 ⇒ 水平不是常数，133 天不能代表 316 天"
+ },
+ "stability_between_blocks": {
+  "applicable": true,
+  "big_block": {
+   "days": 83,
+   "date_min": "2025-06-06",
+   "date_max": "2025-09-30",
+   "mean_bp": 80.46
+  },
+  "rest": {
+   "days": 50,
+   "mean_bp": 100.78
+  },
+  "gap_bp": 20.32,
+  "se_gap_bp": 40.14,
+  "z": 0.51,
+  "why": "窗口之间的水平差；若它与「本样本对已发布均值的缺口」同量级，则那个缺口就是窗口效应，不是口径"
+ },
+ "caliber_crosscheck": {
+  "applicable": true,
+  "cells_overlap": 1135,
+  "bar0": {
+   "max_abs_diff_bp": 0.0,
+   "n_exact": 1135,
+   "mean_diff_bp": 0.0,
+   "identical": true
+  },
+  "full_day": {
+   "max_abs_diff_bp": 29.26,
+   "mean_diff_bp": -0.52,
+   "median_diff_bp": -0.4,
+   "mine_mean_bp": 88.24,
+   "ref_mean_bp": 87.72,
+   "why": "差在「240 根分钟求和 vs 日线全日 VWAP」，不是复权（adjf 已同乘）"
+  },
+  "verdict": "口径逐格一致 ⇒ 与已发布均值的缺口是样本组成，不是定义"
+ },
+ "published_margin": {
+  "full_sample_days": 316,
+  "d240_day_eq_bp": 108.39,
+  "line_bp": 107.92,
+  "margin_bp": 0.47,
+  "se_day_bp": 12.75,
+  "t_vs_line": 0.04,
+  "margin_pct_of_line": 0.44,
+  "n_days_for_2sigma": 930190,
+  "degenerate": true,
+  "why": "全样本余量只有打平线的 0.4% 量级 ⇒ 符号由 121.49/20.00/6.43 三个上游数的小数位决定，不由样本量决定"
  },
  "noise": {
   "se_delta_k52_bp": 14.0,
   "se_delta_k52_published_bp": 5.74
  },
- "reading_template": "cohort 自己曲线：{nc} 格 / {nd} 天（基准 {nb} 天，{full}）。端点复现：Δ(0)={d0}bp、Δ(239)={d239}bp，对既有 {d0p}/{d240p} 差 {d0g}/{d239g}bp（容差 {tol}bp，{seam}）。\n**判据在 Δ 轴**：打平线 {be}bp，Δ(239) 日等权 {dm}bp（se {se}，t={t}）⇒ 余量 {margin}bp。按天重采样整条曲线 {nboot} 次：P(均值破线)={p}，P(k* 有定义)={pe}，余量 95% 区间 [{cil},{cih}]bp。\n**不可辨是结构性的**：日级 sd={sd}bp，要把 {am}bp 的余量判到 2σ 需要 {n2s} 天（现有 {nd}，差 {ratio} 倍）⇒ 判定 = {dec}。c 轴只作描述：c(k) 在 k={kcreq} 就到 {creq}、k={kmax} 是 {cmax}，所以任何 `c(k*)≥{creq}` 都恒真。",
+ "reading_template": "cohort 自己曲线：{nc} 格 / {nd} 天（{dmin}→{dmax}，基准 {nb} 天，{full}；最长连续块 {blk} 天）⇒ 判定 {dec}（只看 t 的话是 {draw}）。\n**逐格对拍**：bar0 端 {nex} 格与既有产物逐位相同（最大差 {b0d}bp），全日端差 {fdd}bp（分钟求和 vs 日线全天 VWAP）⇒ 口径一致，所以与已发布均值的 {d239g}bp 缺口是**样本组成**，不是定义。\n端点复现：Δ(0)={d0}bp、Δ(239)={d239}bp，对既有 {d0p}/{d240p} 差 {d0g}/{d239g}bp（容差 {tol}bp；{seam}，因为子样本本来不同）。\n**判据已经退化**：全样本 {pfd} 天上 Δ(239) 日等权 {pdm}bp、打平线 {be}bp，余量只有 {pmar}bp（{pmarp}% 线，t={pt}）⇒ 2σ 需 {pn2} 天。本样本余量 {margin}bp 是**窗口**给的，不是数据量：窗口间水平差 {bgap2}bp（z={bz2}）与这个缺口同量级。\n**本样本读数**：Δ(239) 日等权 {dm}bp（se {se}，t={t}）；按天重采样整条曲线 {nboot} 次：P(均值破线)={p}，P(k* 有定义)={pe}，余量 95% 区间 [{cil},{cih}]bp。日级 sd={sd}bp，要把 {am}bp 判到 2σ 需 {n2s} 天（现有 {nd}，差 {ratio} 倍）——这个天数只在**该窗口的余量**下成立，随余量趋 0 平方发散。\nc 轴只作描述：c(k) 在 k={kcreq} 就到 {creq}、k={kmax} 是 {cmax}，所以任何 `c(k*)≥{creq}` 都恒真。",
  "reading_fields": {
   "nc": "$coverage.cells",
   "nd": "$coverage.days",
+  "dmin": "$coverage.date_min",
+  "dmax": "$coverage.date_max",
+  "blk": "$coverage.largest_block_days",
+  "dec": "$verdict.decision",
+  "draw": "$verdict.decision_raw_t_only",
+  "nex": "$caliber_crosscheck.cells_overlap",
+  "b0d": "$caliber_crosscheck.bar0.max_abs_diff_bp",
+  "fdd": "$caliber_crosscheck.full_day.mean_diff_bp",
+  "pfd": "$published_margin.full_sample_days",
+  "pdm": "$published_margin.d240_day_eq_bp",
+  "pmar": "$published_margin.margin_bp",
+  "pmarp": "$published_margin.margin_pct_of_line",
+  "pt": "$published_margin.t_vs_line",
+  "pn2": "$published_margin.n_days_for_2sigma",
+  "bgap2": "$stability_between_blocks.gap_bp",
+  "bz2": "$stability_between_blocks.z",
+  "ba": "$stability.first_half.mean_bp",
+  "bb": "$stability.second_half.mean_bp",
+  "bgap": "$stability.gap_bp",
+  "bz": "$stability.z",
+  "stab": "$stability.regime_stable",
   "nb": "$coverage.days_bench",
   "full": "$coverage.is_full_sample",
   "d0": "$reconcile.d0_curve_bp",
@@ -880,12 +987,11 @@
   "am": "$breakeven.margin_bp",
   "n2s": "$power.n_days_for_2sigma",
   "ratio": "$power.shortfall_ratio",
-  "dec": "$verdict.decision",
   "kcreq": "$kstar.k_at_c_required",
   "creq": "$kstar.c_required",
   "kmax": "$curve.k_max",
   "cmax": "$kstar.c_at_k_max"
  },
  "elapsed_s": 2.4,
- "reading": "cohort 自己曲线：1135 格 / 133 天（基准 316 天，False）。端点复现：Δ(0)=8.69bp、Δ(239)=88.24bp，对既有 14.64/109.29 差 5.95/21.05bp（容差 1.5bp，False）。\n**判据在 Δ 轴**：打平线 107.92bp，Δ(239) 日等权 88.1bp（se 18.88，t=−1.05）⇒ 余量 −19.82bp。按天重采样整条曲线 2000 次：P(均值破线)=0.041，P(k* 有定义)=0.179，余量 95% 区间 [−61.08,3.26]bp。\n**不可辨是结构性的**：日级 sd=217.75bp，要把 −19.82bp 的余量判到 2σ 需要 482 天（现有 133，差 3.6 倍）⇒ 判定 = undetermined。c 轴只作描述：c(k) 在 k=28.7 就到 0.4011、k=239 是 1.0，所以任何 `c(k*)≥0.4011` 都恒真。"
+ "reading": "cohort 自己曲线：1135 格 / 133 天（2025-06-06→2026-05-08，基准 316 天，False；最长连续块 83 天）⇒ 判定 undetermined_threshold_degenerate（只看 t 的话是 undetermined）。\n**逐格对拍**：bar0 端 1135 格与既有产物逐位相同（最大差 0.0bp），全日端差 −0.52bp（分钟求和 vs 日线全天 VWAP）⇒ 口径一致，所以与已发布均值的 21.05bp 缺口是**样本组成**，不是定义。\n端点复现：Δ(0)=8.69bp、Δ(239)=88.24bp，对既有 14.64/109.29 差 5.95/21.05bp（容差 1.5bp；False，因为子样本本来不同）。\n**判据已经退化**：全样本 316 天上 Δ(239) 日等权 108.39bp、打平线 107.92bp，余量只有 0.47bp（0.44% 线，t=0.04）⇒ 2σ 需 930190 天。本样本余量 −19.82bp 是**窗口**给的，不是数据量：窗口间水平差 20.32bp（z=0.51）与这个缺口同量级。\n**本样本读数**：Δ(239) 日等权 88.1bp（se 18.88，t=−1.05）；按天重采样整条曲线 2000 次：P(均值破线)=0.041，P(k* 有定义)=0.179，余量 95% 区间 [−61.08,3.26]bp。日级 sd=217.75bp，要把 −19.82bp 判到 2σ 需 482 天（现有 133，差 3.6 倍）——这个天数只在**该窗口的余量**下成立，随余量趋 0 平方发散。\nc 轴只作描述：c(k) 在 k=28.7 就到 0.4011、k=239 是 1.0，所以任何 `c(k*)≥0.4011` 都恒真。"
 }

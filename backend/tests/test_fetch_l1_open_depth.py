@@ -171,3 +171,29 @@ def test_curve_integrity_detects_nbars_mismatch() -> None:
     """nbars 写 240 但只落 239 根：签名对不上，必须红。"""
     df = _curve_frame(239).with_columns(pl.lit(240).alias("nbars"))
     assert F.curve_integrity(df)["broken"] == 1
+
+
+def test_coverage_verdict_red_when_partial() -> None:
+    """1135/2752 格必须判 incomplete —— 上一版打印 `done:` 并退出 0，41% 被读成完成。
+
+    这条的形状是「故意错的输入」：把真跑出来的覆盖数喂进去，必须红。
+    """
+    v = F.coverage_verdict(got_cells=1135, cohort_cells_n=2752, n_fail=549,
+                           days_got=133, days_cohort=316)
+    assert v["complete"] is False
+    assert v["coverage_pct"] == pytest.approx(41.24, abs=0.01)
+
+
+def test_coverage_verdict_green_only_on_full() -> None:
+    v = F.coverage_verdict(got_cells=2752, cohort_cells_n=2752, n_fail=0,
+                           days_got=316, days_cohort=316)
+    assert v["complete"] is True and v["coverage_pct"] == 100.0
+    # 少一格就不是完整：缺的是格不是随机噪声
+    assert F.coverage_verdict(2751, 2752, 0, 315, 316)["complete"] is False
+
+
+def test_main_returns_exit_code() -> None:
+    """main 必须是「判定器」而不是「打印器」：dry-run 走 0，任何 incomplete 走非 0。"""
+    import inspect
+    assert "int" in str(inspect.signature(F.main).return_annotation)
+    assert F.GIVE_UP_DAYS >= 1

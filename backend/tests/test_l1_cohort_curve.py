@@ -172,3 +172,149 @@ def test_bootstrap_p_moves_with_shift() -> None:
     # 平移后整条线都在打平线之上 ⇒ k*=0（开盘就够），不是「无解」
     assert np.mean(np.isfinite(hi["kstar"])) == 1.0
     assert np.all(hi["kstar"] == 0.0)
+
+
+# ---------------------------------------------------------------- 判定门
+def test_gate_lets_only_clean_full_sample_decide() -> None:
+    """四道门：判据退化 > 非全量 > 分段不稳 > 才轮到 t。
+
+    这条的关键是**顺序**：退化必须压过其他一切，否则「全样本、分段也稳」
+    会把一个立在线上 0.47bp 的量判成 breakeven_reachable。
+    """
+    G = CC.gate
+    assert G("breakeven_reachable", True, True, False) == "breakeven_reachable"
+    assert G("breakeven_reachable", True, True, True) == "undetermined_threshold_degenerate"
+    assert G("breakeven_reachable", False, True, False) == "undetermined_partial_window"
+    assert G("breakeven_reachable", True, False, False) == "undetermined_regime_split"
+    # 反向也一样：窗口不稳时「不可达」也不是结论
+    assert G("breakeven_not_reachable", True, False, False) == "undetermined_regime_split"
+
+
+def test_gate_never_reports_not_reachable_when_threshold_degenerate() -> None:
+    """故意错的输入：判据退化仍想报方向，必须被改写成 undetermined_*。"""
+    for raw in ("breakeven_reachable", "breakeven_not_reachable", "undetermined"):
+        out = CC.gate(raw, True, True, True)
+        assert out not in ("breakeven_reachable", "breakeven_not_reachable")
+        assert out == "undetermined_threshold_degenerate"
+
+
+def test_published_margin_is_degenerate_on_the_real_numbers() -> None:
+    """全样本 Δ(239)=108.39 对线 107.92 ⇒ 余量 0.47bp、t=0.04，2σ 要十万天级。
+
+    这条把「再抓 N 天」这条路钉死：N 是 (2·sd/margin)²，margin→0 时平方发散。
+    """
+    p = CC.published_margin_check(107.92, 108.39, 12.75)
+    assert p["margin_bp"] == pytest.approx(0.47, abs=0.01)
+    assert abs(p["t_vs_line"]) < 0.1
+    assert p["degenerate"] is True
+    assert p["n_days_for_2sigma"] > 100_000
+    # 反向：余量足够大时必须**不**退化，否则这条判据只会恒真
+    q = CC.published_margin_check(107.92, 200.0, 12.75)
+    assert q["degenerate"] is False and q["n_days_for_2sigma"] < 10_000
+
+
+# ---------------------------------------------------------------- 窗口结构
+def test_contiguous_blocks_splits_at_real_gaps() -> None:
+    """缺天是整段缺口：块长必须能把「119 天连成一片」与「散在日」分开。"""
+    assert CC.contiguous_blocks([]) == []
+    assert CC.contiguous_blocks(["2025-01-02"]) == [1]
+    week = ["2025-01-02", "2025-01-03", "2025-01-06", "2025-01-07"]
+    assert CC.contiguous_blocks(week) == [4]          # 跨周末不算断
+    assert CC.contiguous_blocks(["2025-01-02", "2025-01-20"]) == [1, 1]
+
+
+def test_block_contrast_separates_window_from_caliber() -> None:
+    """最大连续块 vs 其余日：这是窗口之间的差，不是窗口内部的差。"""
+    import polars as pl
+
+    big = [f"2025-06-{d:02d}" for d in range(2, 13)]
+    rest = [f"2025-08-{d:02d}" for d in range(2, 9)]
+    rows = [(d, 80.0) for d in big] + [(d, 100.0) for d in rest]
+    per = pl.DataFrame(rows, schema={"date": pl.Utf8, "m": pl.Float64}, orient="row")
+    out = CC.block_contrast(sorted(big + rest), per, 107.92)
+    assert out["applicable"] is True
+    assert out["big_block"]["days"] == len(big)
+    assert out["gap_bp"] == pytest.approx(20.0, abs=0.01)
+    # 少于 5 天的块不参与：否则「一块一天」会造出一个假的窗口差
+    assert CC.block_contrast(sorted(big + rest[:2]), per, 107.92)["applicable"] is False
+
+
+def test_artifact_decision_is_not_a_direction_on_partial_data() -> None:
+    """产物自检：133/316 天 + 判据退化 ⇒ 不得输出方向性结论。"""
+    a = _load()
+    assert a["verdict"]["decision"].startswith("undetermined")
+    assert a["published_margin"]["degenerate"] is True
+    assert a["coverage"]["is_full_sample"] is False
+
+
+# ---------------------------------------------------------------- 判定门
+def test_gate_lets_only_clean_full_sample_decide() -> None:
+    """四道门：判据退化 > 非全量 > 分段不稳 > 才轮到 t。
+
+    这条的关键是**顺序**：退化必须压过其他一切，否则「全样本、分段也稳」
+    会把一个立在线上 0.47bp 的量判成 breakeven_reachable。
+    """
+    G = CC.gate
+    assert G("breakeven_reachable", True, True, False) == "breakeven_reachable"
+    assert G("breakeven_reachable", True, True, True) == "undetermined_threshold_degenerate"
+    assert G("breakeven_reachable", False, True, False) == "undetermined_partial_window"
+    assert G("breakeven_reachable", True, False, False) == "undetermined_regime_split"
+    # 反向也一样：窗口不稳时「不可达」也不是结论
+    assert G("breakeven_not_reachable", True, False, False) == "undetermined_regime_split"
+
+
+def test_gate_never_reports_not_reachable_when_threshold_degenerate() -> None:
+    """故意错的输入：判据退化仍想报方向，必须被改写成 undetermined_*。"""
+    for raw in ("breakeven_reachable", "breakeven_not_reachable", "undetermined"):
+        out = CC.gate(raw, True, True, True)
+        assert out not in ("breakeven_reachable", "breakeven_not_reachable")
+        assert out == "undetermined_threshold_degenerate"
+
+
+def test_published_margin_is_degenerate_on_the_real_numbers() -> None:
+    """全样本 Δ(239)=108.39 对线 107.92 ⇒ 余量 0.47bp、t=0.04，2σ 要十万天级。
+
+    这条把「再抓 N 天」这条路钉死：N 是 (2·sd/margin)²，margin→0 时平方发散。
+    """
+    p = CC.published_margin_check(107.92, 108.39, 12.75)
+    assert p["margin_bp"] == pytest.approx(0.47, abs=0.01)
+    assert abs(p["t_vs_line"]) < 0.1
+    assert p["degenerate"] is True
+    assert p["n_days_for_2sigma"] > 100_000
+    # 反向：余量足够大时必须**不**退化，否则这条判据只会恒真
+    q = CC.published_margin_check(107.92, 200.0, 12.75)
+    assert q["degenerate"] is False and q["n_days_for_2sigma"] < 10_000
+
+
+# ---------------------------------------------------------------- 窗口结构
+def test_contiguous_blocks_splits_at_real_gaps() -> None:
+    """缺天是整段缺口：块长必须能把「119 天连成一片」与「散在日」分开。"""
+    assert CC.contiguous_blocks([]) == []
+    assert CC.contiguous_blocks(["2025-01-02"]) == [1]
+    week = ["2025-01-02", "2025-01-03", "2025-01-06", "2025-01-07"]
+    assert CC.contiguous_blocks(week) == [4]          # 跨周末不算断
+    assert CC.contiguous_blocks(["2025-01-02", "2025-01-20"]) == [1, 1]
+
+
+def test_block_contrast_separates_window_from_caliber() -> None:
+    """最大连续块 vs 其余日：这是窗口之间的差，不是窗口内部的差。"""
+    import polars as pl
+
+    big = [f"2025-06-{d:02d}" for d in range(2, 13)]
+    rest = [f"2025-08-{d:02d}" for d in range(2, 9)]
+    rows = [(d, 80.0) for d in big] + [(d, 100.0) for d in rest]
+    per = pl.DataFrame(rows, schema={"date": pl.Utf8, "m": pl.Float64}, orient="row")
+    out = CC.block_contrast(sorted(big + rest), per, 107.92)
+    assert out["applicable"] is True
+    assert out["big_block"]["days"] == len(big)
+    assert out["gap_bp"] == pytest.approx(20.0, abs=0.01)
+    # 少于 5 天的块不参与：否则「一块一天」会造出一个假的窗口差
+    assert CC.block_contrast(sorted(big + rest[:2]), per, 107.92)["applicable"] is False
+
+
+def test_artifact_decision_is_not_a_direction_on_partial_data() -> None:
+    """产物自检：133/316 天 + 判据退化 ⇒ 不得输出方向性结论。"""
+    a = _load()
+    assert a["verdict"]["decision"].startswith("undetermined")
+    assert a["published_margin"]["degenerate"] is True
+    assert a["coverage"]["is_full_sample"] is False

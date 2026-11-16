@@ -64,6 +64,7 @@ CURVE_COLS = ["date", "symbol", "k", "open", "high", "low", "close",
               "amount", "volume", "nbars"]
 CURVE_FULL_BARS = 240    # 全日 240 根
 CURVE_MIN_BARS = 200     # 低于此视为不完整：下轮重抓，不当已完成
+GIVE_UP_DAYS = 5         # 连续这么多天颗粒无收且遇 Auth ⇒ 配额断了，停手（别空转 6h）
 
 
 def cohort_cells() -> pl.DataFrame:
@@ -217,7 +218,27 @@ def curve_integrity(curves: pl.DataFrame) -> dict:
     }
 
 
-def main() -> None:
+def coverage_verdict(got_cells: int, cohort_cells_n: int, n_fail: int,
+                     days_got: int, days_cohort: int) -> dict:
+    """抓完的成色判定。上一版无论抓成什么样都打印 `done:` 并退出 0，
+    于是 1,135/2,752 格（41%）被读成「完成」——这是「绿但无感知」的第 5 次。
+
+    退出码：0 完整 / 2 不完整 / 3 配额中止。**只要有一个 cohort 格没抓到就不是 0**，
+    因为下游（`_diag_l1_cohort_curve`）会把缺天当成随机缺样，而实测缺的是整段时间。
+    """
+    pct = (got_cells / cohort_cells_n * 100.0) if cohort_cells_n else 0.0
+    return {
+        "cells_got": int(got_cells),
+        "cells_cohort": int(cohort_cells_n),
+        "coverage_pct": round(pct, 2),
+        "days_got": int(days_got),
+        "days_cohort": int(days_cohort),
+        "fails": int(n_fail),
+        "complete": bool(got_cells >= cohort_cells_n),
+    }
+
+
+def main() -> int:
     ap_ = argparse.ArgumentParser()
     ap_.add_argument("--mode", choices=("bar0", "curves"), default="bar0")
     ap_.add_argument("--limit", type=int, default=0, help="最多拉多少个事件日")
@@ -256,11 +277,11 @@ def main() -> None:
               f"{pending.height} cells over {len(dates)} days, "
               f"per-day median {per_day['n'].median() if per_day.height else 0} "
               f"max {max(ns)}")
-        return
+        return 0
 
     if not pending.height:
         print(f"nothing to fetch in {args.mode} mode")
-        return
+        return 0
 
     extract = curves_from if curves_mode else bar0_from
     prov = provider()
@@ -268,6 +289,7 @@ def main() -> None:
     t0 = time.time()
     failed: list[str] = []
     got = 0
+    state = {"auth": False, "dead": 0}
 
     def pull(chunk: list[str], d: datetime) -> pl.DataFrame:
         """单次请求；额度/频控（AuthError）退避重试，短返回退到 5 只一批再试。"""
@@ -282,6 +304,10 @@ def main() -> None:
                 return seg if seg.height else pl.DataFrame()
             except Exception as e:  # noqa: BLE001
                 name = type(e).__name__
+                if "Auth" in name:
+                    # Auth 不是「这一只不行」，是整条线不可用（配额/Key）。
+                    # 记下来，供循环层判断「是不是该停」。
+                    state["auth"] = True
                 if "Auth" in name and attempt < 2:
                     print(f"  throttle {d.date()}, sleep 60s", flush=True)
                     time.sleep(60)
@@ -308,45 +334,77 @@ def main() -> None:
 
     subset = ["date", "symbol", "k"] if curves_mode else ["date", "symbol"]
     flush = write_curves if curves_mode else write_cache
+    aborted = False
 
     for i, day in enumerate(dates, 1):
         syms = sorted(pending.filter(pl.col("date") == day)["symbol"].to_list())
         d = datetime.fromisoformat(day)
+        got_before = got
         for k in range(0, len(syms), BATCH):
             seg = pull(syms[k: k + BATCH], d)
             if seg.height:
                 frames.append(seg)
                 got += seg.select("date", "symbol").unique().height
             time.sleep(SLEEP)
+        # 连续空白天 = 配额线的样子。上一版在这里继续把剩下 183 天各试 3 次、
+        # 每次退避 60s ⇒ 6 小时全在等待里，然后打印 done 并退出 0。
+        state["dead"] = state["dead"] + 1 if got == got_before else 0
         if i % 10 == 0 or i == len(dates):
             el = time.time() - t0
             print(f"  [{i}/{len(dates)}] cells {got} elapsed {el:.0f}s "
-                  f"eta {el / i * (len(dates) - i):.0f}s fails {len(failed)}", flush=True)
+                  f"eta {el / i * (len(dates) - i):.0f}s fails {len(failed)} "
+                  f"dead {state['dead']}", flush=True)
         if i % 25 == 0 and frames:
             cache = merge(cache, frames, subset)
             flush(cache)
             frames = []
+        if state["dead"] >= GIVE_UP_DAYS and state["auth"]:
+            aborted = True
+            print(f"  ABORT after {state['dead']} consecutive empty days with "
+                  f"auth error: 配额/Key 不可用，剩下的天再试也是空转。"
+                  f"已有缓存保留，配额恢复后重跑本命令可续。", flush=True)
+            break
 
     if frames:
         cache = merge(cache, frames, subset)
         flush(cache)
     elif not cache.height:
         print("no cells fetched")
-        return
+        return 2
 
     if curves_mode:
         integ = curve_integrity(cache)
+        have_n = len(complete_cells(cache))
         print(f"done: curves {cache.height} rows, {integ['cells']} cells "
-              f"({len(complete_cells(cache))} complete), full-240 {integ['full']}, "
+              f"({have_n} complete), full-240 {integ['full']}, "
               f"broken-k {integ['broken']}, min rows {integ['min_bars']}, "
               f"fails {len(failed)}")
     else:
-        cov = cache.height / cells.height if cells.height else 0.0
-        print(f"done: cache {cache.height} cells ({cov * 100:.1f}% of cohort), "
-              f"{cache['date'].n_unique()} days, fails {len(failed)}")
+        have_n = cache.height
+        print(f"done: cache {cache.height} cells "
+              f"({cache['date'].n_unique()} days), fails {len(failed)}")
+
+    verdict = coverage_verdict(
+        got_cells=have_n,
+        cohort_cells_n=cells.height,
+        n_fail=len(failed),
+        days_got=cache["date"].n_unique() if cache.height else 0,
+        days_cohort=cells["date"].n_unique(),
+    )
     for f in failed[:5]:
         print(f"  FAIL {f}")
 
+    # 覆盖不足必须是非零退出：下游会把缺天当作随机缺样，而实测缺的是**整段时间**
+    if not verdict["complete"]:
+        print(f"INCOMPLETE {verdict['cells_got']}/{verdict['cells_cohort']} cells "
+              f"= {verdict['coverage_pct']}%; {verdict['days_got']}/"
+              f"{verdict['days_cohort']} days"
+              + ("; aborted on quota" if aborted else ""), flush=True)
+        return 3 if aborted else 2
+    print(f"COMPLETE {verdict['cells_got']}/{verdict['cells_cohort']} cells, "
+          f"{verdict['days_got']} days")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

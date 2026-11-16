@@ -1,0 +1,323 @@
+{
+ "_meta": {
+  "script": "scripts/backfill_l1_cards.py",
+  "generated_at": "2026-11-13T12:56:11+08:00",
+  "applied": true,
+  "data_dir": "D:\\DSH\\tick-stock-panel\\data",
+  "isolated": false,
+  "linked_dirs": [],
+  "missing_dirs": [],
+  "as_of_list": [
+   "2026-10-29",
+   "2026-10-30",
+   "2026-11-02",
+   "2026-11-03",
+   "2026-11-04",
+   "2026-11-05",
+   "2026-11-06",
+   "2026-11-09",
+   "2026-11-10",
+   "2026-11-11"
+  ],
+  "horizon_sessions": 0,
+  "fill_mode": "open_only",
+  "top_n": 20,
+  "ledger_dir": "D:\\DSH\\tick-stock-panel\\data\\user_data\\decision",
+  "cards_before": 0
+ },
+ "plan": [
+  {
+   "as_of": "2026-10-29",
+   "settle_before": {
+    "cards": 0,
+    "written": 0,
+    "pending": 0
+   },
+   "entry_date": "2026-10-30",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 0,
+   "allow_prior": true,
+   "status": "created",
+   "card_id": "dc-2026-10-29-2f4ebb8341",
+   "gate": "GO",
+   "pwin_source": "prior",
+   "pwin_n": 0,
+   "pwin_prior_weight": 1.0,
+   "reason": null
+  },
+  {
+   "as_of": "2026-10-30",
+   "settle_before": {
+    "cards": 1,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-02",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 0,
+   "allow_prior": true,
+   "status": "created",
+   "card_id": "dc-2026-10-30-3fbe70d9e4",
+   "gate": "GO",
+   "pwin_source": "prior",
+   "pwin_n": 0,
+   "pwin_prior_weight": 1.0,
+   "reason": null
+  },
+  {
+   "as_of": "2026-11-02",
+   "settle_before": {
+    "cards": 2,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-03",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 15,
+   "allow_prior": false,
+   "status": "created",
+   "card_id": "dc-2026-11-02-afb2fb5b1a",
+   "gate": "GO",
+   "pwin_source": "ledger",
+   "pwin_n": 15,
+   "pwin_prior_weight": 0.571429,
+   "reason": null
+  },
+  {
+   "as_of": "2026-11-03",
+   "settle_before": {
+    "cards": 3,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-04",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 27,
+   "allow_prior": false,
+   "status": "created",
+   "card_id": "dc-2026-11-03-e0e04049b2",
+   "gate": "GO",
+   "pwin_source": "ledger",
+   "pwin_n": 27,
+   "pwin_prior_weight": 0.425532,
+   "reason": null
+  },
+  {
+   "as_of": "2026-11-04",
+   "settle_before": {
+    "cards": 4,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-05",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 36,
+   "allow_prior": false,
+   "status": "created",
+   "card_id": "dc-2026-11-04-822cdba40c",
+   "gate": "GO",
+   "pwin_source": "ledger",
+   "pwin_n": 36,
+   "pwin_prior_weight": 0.357143,
+   "reason": null
+  },
+  {
+   "as_of": "2026-11-05",
+   "settle_before": {
+    "cards": 5,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-06",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 44,
+   "allow_prior": false,
+   "status": "created",
+   "card_id": "dc-2026-11-05-2bc14034b9",
+   "gate": "GO",
+   "pwin_source": "ledger",
+   "pwin_n": 44,
+   "pwin_prior_weight": 0.3125,
+   "reason": null
+  },
+  {
+   "as_of": "2026-11-06",
+   "settle_before": {
+    "cards": 6,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-09",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 55,
+   "allow_prior": false,
+   "status": "created",
+   "card_id": "dc-2026-11-06-2ea031e7fa",
+   "gate": "GO",
+   "pwin_source": "ledger",
+   "pwin_n": 55,
+   "pwin_prior_weight": 0.266667,
+   "reason": null
+  },
+  {
+   "as_of": "2026-11-09",
+   "settle_before": {
+    "cards": 7,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-10",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 69,
+   "allow_prior": false,
+   "status": "created",
+   "card_id": "dc-2026-11-09-aa7563ca3c",
+   "gate": "GO",
+   "pwin_source": "ledger",
+   "pwin_n": 69,
+   "pwin_prior_weight": 0.224719,
+   "reason": null
+  },
+  {
+   "as_of": "2026-11-10",
+   "settle_before": {
+    "cards": 8,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-11",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 77,
+   "allow_prior": false,
+   "status": "created",
+   "card_id": "dc-2026-11-10-b19aed6e36",
+   "gate": "GO",
+   "pwin_source": "ledger",
+   "pwin_n": 77,
+   "pwin_prior_weight": 0.206186,
+   "reason": null
+  },
+  {
+   "as_of": "2026-11-11",
+   "settle_before": {
+    "cards": 9,
+    "written": 20,
+    "pending": 0
+   },
+   "entry_date": "2026-11-12",
+   "n_candidates": 20,
+   "entry_state": "closed",
+   "visible_n": 81,
+   "allow_prior": false,
+   "status": "created",
+   "card_id": "dc-2026-11-11-82c5871388",
+   "gate": "GO",
+   "pwin_source": "ledger",
+   "pwin_n": 81,
+   "pwin_prior_weight": 0.19802,
+   "reason": null
+  }
+ ],
+ "summary": {
+  "cards_after": 10,
+  "settlement_rows": 200,
+  "n_prior_cards": 2,
+  "n_ledger_cards": 8,
+  "n_created": 10,
+  "n_exists": 0,
+  "final_settle": {
+   "cards": 10,
+   "considered": 20,
+   "written": 20,
+   "pending": 0,
+   "pending_reasons": {
+    "not_due": 0,
+    "entry_missing": 0,
+    "entry_not_closed": 0,
+    "exit_missing": 0,
+    "window_uncovered": 0
+   },
+   "not_filled": 11,
+   "median_covered": 9,
+   "return_basis": {
+    "EVENT": 9,
+    "ADJUSTED": 0,
+    "RAW": 0
+   },
+   "event_coverage": {
+    "ex_table_first": "2025-05-07",
+    "ex_table_last": "2026-11-12",
+    "ex_rows": 9257,
+    "future_dated_rows": 0,
+    "gap_sessions": 22,
+    "gap_runs": [
+     [
+      "2026-01-06",
+      "2026-01-06"
+     ],
+     [
+      "2026-02-02",
+      "2026-02-02"
+     ],
+     [
+      "2026-02-24",
+      "2026-02-26"
+     ],
+     [
+      "2026-03-02",
+      "2026-03-04"
+     ],
+     [
+      "2026-03-09",
+      "2026-03-09"
+     ],
+     [
+      "2026-03-12",
+      "2026-03-13"
+     ],
+     [
+      "2026-03-18",
+      "2026-03-18"
+     ],
+     [
+      "2026-03-20",
+      "2026-03-26"
+     ],
+     [
+      "2026-03-30",
+      "2026-03-30"
+     ],
+     [
+      "2026-04-02",
+      "2026-04-02"
+     ],
+     [
+      "2026-04-09",
+      "2026-04-09"
+     ],
+     [
+      "2026-04-14",
+      "2026-04-14"
+     ],
+     [
+      "2026-11-11",
+      "2026-11-11"
+     ]
+    ],
+    "gap_max_run": 5,
+    "calendar_first": "2025-05-07",
+    "calendar_last": "2026-11-13",
+    "endpoints_span_calendar": false
+   }
+  }
+ }
+}
