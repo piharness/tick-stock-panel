@@ -25,34 +25,25 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import re
 from datetime import date as date_cls
 from pathlib import Path
 
 import polars as pl
 
 from app.market_time import cn_today
+from app.services.trading_days import kline_trading_days
+from app.tickflow.partitions import locate_partition_dir, parse_partition_range
 
 logger = logging.getLogger(__name__)
 
-_DATE_DIR_RE = re.compile(r"^date=(\d{4}-\d{2}-\d{2})$")
-
 
 def _local_trading_days(data_dir: Path) -> list[date_cls]:
-    """本地日K分区日期 = 已知交易日集合 (升序)。扫描失败返回空。"""
-    root = data_dir / "kline_daily"
-    out: list[date_cls] = []
-    try:
-        for d in root.iterdir():
-            m = _DATE_DIR_RE.match(d.name)
-            if d.is_dir() and m:
-                try:
-                    out.append(date_cls.fromisoformat(m.group(1)))
-                except ValueError:
-                    continue
-    except OSError:
-        return []
-    return sorted(out)
+    """本地日K覆盖的交易日 (升序)。委托 trading_days —— 唯一取数点。
+
+    与 dragon_tiger 同源: 两处曾各自实现目录名正则, 月分区迁移后同时失效,
+    榜单日期永久停在 2026-10-30。
+    """
+    return kline_trading_days(data_dir)
 
 
 def resolve_trade_date(data_dir: Path, target: date_cls | None) -> date_cls | None:
@@ -109,17 +100,36 @@ def _raw_items(data: dict) -> list[dict]:
     return [r for r in items if isinstance(r, dict)] if isinstance(items, list) else []
 
 
+def _read_day_frame(data_dir: Path, d: date_cls, columns: list[str]) -> pl.DataFrame | None:
+    """某交易日的日 K 行 (双布局)。
+
+    月分区 (date=2026-11) 里一个月的数据在同一个目录, 必须按 date 列过滤;
+    日分区只有一天, 不加过滤 (旧 fixture 也不带 date 列)。
+    直接拼 `date={d}` 目录的写法在迁移后静默返回空 → day0_oc/day0_pct/d1
+    三项全 None, 页面把「算不出来」显示成「待次日数据」。
+    """
+    part = locate_partition_dir(data_dir / "kline_daily", "kline_daily", d)
+    files = sorted(part.glob("*.parquet"))
+    if not files:
+        return None
+    rng = parse_partition_range(part.name)
+    monthly = rng is not None and rng[0] != rng[1]
+    cols = columns + (["date"] if monthly else [])
+    try:
+        df = pl.concat([pl.read_parquet(f, columns=cols) for f in files])
+    except (OSError, pl.exceptions.PolarsError):
+        return None
+    if monthly:
+        df = df.filter(pl.col("date").cast(pl.Date, strict=False) == pl.lit(d))
+    return df
+
+
 def _read_kline_closes(data_dir: Path, d: date_cls) -> dict[str, float]:
     """某交易日全市场 {symbol: close}; 无分区/读失败返回空。"""
-    root = data_dir / "kline_daily" / f"date={d.isoformat()}"
-    try:
-        files = sorted(root.glob("*.parquet"))
-        if not files:
-            return {}
-        df = pl.concat([pl.read_parquet(f, columns=["symbol", "close"]) for f in files])
-        return dict(zip(df["symbol"].to_list(), df["close"].to_list()))
-    except (OSError, pl.exceptions.PolarsError):
+    df = _read_day_frame(data_dir, d, ["symbol", "close"])
+    if df is None:
         return {}
+    return dict(zip(df["symbol"].to_list(), df["close"].to_list()))
 
 
 def _enrich(data_dir: Path, trade_date: date_cls, items: list[dict]) -> list[dict]:
@@ -127,15 +137,10 @@ def _enrich(data_dir: Path, trade_date: date_cls, items: list[dict]) -> list[dic
 
     用相邻 kline_daily 分区现算, 不落缓存 — 次日分区晚到时先给 None, 到了自然补上。
     """
-    root = data_dir / "kline_daily" / f"date={trade_date.isoformat()}"
     day0: dict[str, tuple[float, float]] = {}  # symbol -> (open, close)
-    try:
-        files = sorted(root.glob("*.parquet"))
-        if files:
-            df = pl.concat([pl.read_parquet(f, columns=["symbol", "open", "close"]) for f in files])
-            day0 = dict(zip(df["symbol"].to_list(), zip(df["open"].to_list(), df["close"].to_list())))
-    except (OSError, pl.exceptions.PolarsError):
-        day0 = {}
+    df = _read_day_frame(data_dir, trade_date, ["symbol", "open", "close"])
+    if df is not None:
+        day0 = dict(zip(df["symbol"].to_list(), zip(df["open"].to_list(), df["close"].to_list())))
 
     prev = _prev_trading_day(data_dir, trade_date)
     prev_close = _read_kline_closes(data_dir, prev) if prev else {}

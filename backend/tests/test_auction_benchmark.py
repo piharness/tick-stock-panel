@@ -76,6 +76,46 @@ def test_resolve_rolls_back_non_trading_day(data_dir):
     assert ab.resolve_trade_date(data_dir, date(2026, 8, 27)) == date(2026, 8, 27)
 
 
+def test_resolve_sees_monthly_partition(tmp_path: Path):
+    """与 dragon_tiger 同一回归: 月分区必须参与交易日解析。
+
+    两个消费者各写过一份目录名正则, 月分区迁移后同时失效 —— 这条测试锁住
+    「榜单日期跟随真实交易日」而不是「跟随最后一次日分区迁移」。
+    """
+    (tmp_path / "kline_daily" / "date=2026-10-30").mkdir(parents=True)
+    part = tmp_path / "kline_daily" / "date=2026-11"
+    part.mkdir(parents=True)
+    pl.DataFrame({
+        "date": [date(2026, 11, 2), date(2026, 11, 3), date(2026, 11, 11)],
+        "symbol": ["600519.SH"] * 3,
+    }).write_parquet(part / "part-0.parquet")
+
+    assert ab.resolve_trade_date(tmp_path, date(2026, 11, 13)) == date(2026, 11, 11)
+    assert ab.resolve_trade_date(tmp_path, date(2026, 11, 3)) == date(2026, 11, 3)
+
+
+def test_enrich_reads_monthly_partition(tmp_path: Path):
+    """月分区必须只取当天行 —— 否则 day0_oc 会串到别的日期。
+
+    回归: _enrich 直接拼 `kline_daily/date={d}` 目录, 迁移后该目录不存在,
+    day0_oc / day0_pct / d1_pct 静默全 None, 页面把「算不出来」显示成
+    「待次日数据」。
+    """
+    part = tmp_path / "kline_daily" / "date=2026-11"
+    part.mkdir(parents=True)
+    pl.DataFrame({
+        "date": [date(2026, 11, 10)] * 2 + [date(2026, 11, 11)] * 2,
+        "symbol": ["A", "B", "A", "B"],
+        "open": [10.0, 20.0, 50.0, 60.0],
+        "close": [11.0, 19.0, 55.0, 57.0],
+    }).write_parquet(part / "part-0.parquet")
+
+    row = ab._enrich(tmp_path, date(2026, 11, 11), [{"thscode": "A", "auction_pct": 1.0}])[0]
+    assert row["day0_oc"] == pytest.approx(55.0 / 50.0 - 1.0)      # 当日 open→close
+    assert row["day0_pct"] == pytest.approx(55.0 / 11.0 - 1.0)     # 昨收取自 11-10, 不能串日
+    assert row["d1_pct"] is None                                   # 无 11-12 分区
+
+
 # ---- 状态与缓存 ----
 
 def test_source_unavailable_without_fuyao(data_dir, monkeypatch):

@@ -1,0 +1,108 @@
+{
+  "as_of": "2026-11-11",
+  "role": "负控。冻结 2026-11-11 收盘与据此算出的挂单价；只用于量「帧前收/限价相对它漂了多少」。**它的价值恰恰在于永不更新**：更新它等于关掉 revert 探测。挂单价一律由 app.decision.l1_cohort._limit_price(帧前收) 现算，本文件不进定价。",
+  "source": "data/kline_daily/date=2026-11-11.parquet::close（原始价）+ _limit_price",
+  "n": 20,
+  "rows": [
+    {
+      "symbol": "000530.SZ",
+      "prev_close": 11.28,
+      "limit": 11.16
+    },
+    {
+      "symbol": "000678.SZ",
+      "prev_close": 21.19,
+      "limit": 20.97
+    },
+    {
+      "symbol": "001219.SZ",
+      "prev_close": 22.61,
+      "limit": 22.38
+    },
+    {
+      "symbol": "002086.SZ",
+      "prev_close": 4.69,
+      "limit": 4.64
+    },
+    {
+      "symbol": "002708.SZ",
+      "prev_close": 26.59,
+      "limit": 26.32
+    },
+    {
+      "symbol": "002724.SZ",
+      "prev_close": 13.05,
+      "limit": 12.91
+    },
+    {
+      "symbol": "300949.SZ",
+      "prev_close": 50.54,
+      "limit": 50.03
+    },
+    {
+      "symbol": "301313.SZ",
+      "prev_close": 79.97,
+      "limit": 79.17
+    },
+    {
+      "symbol": "301413.SZ",
+      "prev_close": 80.2,
+      "limit": 79.39
+    },
+    {
+      "symbol": "301502.SZ",
+      "prev_close": 75.84,
+      "limit": 75.08
+    },
+    {
+      "symbol": "600261.SH",
+      "prev_close": 6.25,
+      "limit": 6.18
+    },
+    {
+      "symbol": "600327.SH",
+      "prev_close": 6.53,
+      "limit": 6.46
+    },
+    {
+      "symbol": "600715.SH",
+      "prev_close": 3.14,
+      "limit": 3.1
+    },
+    {
+      "symbol": "603278.SH",
+      "prev_close": 15.88,
+      "limit": 15.72
+    },
+    {
+      "symbol": "605488.SH",
+      "prev_close": 63.03,
+      "limit": 62.39
+    },
+    {
+      "symbol": "688286.SH",
+      "prev_close": 72.72,
+      "limit": 71.99
+    },
+    {
+      "symbol": "688386.SH",
+      "prev_close": 64.93,
+      "limit": 64.28
+    },
+    {
+      "symbol": "688585.SH",
+      "prev_close": 240.31,
+      "limit": 237.9
+    },
+    {
+      "symbol": "688787.SH",
+      "prev_close": 145.59,
+      "limit": 144.13
+    },
+    {
+      "symbol": "688836.SH",
+      "prev_close": 765.0,
+      "limit": 757.35
+    }
+  ]
+}
