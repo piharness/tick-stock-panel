@@ -349,8 +349,15 @@ def _endpoint_mocks(monkeypatch, local_df: pl.DataFrame, sync_ret: pl.DataFrame 
 
     monkeypatch.setattr(kline_api.kline_sync, "sync_minute_batch", fake_sync)
     writes: list[pl.DataFrame] = []
-    monkeypatch.setattr(kline_api.kline_sync, "_write_minute_partition",
-                        lambda df, d: writes.append(df))
+
+    def _spy_write(df, d, **_kw):
+        # origin 决定「谁写的」—— 落盘入口与标签的映射必须有一条用例绑住,
+        # 否则这个字段就只是日志里的一句装饰 (变异: 删掉传参, 无人变红)。
+        writes.append(df)
+        if captured:
+            captured[-1].setdefault("origins", []).append(_kw.get("origin"))
+
+    monkeypatch.setattr(kline_api.kline_sync, "_write_minute_partition", _spy_write)
 
     mock_repo = MagicMock()
     mock_repo.get_etf_symbol_set.return_value = set()
@@ -386,6 +393,7 @@ def test_minute_batch_tail_stale_pulls_incremental_and_persists(monkeypatch):
     assert captured[0]["start"] == datetime(2026, 1, 15, 9, 33)   # 从最后一根本身重拉 (动态K覆盖)
     assert captured[0]["asset"] == "stock"
     assert writes and writes[0].height == 2                        # 取到即落盘
+    assert captured[0]["origins"] == ["live"], "实时补拉落盘必须带 origin=live"
     rows = result["data"]["600519.SH"]
     assert len(rows) == 5                                          # 3 本地 + 2 增量
     assert rows[-1]["datetime"] == "2026-01-15T09:35:00"
@@ -596,7 +604,7 @@ def test_sync_and_persist_minute_holds_repository_write_lock(monkeypatch, tmp_pa
 
     write_lock = Lock()
 
-    def assert_locked(df, minute_dir):
+    def assert_locked(df, minute_dir, **_kw):
         assert not write_lock.acquire(blocking=False)
         return df.height
 

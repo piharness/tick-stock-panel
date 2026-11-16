@@ -505,16 +505,22 @@ def get_daily(
     df = repo.get_daily_asset(asset_type, symbol, start, end)
 
     if df.is_empty():
+        # 本地没结果有两种原因: 真的没有这只票, 或者**本地读坏了**。后者以前会
+        # 静默改从上游拉数 —— 用户只看到"慢", 看到的是另一份口径的数据(实测
+        # 2026-11-13: quote_ts dtype 漂移导致 source 从 enriched 变 live、
+        # turnover_rate 直接缺失)。这里把原因取出来, 在响应里标注。
+        # getattr: 测试里的桩 repo 只实现读取方法, 不该因为少一个可选查询方法就红。
+        _take = getattr(repo, "take_scan_error", None)
+        degraded = _take() if callable(_take) else None
         try:
             raw = kline_sync.sync_daily_batch([symbol], count=days + 30)
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"TickFlow fetch failed: {e}") from e
         if raw.is_empty():
-            return _gzip_payload(
-                request,
-                {"symbol": symbol, "name": stock_name, "stock_info": stock_info, "rows": []},
-                pref_key="daily_batch_compress",
-            )
+            payload = {"symbol": symbol, "name": stock_name, "stock_info": stock_info, "rows": []}
+            if degraded:
+                payload["degraded_reason"] = f"本地读取失败, 上游也没有数据 — {degraded}"
+            return _gzip_payload(request, payload, pref_key="daily_batch_compress")
         # 拉除权因子做前复权 (Starter+ 有权限), 否则空 df → compute_enriched 退回未复权
         factors = pl.DataFrame()
         capset = getattr(request.app.state, "capabilities", None)
@@ -529,6 +535,8 @@ def get_daily(
         # 即使 live 模式也尝试追加实时蜡烛
         rows = _maybe_inject_live_candle(request, symbol, rows, asset_type)
         resp = {"symbol": symbol, "name": stock_name, "stock_info": stock_info, "rows": rows, "source": "live"}
+        if degraded:
+            resp["degraded_reason"] = f"本地读取失败, 已改用上游实时拉取 — {degraded}"
         return _gzip_payload(
             request,
             _attach_ext(resp, repo, symbol, ext_columns),
@@ -792,9 +800,19 @@ def get_daily_batch(request: Request, body: dict):
         backlog = still
 
     # 日K批量同为大响应端点 (千只自选 MB 级), 与分时各自独立压缩开关
+    # 静默少行是这条路径最坏的失败形态: 迷你蜡烛图只是"短了一截", 没人报错。
+    # 因此显式列出没拿到数据的标的; 若最后一次本地扫描确实失败, 再带上原因。
+    extra: dict = {}
+    missing = [s for s in symbols if s not in result]
+    if missing:
+        extra["missing_symbols"] = missing
+        _take = getattr(repo, "take_scan_error", None)
+        why = _take() if callable(_take) else None
+        if why:
+            extra["degraded_reason"] = why
     return _gzip_raw(
         request,
-        _batch_frames_json(result, "date", "%Y-%m-%d"),
+        _batch_frames_json(result, "date", "%Y-%m-%d", extra=extra),
         pref_key="daily_batch_compress",
     )
 
@@ -997,7 +1015,7 @@ def get_minute_batch(request: Request, body: dict):
             minute_dir = minute_dirs[asset]
             if isinstance(minute_dir, Path):
                 with repo._write_lock:
-                    kline_sync._write_minute_partition(df_live, minute_dir)
+                    kline_sync._write_minute_partition(df_live, minute_dir, origin="live")
         except Exception as e:  # noqa: BLE001
             logger.warning("minute-batch 补拉落盘失败 (降级为仅返回): %s", e)
         if raw_basis:
@@ -1297,26 +1315,28 @@ def get_minute(
         )
 
     # 本地无数据 (或当日盘中数据落后) → 从当前有效分钟源实时拉取
+    # reason 出参把「拉空」拆成两档: 源确实没有这一天 / 这次没拉到。二者都以
+    # 空帧返回, 但只有后者值得重试; 合成一句「数据源未提供」会让用户去换源。
+    reason: list[str] = []
     live_df = kline_sync.fetch_minute_single(
         symbol, trade_date, asset_type=asset_type, capset=capset,
-        raw_basis=raw_basis,
+        raw_basis=raw_basis, reason_out=reason,
     )
     if raw_basis and not live_df.is_empty():
         live_df = minute_adjust.apply_minute_adjustment(
             live_df, repo.store.data_dir, asset_type,
         )
-    return _gzip_payload(
-        request,
-        {
-            "symbol": symbol, "name": stock_name, "stock_info": stock_info,
-            "date": str(trade_date), "rows": live_df.to_dicts(),
-            "source": "live" if not live_df.is_empty() else "none",
-            "asset_type": asset_type,
-            "price_limit": price_limit,
-            "prev_close": prev_close,
-        },
-        pref_key="minute_batch_compress",
-    )
+    payload = {
+        "symbol": symbol, "name": stock_name, "stock_info": stock_info,
+        "date": str(trade_date), "rows": live_df.to_dicts(),
+        "source": "live" if not live_df.is_empty() else "none",
+        "asset_type": asset_type,
+        "price_limit": price_limit,
+        "prev_close": prev_close,
+    }
+    if live_df.is_empty():
+        payload["reason"] = reason[0] if reason else "no_rows"
+    return _gzip_payload(request, payload, pref_key="minute_batch_compress")
 
 
 @router.post("/sync")
@@ -1367,10 +1387,14 @@ def refresh_views(request: Request):
 async def sync_minute(request: Request):
     """手动触发分钟 K 同步(全市场)。返回 pipeline job_id 可轮询进度。
 
-    body 可选: { "days": int } — 指定拉取天数 (不传则用偏好设置)。
+    body 可选:
+      days: int    — 拉取天数 (不传则用偏好设置)
+      extend: bool — 向前扩展模式 (从最早数据往前补)
+      full: bool   — 强制按 days 回溯拉取, 而不是从「本地最新分钟时间」增量续。
+                     增量起点在收盘后会落在今天 15:00, 窗口只剩收盘那一根:
+                     2026-11-12 实测该接口报「943,705 行」却只落 10,793 行、
+                     中位数 1 根 bar。要补历史必须置 true。
     """
-    # 可选 body: { "days": int, "extend": bool }
-    # days: 拉取天数; extend: 向前扩展模式 (从最早数据往前补)
     body = {}
     try:
         body = await request.json()
@@ -1381,6 +1405,7 @@ async def sync_minute(request: Request):
         request.app.state.capabilities,
         override_days=body.get("days"),
         extend_flag=body.get("extend"),
+        full_flag=bool(body.get("full")),
     )
 
 
@@ -1406,7 +1431,8 @@ async def repair_minute_gaps(request: Request, body: dict):
 
 
 async def trigger_minute_sync(
-    repo, capset, *, override_days=None, extend_flag=None, repair_symbols: list[str] | None = None,
+    repo, capset, *, override_days=None, extend_flag=None,
+    repair_symbols: list[str] | None = None, full_flag: bool = False,
 ) -> dict:
     """复用分钟同步的分块落盘、容量限制和取消机制; 缺口补拉限定标的且强制回溯。"""
     import asyncio
@@ -1481,7 +1507,9 @@ async def trigger_minute_sync(
                     return kline_sync.sync_and_persist_minute(
                         universe, repo, capset, days=days,
                         extend_backward=extend_backward,
-                        force_full_days=repair_symbols is not None,
+                        # full_flag: 从 days 天前回溯, 而不是从本地最新分钟时间
+                        # 续拉 (后者在收盘后只剩一根 bar, 却仍报成功)。
+                        force_full_days=repair_symbols is not None or full_flag,
                         on_chunk_done=_on_chunk,
                     )
                 finally:
@@ -1681,6 +1709,25 @@ async def extend_history(request: Request):
         from app.tickflow.capabilities import Cap
         if not capset.has(Cap.KLINE_DAILY_BATCH):
             raise HTTPException(status_code=403, detail="需要 Pro+ 权限 (batch K-line)")
+
+        # 没有除权因子就不会有前复权 —— 写进去的是原始价，图上每次送转都是一根
+        # 假跳空（实测 2024-08~2025-05：10 只样本 8 只受影响，最大 67%）。
+        # 宁可不补，也不留一份「看着完全正常」的错数据。
+        from app.services.extend_history import check_adj_factor_source
+        allow_unadjusted = bool(body.get("allow_unadjusted", False))
+        if not allow_unadjusted:
+            adj_ok, adj_reason = check_adj_factor_source(capset)
+            if not adj_ok:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "拒绝补历史：当前数据源拿不到除权因子（" + adj_reason + "）。"
+                        "缺因子时补进来的是未复权价，遇到送转/分红会在图上变成假跳空。"
+                        "两条正路：① 配好 Pro key 再补；② 个股分析页的『上游前复权补齐』"
+                        "是只读的，图形正确、不写库。确需写入未复权历史时显式传 "
+                        "allow_unadjusted=true。"
+                    ),
+                )
 
         from app.api.data import invalidate_storage_cache
         from app.services.extend_history import run_extend_history

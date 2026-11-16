@@ -71,7 +71,7 @@ def test_service_write_holds_repo_write_lock(tmp_path, monkeypatch):
 
     seen: dict[str, object] = {}
 
-    def spy_write(frame, minute_dir):
+    def spy_write(frame, minute_dir, **_kw):
         seen["locked"] = lock.locked()
         return frame.height
 
@@ -92,7 +92,7 @@ def test_service_records_minute_basis_state(tmp_path, monkeypatch):
     monkeypatch.setattr(
         kline_sync, "fetch_intraday_universe_increment", lambda: (_round_df(), 1)
     )
-    monkeypatch.setattr(kline_sync, "_write_minute_partition", lambda f, d: f.height)
+    monkeypatch.setattr(kline_sync, "_write_minute_partition", lambda f, d, **_kw: f.height)
 
     warnings: list[str] = []
     from app.services import minute_refresh as mr

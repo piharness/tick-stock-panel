@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import shutil
 import threading
@@ -23,7 +24,7 @@ import polars as pl
 from app.data_providers.base import AssetType, ProviderRequestError
 from app.decision import receipt as sync_receipt
 from app.indicators.pipeline import filter_halt_days
-from app.market_time import CN_TZ, cn_now, cn_today
+from app.market_time import CN_TZ, cn_now, cn_today, minute_grid
 from app.services import minute_adjust, preferences
 from app.tickflow.capabilities import Cap, CapabilitySet
 from app.tickflow.client import get_client
@@ -343,6 +344,22 @@ def iter_daily_frames(
         batch_size=limit.batch, rpm=limit.rpm, on_chunk_done=on_chunk_done, failed_out=failures,
     )
     if failures:
+        # 单轮失败多半是限频/超时（同日 599 只里几只超时很常见）。
+        # 整批作废会让「修补」永远补不完：一个交易日只要有一只超时就不写盘，
+        # 待修补状态因此永远清不掉，所有计算继续被拦——这不是数据坏了，
+        # 是修补路径太脆。缩小批次重试一次，仍失败才抛（fail-closed 不变）。
+        retry = list(failures)
+        retry_failures: list[str] = []
+        again = sync_daily_batch(
+            retry, start_time=start_time, end_time=end_time,
+            # 不再上报进度：第二轮会让进度条回退到 1/N，读者会以为任务重头开始了。
+            batch_size=max(10, limit.batch // 2), rpm=limit.rpm, failed_out=retry_failures,
+        )
+        merged = [f for f in (frame, again) if not f.is_empty()]
+        if merged:
+            frame = pl.concat(merged, how="diagonal_relaxed") if len(merged) > 1 else merged[0]
+        failures = retry_failures
+    if failures:
         raise RuntimeError(f"日K获取失败: {', '.join(failures[:10])}")
     if not frame.is_empty():
         yield frame
@@ -470,6 +487,32 @@ def sync_and_persist_daily_batch(
     return _finalize(df.height)
 
 
+def _collect_legacy_daily_dirs(
+    repo: KlineRepository, staged_files: list[Path],
+) -> list[Path]:
+    """找出 staging 覆盖的日期里, 本地仍以旧「日分区」存在的 parquet 文件。
+
+    kline_daily 已迁月分区 (date=YYYY-MM), 但迁移窗口内旧数据可能还是日分区
+    (date=YYYY-MM-DD)。若 staging 要把某个月写进一个全新的月分区, 而这个月里
+    有几天已经在旧日分区里, 必须把这些日分区一并读出来合并去重 —— 否则同一天
+    同时落在新旧两个分区, glob 读成两份, 回测矩阵 `(date,symbol)` 唯一性崩掉。
+    """
+    base = repo.store.data_dir / "kline_daily"
+    legacy_files: list[Path] = []
+    for staged in staged_files:
+        # 每个 staging 文件是单日数据 (partition_by("date") 之后落盘), 取 date 列
+        try:
+            dates = pl.read_parquet(staged, columns=["date"])["date"].unique().to_list()
+        except Exception:  # noqa: BLE001 - 读不到就当没有旧日分区, 交给后续逻辑
+            continue
+        for dt in dates:
+            ds = dt.isoformat() if hasattr(dt, "isoformat") else str(dt)
+            legacy_dir = base / f"date={ds}"
+            if legacy_dir.is_dir():
+                legacy_files.extend(sorted(legacy_dir.glob("*.parquet")))
+    return legacy_files
+
+
 def _persist_daily_chunks(chunks, repo: KlineRepository) -> int:
     """先把流式 provider 结果写入私有 staging,完整取数后再提交正式分区。"""
     staging_base = repo.store.data_dir / ".daily_sync_staging"
@@ -516,8 +559,25 @@ def _persist_daily_chunks(chunks, repo: KlineRepository) -> int:
             target_dir.mkdir(parents=True, exist_ok=True)
             existing = sorted(target_dir.glob("*.parquet"))
             if not existing:
-                for index, staged in enumerate(files):
-                    replace_with_retry(staged, target_dir / f"part-stream-{index}.parquet")
+                # 目标月分区是全新的。但迁移窗口内, 本地可能仍以旧「日分区」
+                # (date=YYYY-MM-DD) 存着这个月里的某几天 —— 直接搬 staging 文件
+                # 会让同一天同时落在日分区和新月分区, glob 读成两份,
+                # 回测矩阵 `(date,symbol)` 判据崩掉。所以搬之前先扫 staging
+                # 覆盖的日期, 若命中同名日分区, 把日分区一起并进来去重。
+                legacy = _collect_legacy_daily_dirs(repo, files)
+                if not legacy:
+                    for index, staged in enumerate(files):
+                        replace_with_retry(staged, target_dir / f"part-stream-{index}.parquet")
+                    continue
+                base = pl.scan_parquet(legacy).collect(engine="streaming")
+                incoming = pl.scan_parquet(files).collect(engine="streaming")
+                merged = pl.concat([base, incoming], how="diagonal_relaxed").unique(
+                    subset=["symbol", "date"], keep="last"
+                )
+                repo.append_daily(merged)
+                # 旧日分区已并进月分区, 迁移完成后删除日分区目录, 避免双布局残留
+                for legacy_dir in {p.parent for p in legacy}:
+                    shutil.rmtree(legacy_dir, ignore_errors=True)
                 continue
             base = pl.scan_parquet(existing).collect(engine="streaming")
             incoming = pl.scan_parquet(files).collect(engine="streaming")
@@ -1137,10 +1197,151 @@ def _datetime_to_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
 
-def _write_minute_partition(df: pl.DataFrame, minute_dir) -> int:
-    """按 _trade_date 分区落盘分钟 K (读旧→concat→unique→原子写)。返回写入行数。
+_MINUTE_GRID_LIST = list(minute_grid())
+_OHLCV_COLS = ("open", "high", "low", "close", "volume")
+
+
+def _off_grid_duplicate_rows(day_df: pl.DataFrame) -> pl.DataFrame:
+    """**越界时刻上的副本** —— 唯一会直接让量额翻倍的那种脏。返回命中的行（空帧=干净）。
+
+    判据: 某根 bar 的时刻不在规范网格 (`market_time.minute_grid()`, 09:31..11:30 ∪
+    13:01..15:00) 上, 且它的 (symbol, open, high, low, close, volume) 与同 symbol
+    当日某根**在网格上**的 bar 完全相同、volume > 0 ⇒ 是同一根 bar 被第二次写入。
+
+    为什么不用「时刻不在网格上就拒」:
+      * 那会把**口径未定**当成**数据坏了**。开盘第一根若带 09:30 (区间首日标注),
+        拦下去等于每天开盘丢一根、之后 239 根永久缺 15:00 —— 比多一根更贵, 而且
+        是闸门自己造成的。口径这种事由审计的 L 轴报警, 不该由写路径拍板。
+      * 也解释不了 11-12 那 7 只: 它们是「13:00 顶替了 11:30」, 该做的动作是
+        **改标**; 拦掉就再也没有证据知道它们该被改标。
+
+    为什么不用「13:00 并入 11:30」: 2026-11-05 那 40 行与同 symbol 当日 11:30 的
+    volume 逐只相等 (40/40; 11-12 是 32/32), amount 恰好是它的百元取整 ——
+    同一根 bar 的第二次写入, 不是另一笔成交。相加即双计。
+
+    假阳性成本: 规范网格上 6 个交易日 8,025,120 行越界 **0 行**, 所以「越界」这一半
+    在真实数据上游恒为空; 加「与在网格行全等」这一半, 才把 14,018 组日常同价同量
+    的相邻 bar (小票冻结价) 排除在外。
+
+    2026-11-13 补的成因: 那 40/32 行的 amount 恰好是 11:30 的「万元两位小数」重编码
+    (`round(a,-2)`, 差 ≤50 元)。只有 `plugins/tdxquant/provider.py` 走 `Amount×1e4`
+    这条换算 ⇒ 生产者在 tdxquant 的分钟转换里, 不是本仓的第二次落盘。
+    """
+    missing = [c for c in ("symbol", "datetime", *_OHLCV_COLS) if c not in day_df.columns]
+    if missing:
+        # 精简帧 (单测/迁移片段) 不做形状假设; 生产帧由 _normalize_minute 保证 8 列齐全。
+        return day_df.head(0)
+    on_grid = day_df.filter(pl.col("datetime").dt.time().is_in(_MINUTE_GRID_LIST))
+    off = day_df.filter(
+        pl.col("datetime").is_not_null()
+        & ~pl.col("datetime").dt.time().is_in(_MINUTE_GRID_LIST)
+    )
+    if off.is_empty() or on_grid.is_empty():
+        return day_df.head(0)
+    key = ["symbol", *_OHLCV_COLS]
+    return (
+        off.filter(pl.col("volume") > 0)
+        .join(on_grid.select(key).filter(pl.col("volume") > 0).unique(), on=key, how="semi")
+    )
+
+
+def _assert_no_off_grid_duplicate(day_df: pl.DataFrame, trade_date: object) -> None:
+    """**拒绝**越界副本，而不是隔离。只给迁移用（见 `_migrate_symbol_to_date_partition`）。
+
+    落盘路径不再抛错（`_write_minute_partition` 改成逐行隔离），因为一条幽灵行
+    在那里的代价是「整段 × 整批标的」全部不落盘；而迁移是一次性动作，旧目录在
+    抛错后原样保留、修完可重跑，拒绝才是正确策略。
+    """
+    hits = _off_grid_duplicate_rows(day_df)
+    if hits.is_empty():
+        return
+    seen_t = sorted(str(t) for t in hits["datetime"].dt.time().unique().to_list() if t)
+    raise ValueError(
+        f"分钟越界时刻上的副本 (date={trade_date}, {hits.height} 行 / 本次输入 "
+        f"{day_df.height} 行): 时刻 {seen_t[:6]}, 涉及 {hits['symbol'].n_unique()} 只 "
+        f"(例 {hits['symbol'].unique().head(3).to_list()})。这些行与同 symbol 当日"
+        "某根规范网格上的 bar 逐字段相同 (含 volume), 是同一根 bar 被第二次写入 —— "
+        "存下去就是全天量额双计 (2026-11-05 40 只 / 11-12 32 只实证)。"
+        "拒绝落盘: 请修数据源口径, 或先显式改标再重跑:"
+        "`python -m app.services.minute_audit --repair-phantom --apply`"
+        "(先备份到 data/_backup/minute_audit/); 不要在这里按行合并或丢弃。"
+    )
+
+
+#: 隔离区的根目录名（`<data_dir>/_quarantine/<表名>/date=<d>/`）。
+#: **不能**放在 `kline_minute/` 里：仓库到处是 `<表>/**/*.parquet` 的 glob
+#: （审计、decision/bars、DuckDB 视图），隔离文件落进去就是「同一天被读两遍」。
+_QUARANTINE_ROOT = "_quarantine"
+#: 单条隔离记录保留的明细行上限（计数与 symbol 列表不受限）。一整个 480k 行的段
+#: 里若全是幽灵，JSON 会到几百 MB —— 那是把「证据」变成「新的故障源」。
+_QUARANTINE_MAX_ROWS = 2000
+
+
+def _quarantine_off_grid_duplicates(
+    hits: pl.DataFrame, minute_dir, trade_date: object, *, origin: str,
+    provider: str, n_input: int,
+) -> Path:
+    """把不落盘的副本原样存进隔离区，返回记录路径。
+
+    为什么**丢弃**（而不是拒绝整帧）: 拒绝的粒度是「一次调用 / 一个 chunk」，10 万行
+    好数据会为 1 行脏数据陪葬（实测见 `test_one_bad_day_does_not_take_the_next_day`）。
+    丢弃的粒度是那一行 —— 而那一行与网格行逐字段全等，本来就不该存在第二份。
+
+    为什么**留着**（而不是直接扔）: 「13:00 是谁写的」问了一整天没人答上来；带着
+    `origin`（哪个入口: live/postclose/refresh/migrate）、`provider`（哪个源）与原始行，
+    下一次复发就能直接归因。
+
+    `provider` 记的是**写入时选中的分钟源**（`_selected_minute_provider_name()`），
+    不是逐行溯源：同一帧里理论上可以混源，而这里只回答「当时配置的是谁」——
+    2026-11-13 的教训是 13:00 是谁写的要有盘上的答案，不能靠事后 grep 日志。
+    两个 TDX 源（tdxquant / tdx）都走这一张表，所以只记 origin 不够。
+    """
+    mdir = Path(minute_dir)
+    root = mdir.parent / _QUARANTINE_ROOT / mdir.name / f"date={trade_date}"
+    root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    out = root / f"{stamp}-{origin}.json"
+    cols = [c for c in ("symbol", "datetime", *_OHLCV_COLS, "amount") if c in hits.columns]
+    payload = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "reason": "off_grid_duplicate",
+        "origin": origin,
+        "provider": provider,
+        "table": mdir.name,
+        "day": str(trade_date),
+        "rows": hits.height,
+        "n_input": int(n_input),
+        "symbols": sorted(str(s) for s in hits["symbol"].unique().to_list()),
+        "times": sorted(
+            str(t) for t in hits["datetime"].dt.time().unique().to_list() if t
+        ),
+        "rows_truncated": hits.height > _QUARANTINE_MAX_ROWS,
+        "minute": hits.select(cols).head(_QUARANTINE_MAX_ROWS).to_dicts(),
+    }
+    from app.services.fs_utils import atomic_write_text
+
+    atomic_write_text(  # 临时文件 + os.replace: 读侧不会读到半截 JSON
+        out, json.dumps(payload, ensure_ascii=False, indent=1, default=str),
+    )
+    return out
+
+
+def _write_minute_partition(df: pl.DataFrame, minute_dir, *, origin: str = "unknown") -> int:
+    """按 _trade_date 分区落盘分钟 K (读旧→concat→unique→原子写)。返回**实际落盘行数**。
 
     抽自原 sync_and_persist_minute 末尾的循环, 供流式落盘 (每段一次) 与一次性迁移共用。
+
+    返回值的口径是「本次输入里真正落下去的行」(输入 − 隔离), 不是「合并后的分区高度」:
+    分段/分批写同一分区时, 分区高度会被反复计数 (实测 5 天全市场报 789,450,312 行,
+    而实际落盘约 800 万)。需要分区高度的一方请自己读盘, 不要复用这个返回值。
+
+    越界副本的处置: **逐行隔离**, 不再整帧拒绝。原因是拒绝的代价与它的粒度不匹配 ——
+    `on_segment` 一次给的是「20 交易日 × 100 只」的帧, 一条 13:00 幽灵会让整帧连同
+    后续所有 chunk 都不落盘 (2026-11-13 实测: 同一次调用里 day1 有幽灵, day2 干净,
+    day2 也没写)。修法的边界是「别双计」, 不是「别写」。
+
+    origin 只进隔离记录与日志: 四个落盘入口 (live/postclose/refresh/migrate) 除此
+    之外没有任何区分方式, 而复发时第一个问题永远是「这个是谁写的」。
     """
     if df.is_empty():
         return 0
@@ -1149,26 +1350,76 @@ def _write_minute_partition(df: pl.DataFrame, minute_dir) -> int:
     for day_df in df.partition_by("_trade_date"):
         trade_date = day_df["_trade_date"][0]
         out = minute_dir / f"date={trade_date}" / "part.parquet"
-        out.parent.mkdir(parents=True, exist_ok=True)
+        new_rows = day_df.drop("_trade_date")
         if out.exists():
             existing = pl.read_parquet(out)
             if "datetime" in existing.columns:
                 existing = existing.filter(pl.col("datetime").is_not_null())
-            new_rows = day_df.drop("_trade_date")
             # 只对本次触及的 symbol 合并去重, 未触及行原样保留: 单股补齐时避免
             # 为合并几行数据把全市场分区整体 unique 的写放大 (issue #305)。
             touched = new_rows["symbol"].unique().to_list()
             same = existing.filter(pl.col("symbol").is_in(touched))
-            other = existing.filter(~pl.col("symbol").is_in(touched))
-            merged = pl.concat([same, new_rows], how="diagonal_relaxed").unique(
+            tail = existing.filter(~pl.col("symbol").is_in(touched))
+            pool = pl.concat([same, new_rows], how="diagonal_relaxed").unique(
                 subset=["symbol", "datetime"], keep="last",
             )
-            day_df = pl.concat([other, merged], how="diagonal_relaxed")
         else:
-            day_df = day_df.drop("_trade_date")
+            pool, tail = new_rows, None
+
+        # 判据必须查**合并后**的 pool, 不能只看入帧: 副本和正本可能落在两个批次里
+        # (11-05 那 40 行的 amount 是另一套取整, 说明是两条路径各转换了一次)。
+        #
+        # 但归属决定动作 —— 这一次的输入带来的副本可以隔离（丢掉的是刚拿到的那一份）;
+        # 盘上本来就有的只报不删（写路径无从判断该删哪一根: 11-12 那 7 只是 13:00
+        # 顶替 11:30, 该改标）。旧实现一律拒绝, 后果是「只要分区里有历史脏行, 这一天
+        # 之后每次同步都撞同一堵墙」—— 永久锁死, 且拒绝的是一整帧好数据。
+        kept = new_rows
+        bad = _off_grid_duplicate_rows(pool)
+        if not bad.is_empty():
+            keys = new_rows.select("symbol", "datetime").unique()
+            from_batch = bad
+            on_disk = bad.join(keys, on=["symbol", "datetime"], how="anti")
+            if not from_batch.is_empty():
+                provider = _selected_minute_provider_name()
+                try:
+                    qpath = _quarantine_off_grid_duplicates(
+                        from_batch, minute_dir, trade_date,
+                        origin=origin, provider=provider, n_input=day_df.height,
+                    )
+                except OSError as e:
+                    # 没有记录就不许丢数据: 隔离写不成 ⇒ 这一次拒绝落盘。
+                    raise ValueError(
+                        f"分钟落盘隔离失败 (date={trade_date}, {from_batch.height} 行"
+                        f"越界副本, origin={origin}): {e}; 拒绝落盘以免「丢了又没记录」"
+                    ) from e
+                drop = from_batch.select("symbol", "datetime").unique()
+                pool = pool.join(drop, on=["symbol", "datetime"], how="anti")
+                kept = new_rows.join(drop, on=["symbol", "datetime"], how="anti")
+                logger.warning(
+                    "分钟落盘: 隔离 %d 行越界副本 (date=%s, origin=%s, provider=%s, "
+                    "涉及 %d 只, 例 %s); 本次其余 %d 行照常落盘, 证据 %s",
+                    from_batch.height, trade_date, origin, provider,
+                    from_batch["symbol"].n_unique(),
+                    from_batch["symbol"].unique().head(3).to_list(), kept.height, qpath,
+                )
+            if not on_disk.is_empty():
+                logger.warning(
+                    "分钟落盘: date=%s 分区里已有 %d 行越界副本 (不是本次输入, 未删除); "
+                    "修法: python -m app.services.minute_audit --repair-phantom --apply",
+                    trade_date, on_disk.height,
+                )
+        if tail is not None and kept.is_empty():
+            # 本次一行都没落下, 分区内容不变: 别为 0 行重写一个 1.3M 行的分区
+            continue
+        if tail is None and pool.is_empty():
+            continue  # 整帧都是副本: 不创建空分区
+        day_df = pool if tail is None else pl.concat([tail, pool], how="diagonal_relaxed")
         day_df = day_df.sort("symbol", "datetime")
+        # 目录留到这里才建: 被拒绝的那一天不许留下一个空分区目录
+        # (`minute_cover_days` 数与审计的「无分区」判定都会把它当一天)。
+        out.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_parquet(day_df, out)
-        written += day_df.height
+        written += kept.height
     return written
 
 
@@ -1216,6 +1467,7 @@ def _try_custom_minute(
     asset_type: AssetType,
     freq: str = "1m",
     on_chunk_done: Callable[[int, int, str], None] | None = None,
+    reason_out: list[str] | None = None,
 ) -> tuple[pl.DataFrame | None, bool]:
     """尝试从自定义分钟源拉取。返回 (df, should_fallback_to_tickflow)。
 
@@ -1230,14 +1482,25 @@ def _try_custom_minute(
     (provider.get_minute) 仍在本函数 try 块内, 与 resolver 异常分离
     便于日志区分 ("resolution failed" vs "call failed")。
 
+    reason_out: 可选出参, 失败时追加一个原因码。空 df 有两种完全不同的含义
+    ——「源确实没有这一天的数据」与「这次拉取失败了」—— 二者都以 (空, False)
+    返回时上游只能一律显示「数据源未提供」, 把一次可重试的通道异常说成源的
+    能力缺失, 用户于是去换数据源而不是重试 (2026-11-12 实测: tdx 通道抛
+    TypeError 的那两天, 界面对每一天、每一只都显示这句)。
+
     on_chunk_done 适配: 上层回调是 3 参 (cur, total, seg_label), provider
     实现内部以 2 参 (cur, total) 调用。这里包装一层, provider 调 2 参时补
     默认 seg_label="custom" 转发给上层, 保证进度展示不降级。
     """
+    def _note(code: str) -> None:
+        if reason_out is not None:
+            reason_out.append(code)
+
     provider_name = _selected_minute_provider_name()
     if provider_name.startswith("unavailable:"):
         logger.warning("custom minute provider %s is unavailable; not falling back to TickFlow",
                        provider_name.removeprefix("unavailable:"))
+        _note("provider_unavailable")
         return (pl.DataFrame(), False)
     provider, fallback, err = _resolve_minute_provider(provider_name)
     if fallback:
@@ -1246,10 +1509,12 @@ def _try_custom_minute(
                 "custom minute provider %s unavailable; not falling back to TickFlow: %s",
                 provider_name, err,
             )
+            _note("provider_unavailable")
             return (pl.DataFrame(), False)
         return (None, True)
     if err is not None or provider is None:
         logger.warning("custom minute provider %s has no usable minute dataset: %s", provider_name, err)
+        _note("provider_no_dataset")
         return (pl.DataFrame(), False)
 
     # 包装 on_chunk_done: provider 调 2 参 → 补 seg_label="custom" → 转发上层 3 参
@@ -1271,6 +1536,7 @@ def _try_custom_minute(
             "custom minute provider %s call failed; not falling back to TickFlow: %s",
             provider_name, e,
         )
+        _note("provider_call_failed")
         return (pl.DataFrame(), False)
     try:
         # 时区契约守卫: 插件/自定义源帧同样收口为北京墙钟 (CONTRIBUTING §3.3)
@@ -1280,7 +1546,10 @@ def _try_custom_minute(
             "custom minute provider %s datetime 契约校验失败; not falling back to TickFlow: %s",
             provider_name, e,
         )
+        _note("provider_bad_datetime")
         return (pl.DataFrame(), False)
+    if df.is_empty():
+        _note("provider_no_rows")
     return (df, False)
 
 
@@ -1737,11 +2006,15 @@ def fetch_minute_single(
     *,
     capset: CapabilitySet,
     raw_basis: bool = False,
+    reason_out: list[str] | None = None,
 ) -> pl.DataFrame:
     """实时拉取单股单日分钟 K(不写入本地)。
 
     优先使用当前自定义分钟源。只有明确选择 TickFlow 且具备原生权限时才请求 TickFlow；
     已选自定义源缺少能力或请求失败时 fail-closed，不混用来源。
+
+    reason_out: 可选出参, 拉空时说明是哪一档 (见 `_try_custom_minute`)。
+    调用方据此区分「源没有这一天」与「这次没拉到」, 前者重试无用、后者必须重试。
     """
     from datetime import datetime
     # 北京时间窗口必须带时区: naive datetime 会被 .timestamp() 按服务器本地时区解释,
@@ -1752,13 +2025,15 @@ def fetch_minute_single(
     # 按用户当前选择的分钟数据源路由，避免无提示跨源。
     df, fallback = _try_custom_minute(
         [symbol], start_time=start_time, end_time=end_time,
-        asset_type=asset_type, freq="1m",
+        asset_type=asset_type, freq="1m", reason_out=reason_out,
     )
     if not fallback:
         # 见 sync_minute_batch 同分支注释: df 在此必非 None。
         return df if df is not None else pl.DataFrame()
 
     if not capset.has(Cap.KLINE_MINUTE_BY_SYMBOL):
+        if reason_out is not None:
+            reason_out.append("no_minute_capability")
         return pl.DataFrame()
 
     tf = get_client()
@@ -1773,6 +2048,8 @@ def fetch_minute_single(
         )
     except Exception as e:
         logger.warning("fetch_minute_single(%s, %s) failed: %s", symbol, trade_date, e)
+        if reason_out is not None:
+            reason_out.append("provider_call_failed")
         return pl.DataFrame()
 
     return _normalize_minute(_compact_klines_to_df(raw, default_symbol=symbol))
@@ -1894,6 +2171,11 @@ def _migrate_symbol_to_date_partition(repo: KlineRepository) -> None:
         out = minute_dir / f"date={trade_date}" / "part.parquet"
         out.parent.mkdir(parents=True, exist_ok=True)
         day_df = day_df.drop("_trade_date").sort("symbol", "datetime")
+        # 迁移是**唯一**不走 _write_minute_partition 的落盘路径（符号分区→日期分区）。
+        # 它也必须过同一道闸门，理由不只是「规则要一致」：迁移末尾会删旧目录，
+        # 这里是旧目录里那些行**唯一**被搬进新布局的机会 —— 放过去就是把脏行固化，
+        # 抛错则整次迁移停下、旧目录原封不动，修完可重跑。
+        _assert_no_off_grid_duplicate(day_df, trade_date)
         _atomic_write_parquet(day_df, out)
 
     # 删旧目录
@@ -1996,7 +2278,11 @@ def sync_and_persist_minute(
         # 单股自动补齐可能与另一个补齐请求同时写同一日期分区。Windows 不允许
         # 替换仍被另一写入占用的临时文件,因此读-改-写必须复用仓库写锁。
         with repo._write_lock:
-            written_box[0] += _write_minute_partition(seg_df, minute_dir)
+            # 口径由 _write_minute_partition 保证: 返回本次输入行数, 不是分区高度。
+            # 分段/分批写同一分区若按分区高度累加会重复计数 (实测虚高 ~100 倍),
+            # 这个数字会进 job result 与日志。
+            written_box[0] += _write_minute_partition(
+                seg_df, minute_dir, origin="postclose")
 
     segment_days = preferences.get_minute_sync_segment_days()
     sync_minute_batch(

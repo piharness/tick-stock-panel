@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
@@ -89,6 +90,71 @@ def compute_offset(value: int, unit: str) -> timedelta:
         return timedelta(days=value * 365)
     else:
         raise ValueError(f"不支持的单位: {unit}")
+
+
+# 除权因子可用性实测缓存: (时间戳, ok, 原因)。探测要打一次网络，1 小时内复用。
+_ADJ_PROBE_TTL_S = 3600
+_adj_probe_cache: tuple[float, bool, str] | None = None
+
+
+def check_adj_factor_source(capset: CapabilitySet, *, probe_symbol: str = "000001.SZ") -> tuple[bool, str]:
+    """这次「向前扩展历史」能不能拿到除权因子？（实测，不看 capability 声明）
+
+    为什么不能只看 `capset.has(Cap.ADJ_FACTOR)`：本机 `data/capabilities.json` 里
+    `adj_factor` 这个 key 是**在**的（limits 全 null），而探测日志同一份文件里写着
+    `✗ adj_factor(无权限)`，真正调用 `ex_factors` 直接 PermissionError。声明与事实
+    不一致时，只有调用一次能定案。
+
+    为什么必须先问：补历史写入的是 `adjust="none"` 的原始价。缺因子时 enriched 不做
+    前复权，图上每次送转/分红都会变成一根**假跳空** —— 实测 2024-08~2025-05 窗口，
+    10 只样本 8 只受影响（002594 67%、000651 18%、000001 12%…）。写进去的是错数据，
+    而且看起来完全正常。
+
+    返回 (ok, 原因)。自定义因子源直接放行（不走 tickflow 探测）。
+    """
+    from app.services import preferences as _prefs
+
+    provider = _prefs.get_adj_factor_provider()
+
+    global _adj_probe_cache
+    now = time.time()
+    if _adj_probe_cache and now - _adj_probe_cache[0] < _ADJ_PROBE_TTL_S:
+        return _adj_probe_cache[1], _adj_probe_cache[2]
+
+    # 非 tickflow：探的是「配好的那个源到底给不给数」。不能只看 provider 名字
+    # —— 配了但插件没装/没 key 时，整条链会在十分钟后以"0 行因子"结束，
+    # 而那时原始价已经写进库了。
+    if provider != "tickflow":
+        try:
+            from app.data_providers import custom as custom_sources
+
+            probe = custom_sources.get_provider(provider).get_adj_factors(
+                [probe_symbol], start_time=None, end_time=None,
+            )
+            if probe is not None and not probe.is_empty():
+                _adj_probe_cache = (now, True, f"provider:{provider}")
+                return True, f"provider:{provider}"
+            reason = f"{provider} 未返回任何除权事件"
+        except Exception as e:  # noqa: BLE001
+            reason = f"{type(e).__name__}: {e}"
+        logger.warning("自定义除权因子源不可用（%s），补历史将被拒绝: %s", provider, reason)
+        _adj_probe_cache = (now, False, reason)
+        return False, reason
+
+    if not capset.has(Cap.ADJ_FACTOR):
+        _adj_probe_cache = (now, False, "capability-missing")
+        return False, "capability-missing"
+    try:
+        from app.services.kline_sync import get_client
+
+        get_client().klines.ex_factors([probe_symbol])
+        _adj_probe_cache = (now, True, "probe-ok")
+        return True, "probe-ok"
+    except Exception as e:  # noqa: BLE001 - 权限/超时都按"拿不到"处理，宁可不写
+        reason = f"{type(e).__name__}: {e}"
+        logger.warning("除权因子探测失败，补历史将被拒绝: %s", reason)
+        _adj_probe_cache = (now, False, reason)
+        return False, reason
 
 
 def run_extend_history(

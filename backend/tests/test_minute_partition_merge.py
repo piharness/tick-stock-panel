@@ -67,7 +67,10 @@ def test_merge_preserves_untouched_symbols_and_keeps_last_for_touched(tmp_path):
     a = stored.filter(pl.col("symbol") == "000001.SZ")
     assert a["close"].to_list() == [10.0, 10.9, 10.2]
     assert stored.height == 6
-    assert written == 6
+    # 返回值口径 = 本次输入行数 (2), 不是合并后的分区高度 (6)。
+    # 两者必须在这个用例里分开断言: 否则「按分区高度累加」的实现也能过,
+    # 而分批写同一分区就会重复计数 (实测虚高 ~100 倍)。
+    assert written == 2
     assert stored.select(["symbol", "datetime"]).unique().height == stored.height
     # 全局有序不变量
     assert stored.equals(stored.sort("symbol", "datetime"))
@@ -96,7 +99,8 @@ def test_merge_aligns_provider_columns_and_legacy_numeric_types(tmp_path):
         "000001.SZ": [("2026-01-05 09:31:00", 11.0), ("2026-01-05 09:32:00", 12.0)],
     }).with_columns(pl.col("close").cast(pl.Int64)).select("symbol", "close", "datetime")
 
-    assert _write_minute_partition(incoming, minute_dir) == 3
+    # 传入 2 行, 合并后分区 3 行; 返回值取输入口径 (2)
+    assert _write_minute_partition(incoming, minute_dir) == 2
     stored = _read(minute_dir / "date=2026-01-05" / "part.parquet")
     assert stored.filter(pl.col("symbol") == "000001.SZ")["close"].to_list() == [11.0, 12.0]
     assert stored.filter(pl.col("symbol") == "600000.SH")["close"].to_list() == [8.0]

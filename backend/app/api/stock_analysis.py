@@ -4,6 +4,7 @@
 
 端点:
   GET  /levels?symbol=         11 类关键价位(图表 markLine 数据源)
+  GET  /name-history?symbol=   简称轨迹(龙虎榜快照里的历史简称观测)
   POST /analyze                AI 流式四维分析(NDJSON)
   GET  /reports                历史报告列表
   POST /reports                保存一条报告
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+from datetime import date as _date
 from datetime import timedelta
 
 import polars as pl
@@ -22,13 +24,26 @@ from pydantic import BaseModel
 
 from app.indicators.levels import compute_levels, summarize_levels
 from app.market_time import cn_today
-from app.services import stock_reports
+from app.services import stock_history_fill, stock_name_history, stock_reports
 from app.services.ndjson_heartbeat import with_heartbeat
 from app.services.stock_analyzer import analyze_stock_stream
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/stock-analysis", tags=["stock-analysis"])
+
+
+def _as_date(v) -> _date:
+    """polars/str/datetime 三态 → date。图表接口只认一种形状，转换点收在这里。
+
+    注意顺序：`datetime` 也是 `date` 的实例，先判 `.date()` 才不会把
+    00:00:00 带进 ISO 字符串（前端按 slice(0,10) 取日期）。
+    """
+    if hasattr(v, "hour") and callable(getattr(v, "date", None)):
+        return v.date()
+    if isinstance(v, _date):
+        return v
+    return _date.fromisoformat(str(v)[:10])
 
 
 def _to_float_list(series: pl.Series) -> list:
@@ -145,6 +160,152 @@ def get_levels(
         "dates": [str(d) for d in dates],
         "series": series,
     }
+
+
+@router.get("/name-history")
+def get_name_history(request: Request, symbol: str = Query(..., description="标的代码,如 600340.SH")):
+    """简称轨迹 —— 这只票在本地快照里被看到过的每一个名字。
+
+    个股分析页可以画两年以上的日 K，而维表只存**当前**简称。改名这件事
+    （华夏幸福 → *ST华幸）在价格图形上是不可见的，只能靠历史快照还原：
+    本地唯一带历史简称的表是龙虎榜 JSON 快照。
+
+    返回的是观测，不是公告：`changes[].after/before` 是「前一个简称最后
+    见到 / 后一个简称首次见到」，改名发生在这段区间内，具体哪一天本地无证据。
+    """
+    if not symbol:
+        raise HTTPException(400, "symbol 不能为空")
+
+    repo = request.app.state.repo
+    current = None
+    try:
+        inst = repo.get_instruments_asset(repo.resolve_asset_type(symbol))
+        if not inst.is_empty() and "name" in inst.columns:
+            hit = inst.filter(pl.col("symbol") == symbol)
+            if not hit.is_empty():
+                current = hit["name"][0]
+    except Exception as e:  # noqa: BLE001 - 维表读失败不该让简称轨迹整块不可用
+        logger.debug("name-history: 维表当前简称读取失败 %s: %s", symbol, e)
+
+    return stock_name_history.name_history(repo.store.data_dir, symbol, current_name=current)
+
+
+@router.get("/history")
+def get_history(
+    request: Request,
+    symbol: str = Query(..., description="标的代码,如 600340.SH"),
+    start_date: str = Query(..., description="起始日期 YYYY-MM-DD"),
+    end_date: str | None = Query(None, description="截止日期 YYYY-MM-DD, 默认北京今天"),
+    fill: bool = Query(True, description="本地不足的头部是否用上游前复权补齐"),
+):
+    """个股分析图表的日 K —— 本地优先，缺的头部用上游**前复权**补齐（只读）。
+
+    为什么不是 `/api/kline/daily`：那条路只在本地为空时整段回退到上游，而且
+    回退分支用的是 `days`（默认 120）而不是请求区间 —— 一个两年的请求会静默
+    拿到 150 根。这里改成分段拼接，并把"哪一段来自哪里"显式写进 segments。
+
+    返回:
+      rows:     {date, open, high, low, close, volume, amount} 升序
+      segments: [{start, end, source: "local"|"upstream", n}]
+      coverage: {local_first, local_last}
+      upstream: 补齐那一段的取数元信息（attempted / fetched_rows / error / elapsed_ms）
+    """
+    if not symbol:
+        raise HTTPException(400, "symbol 不能为空")
+    try:
+        start = _date.fromisoformat(start_date)
+        end = _date.fromisoformat(end_date) if end_date else cn_today()
+    except ValueError as e:
+        raise HTTPException(400, f"日期格式错误: {e}") from e
+    if start > end:
+        raise HTTPException(400, "start_date 不能晚于 end_date")
+
+    repo = request.app.state.repo
+    asset_type = repo.resolve_asset_type(symbol)
+    cols = ["date", "open", "high", "low", "close", "volume", "amount"]
+    local = repo.get_daily_asset(asset_type, symbol, start, end, columns=cols)
+
+    local_first = local["date"].min() if not local.is_empty() else None
+    local_last = local["date"].max() if not local.is_empty() else None
+
+    head = pl.DataFrame()
+    upstream_meta: dict = {"attempted": False}
+    if fill and (local_first is None or local_first > start):
+        # 只有「本地覆盖之内确实存在交易日」的缺口才值得打一次上游。
+        # 反例（实测）：请求 2024-09-01 是周日，首根 2024-09-02 —— 一天都不缺，
+        # 却因为 local_first > start 去打了一次上游。判据用交易日列表，不用天数差。
+        has_gap = local_first is None
+        if local_first is not None:
+            try:
+                from app.services.trading_days import kline_trading_days
+
+                days = kline_trading_days(repo.store.data_dir)
+                # 交易日列表拿不到时退回"首根晚于起点"这条弱判据（宁可多补一次，
+                # 不可因为一个辅助函数失败就少画一段）。
+                has_gap = any(start <= d < local_first for d in days) if days else (local_first > start)
+            except Exception:  # noqa: BLE001
+                has_gap = local_first > start
+        if has_gap:
+            head, upstream_meta = stock_history_fill.fill_head(symbol, start, end, local_first)
+            if upstream_meta.get("error"):
+                logger.info("history fill 失败(按本地返回) %s: %s", symbol, upstream_meta["error"])
+
+    parts: list[pl.DataFrame] = []
+    if not head.is_empty():
+        parts.append(head.select([c for c in cols if c in head.columns]))
+    if not local.is_empty():
+        parts.append(local.select([c for c in cols if c in local.columns]))
+
+    if parts:
+        df = pl.concat(parts, how="diagonal_relaxed").unique(subset=["date"], keep="last").sort("date")
+    else:
+        df = pl.DataFrame(schema={c: pl.Utf8 if c == "date" else pl.Float64 for c in cols})
+
+    rows = df.to_dicts()
+    for r in rows:  # 日期统一成字符串: 前端 slice(0,10) 的契约
+        r["date"] = _as_date(r.get("date")).isoformat()
+
+    segments: list[dict] = []
+    if rows:
+        head_dates = set(head["date"].to_list()) if not head.is_empty() else set()
+        for r in rows:
+            d = r["date"]
+            src = "upstream" if _as_date(d) in head_dates else "local"
+            if segments and segments[-1]["source"] == src:
+                segments[-1]["end"] = d
+                segments[-1]["n"] += 1
+            else:
+                segments.append({"start": d, "end": d, "source": src, "n": 1})
+
+    name = _instrument_name(repo, symbol)
+    return {
+        "symbol": symbol,
+        "name": name,
+        # 维表里有没有这只票：用来区分"这只票不存在"与"这段区间没有K线"。
+        # 前者换个区间也没用，后者换个区间就好 —— 两种情况不该共用一句话。
+        "known": name is not None,
+        "rows": rows,
+        "segments": segments,
+        "coverage": {
+            "local_first": str(local_first) if local_first else None,
+            "local_last": str(local_last) if local_last else None,
+            "requested_start": start.isoformat(),
+            "requested_end": end.isoformat(),
+        },
+        "upstream": upstream_meta,
+    }
+
+
+def _instrument_name(repo, symbol: str) -> str | None:
+    try:
+        inst = repo.get_instruments_asset(repo.resolve_asset_type(symbol))
+        if not inst.is_empty() and "name" in inst.columns:
+            hit = inst.filter(pl.col("symbol") == symbol)
+            if not hit.is_empty():
+                return hit["name"][0]
+    except Exception as e:  # noqa: BLE001
+        logger.debug("history: 名称读取失败 %s: %s", symbol, e)
+    return None
 
 
 class AnalyzeRequest(BaseModel):

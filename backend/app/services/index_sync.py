@@ -312,17 +312,31 @@ def sync_and_persist_index_daily(
     batch_size = min_batch(preferences.get_index_daily_batch_size(), limit)
 
     total_rows = 0
+    failed: list[str] = []
     chunks = chunked(symbols, batch_size)
     for i, chunk in enumerate(chunks):
         sleep_between_batches(i, limit.rpm)
+        chunk_failed: list[str] = []
         raw = kline_sync.sync_daily_batch(
             chunk,
             count=count,
             batch_size=None,
             start_time=start_time,
             end_time=end_time,
+            # 超时批次只进 failed_out, 不传就等于整批静默丢弃: 2026-11-05 起
+            # 指数每日只落 6~8 行, 就是因为首批发 100 只超时后无人接手,
+            # 而分区"存在且非空"让所有下游判据都绿。
+            failed_out=chunk_failed,
         )
+        if chunk_failed:
+            failed.extend(chunk_failed)
+            logger.warning(
+                "指数/ETF 日K 批次 %d/%d 有 %d 只未取到 (源超时/限流), 本批可能不完整: %s",
+                i + 1, len(chunks), len(chunk_failed), chunk_failed[:8],
+            )
         if raw.is_empty():
+            if on_chunk_done:
+                on_chunk_done(i + 1, len(chunks))
             continue
 
         total_rows += _persist_index_frame(raw)
@@ -332,6 +346,13 @@ def sync_and_persist_index_daily(
         del raw
         gc.collect()
     repo.refresh_index_views()
+    if failed:
+        # 不抛异常: 部分成功仍是净收益, 且下一次体检会据此报 sparse 并触发
+        # 范围回补 (见 data_integrity 覆盖度判据)。这里只保证"不被静默吞掉"。
+        logger.warning(
+            "指数/ETF 日K 本次共 %d/%d 只未取到, 缺口将由完整性体检与范围回补接手",
+            len(failed), len(symbols),
+        )
     return total_rows
 
 
