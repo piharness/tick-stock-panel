@@ -624,6 +624,7 @@ PORT=3018                      # 服务端口
 | [docs/alpha-search.md](./docs/alpha-search.md)                                                     | 主动 Alpha 搜索：预注册公式族、发现/确认两段验证、试验台账与 DSR |
 | [docs/market-phase.md](./docs/market-phase.md)                                                     | 市场情绪周期 6 阶段与概念/行业主线识别的口径与设计                   |
 | [docs/decision-ledger.md](./docs/decision-ledger.md)                                               | 决策账本:预登记哈希 / K1–K4 三态门禁 / 结算与 Brier 校准口径         |
+| [docs/case-lab.md](./docs/case-lab.md)                                                             | 操盘档案:判据库、可成交口径、案例对账与「本地未见痕迹」的边界         |
 | [docs/plugin-development.md](./docs/plugin-development.md)                                         | 数据源插件开发规范(以 fuyao 为参考实现)                  |
 | [外部数据源插件安装](./docs/external-data-source-packages.md) | ZIP 安装、Key 配置、版本维护和开发模板 |
 | [docs/secondary-development.md](./docs/secondary-development.md)                                   | 代码二次开发、前端插槽、后端策略接口与 AI 开发模板                   |
