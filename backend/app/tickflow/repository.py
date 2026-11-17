@@ -180,6 +180,15 @@ class DataStore:
             "kline_etf_enriched",
             "kline_etf_minute",
             "kline_minute",
+            # 多周期分钟归档 (2026-11)。只在这里建目录: 它们是只读归档, 不注册
+            # DuckDB 视图 —— 实测每张表绑定 5.1s (532 个文件), 单票 count 6.2s,
+            # 比 `get_minute_range(freq=...)` 的分区裁剪路径 (154~900ms) 慢一个
+            # 数量级; 四张表还会让启动多花 20s。要跑 SQL 就按需
+            # `repo.refresh_view("kline_5min", ...)` 手动绑, 别进启动路径。
+            "kline_5min",
+            "kline_15min",
+            "kline_30min",
+            "kline_60min",
             "adj_factor",
             "adj_factor_etf",
             "financials",
@@ -383,6 +392,18 @@ def _read_concurrency_env() -> int:
     return min(max(value, 1), 16)
 
 
+#: 多周期分钟表的表名映射。key 是 API 层的 `freq` 取值, value 是 data/ 下的目录名。
+#: 这些表由 scripts/backfill 类脚本从上游一次性归档 (上游按"最近 N 根"保留,
+#: 1m=100 交易日 / 5m≈482 / 15m·30m·60m≈500), 没有增量落盘链路, 只读。
+#: 1m 不在表里: 它走既有的 kline_minute / kline_etf_minute, 路径与外键语义都不能变。
+MINUTE_FREQ_TABLES = {
+    "5m": "kline_5min",
+    "15m": "kline_15min",
+    "30m": "kline_30min",
+    "60m": "kline_60min",
+}
+
+
 class KlineRepository:
     """日 K / 分钟 K 的读写入口。"""
 
@@ -450,6 +471,12 @@ class KlineRepository:
         self._etf_enriched_glob = str(store.data_dir / "kline_etf_enriched" / "**" / "*.parquet")
         self._minute_glob = str(store.data_dir / "kline_minute" / "**" / "*.parquet")
         self._etf_minute_glob = str(store.data_dir / "kline_etf_minute" / "**" / "*.parquet")
+        # 多周期分钟表: 只在本地归档里存在 (上游只保留 ~500 交易日, 没有增量写入路径,
+        # 因此不参与 minute_refresh 的落盘链路)。1m 仍走上面两个既有 glob, 不受影响。
+        self._minute_freq_globs = {
+            freq: str(store.data_dir / table / "**" / "*.parquet")
+            for freq, table in MINUTE_FREQ_TABLES.items()
+        }
         self._inst_glob = str(store.data_dir / "instruments" / "**" / "*.parquet")
         self._index_inst_glob = str(store.data_dir / "instruments_index" / "**" / "*.parquet")
         self._etf_inst_glob = str(store.data_dir / "instruments_etf" / "**" / "*.parquet")
@@ -1785,8 +1812,18 @@ class KlineRepository:
             return self.get_etf_daily(symbol, start, end, columns)
         return pl.DataFrame()
 
-    def _minute_glob_for(self, asset_type: str) -> str:
-        """按资产类型选择分钟K parquet glob。ETF 分钟数据独立存储于 kline_etf_minute。"""
+    def _minute_glob_for(self, asset_type: str, freq: str = "1m") -> str:
+        """按资产类型与周期选择分钟K parquet glob。
+
+        1m 保持原语义: ETF 分钟数据独立存储于 kline_etf_minute。
+        多周期 (5m/15m/30m/60m) 是本地归档表, 只含股票; 查 ETF 时仍指向该表,
+        由 symbol 过滤后自然为空 —— 不另建 ETF 表, 避免空目录被当成"有能力"。
+        """
+        if freq and freq not in ("1m", "1min", "1"):
+            glob = self._minute_freq_globs.get(freq)
+            if glob is None:
+                raise ValueError(f"未支持的分钟周期 freq={freq!r}, 可选: 1m/{'/'.join(MINUTE_FREQ_TABLES)}")
+            return glob
         return self._etf_minute_glob if asset_type == "etf" else self._minute_glob
 
     def _maybe_adjust_minute(self, df: pl.DataFrame, asset_type: str) -> pl.DataFrame:
@@ -1803,17 +1840,48 @@ class KlineRepository:
             logger.warning("分钟复权投影失败, 按原始数据返回: %s", e)
             return df
 
-    def _minute_partition_path(self, asset_type: str, trade_date: date) -> str | None:
-        """单日分钟K分区文件路径; 不存在 (含存量未迁移的旧 symbol= 分区) 返回 None。"""
-        base = self._minute_glob_for(asset_type).rsplit("/", 2)[0]
-        p = f"{base}/date={trade_date.isoformat()}/part.parquet"
-        return p if Path(p).exists() else None
+    def _minute_partition_path(self, asset_type: str, trade_date: date, freq: str = "1m") -> str | None:
+        """单日分钟K分区文件路径; 不存在 (含存量未迁移的旧 symbol= 分区) 返回 None。
+
+        用 Path 逐级上溯而不是 `glob.rsplit("/", 2)[0]`: 后者依赖 `/` 作分隔符,
+        而 Windows 上 `str(Path)` 是反斜杠 ⇒ rsplit 切不开 ⇒ base 等于整个 glob
+        ⇒ 拼出的路径永远不存在 ⇒ 每个单日查询都静默退化成全树扫描 (生产跑在
+        Linux 容器里所以没暴露, 2026-11-16 本地测试才撞出来)。
+        """
+        base = Path(self._minute_glob_for(asset_type, freq)).parent.parent
+        p = base / f"date={trade_date.isoformat()}" / "part.parquet"
+        return str(p) if p.exists() else None
+
+    def _minute_files_in_range(
+        self, asset_type: str, freq: str, start: date, end: date
+    ) -> list[str]:
+        """[start, end] 内的分钟分区文件, 供范围查询直接 scan。
+
+        为什么不 `scan_parquet(glob)`: 分钟表是**日分区**, 每个文件只装一天
+        (2026-11 实测 532 个), 而 glob 会让 polars 把每个文件的 footer 都读
+        一遍 —— 9p 挂载上每次都是一次元数据往返。60 天的 5m 查询实测 3459ms,
+        其中绝大部分花在另外 470 多个与本次查询无关的文件上。
+
+        裁剪逻辑**不在这里重写**, 直接复用 `_partition_files_in_range`: 同一份
+        「区间 → 文件清单」如果写两遍, 月分区/异名目录/空列表语义迟早只改一份
+        (它会「认不出就纳入」, 少读一份是静默丢行)。这里只负责把
+        (asset_type, freq) 翻译成表名。
+        """
+        if freq in ("1m", "1min", "1", ""):
+            table = "kline_etf_minute" if asset_type == "etf" else "kline_minute"
+        else:
+            table = MINUTE_FREQ_TABLES.get(freq)
+            if table is None:
+                return []
+        files = self._partition_files_in_range(table, start, end)
+        return files or []
 
     def get_minute(
         self,
         symbol: str,
         trade_date: date,
         asset_type: str = "stock",
+        freq: str = "1m",
     ) -> pl.DataFrame:
         """分钟K查询 — 优先直读当日分区文件 (免全树 footer IO), 分区缺失回退全树扫描。
 
@@ -1821,8 +1889,8 @@ class KlineRepository:
         本地分钟历史线性增长; 单日数据按约定完整落在 date= 分区内, 谓词不变。
         """
         try:
-            part = self._minute_partition_path(asset_type, trade_date)
-            source = part if part is not None else self._minute_glob_for(asset_type)
+            part = self._minute_partition_path(asset_type, trade_date, freq)
+            source = part if part is not None else self._minute_glob_for(asset_type, freq)
             df = guarded_collect(
                 pl.scan_parquet(source).filter(
                     (pl.col("symbol") == symbol)
@@ -1839,6 +1907,7 @@ class KlineRepository:
         symbols: list[str],
         trade_date: date,
         asset_type: str = "stock",
+        freq: str = "1m",
     ) -> pl.DataFrame:
         """批量分钟K查询 — 多 symbol 一次 scan, 优先直读当日分区文件。
 
@@ -1848,8 +1917,8 @@ class KlineRepository:
         if not symbols:
             return pl.DataFrame()
         try:
-            part = self._minute_partition_path(asset_type, trade_date)
-            source = part if part is not None else self._minute_glob_for(asset_type)
+            part = self._minute_partition_path(asset_type, trade_date, freq)
+            source = part if part is not None else self._minute_glob_for(asset_type, freq)
             df = guarded_collect(
                 pl.scan_parquet(source).filter(
                     pl.col("symbol").is_in(symbols)
@@ -1867,6 +1936,7 @@ class KlineRepository:
         start: date,
         end: date,
         asset_type: str = "stock",
+        freq: str = "1m",
     ) -> pl.DataFrame:
         """多 symbol × 日期范围的分钟K查询 (分钟K精确回测用)。
 
@@ -1876,7 +1946,11 @@ class KlineRepository:
         if not symbols:
             return pl.DataFrame()
         try:
-            lf = pl.scan_parquet(self._minute_glob_for(asset_type))
+            files = self._minute_files_in_range(asset_type, freq, start, end)
+            # 枚举为空时退回全树 glob: 兼容 symbol= 旧布局 (迁移前) 与非常规分区名,
+            # 宁可慢也不能因为枚举规则变化而返回空。
+            source = files if files else self._minute_glob_for(asset_type, freq)
+            lf = pl.scan_parquet(source)
             available = set(lf.collect_schema().names())
             select_cols = [c for c in ["symbol", "datetime", "open", "high", "low", "close", "volume", "amount"] if c in available]
             df = guarded_collect(

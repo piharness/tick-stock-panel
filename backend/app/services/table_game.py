@@ -43,6 +43,7 @@ from pathlib import Path
 import polars as pl
 
 from app.market_time import cn_today
+from app.services.daily_panel import enriched_files
 from app.services.trading_days import kline_trading_days
 
 # 回看窗口：一年。少于 200 日会让「分位」和「匹配桶」都不稳。
@@ -127,36 +128,13 @@ def warm(data_dir: Path, as_of: date_cls | None = None) -> None:
 # ===== 基础装载 =====
 
 
-def _enriched_files(data_dir: Path, start: date_cls, end: date_cls) -> list[Path]:
-    """按区间取日线分区文件。月分区（date=2026-11）按目录名区间比较即可，
-    因为分区名是 ISO 前缀，字符串序 == 时间序。"""
-    base = data_dir / "kline_daily_enriched"
-    if not base.is_dir():
-        return []
-    out: list[Path] = []
-    for d in base.iterdir():
-        if not d.is_dir() or not d.name.startswith("date="):
-            continue
-        tag = d.name[5:]
-        # 月分区右端展开成月末，避免 '2026-11' < '2026-11-13' 的字符串比较陷阱
-        if len(tag) == 7:
-            lo, hi = f"{tag}-01", f"{tag}-31"
-        else:
-            lo = hi = tag
-        if hi < start.isoformat() or lo > end.isoformat():
-            continue
-        for f in d.glob("*.parquet"):
-            out.append(f)
-    return sorted(out)
-
-
 def _load_panel(data_dir: Path, as_of: date_cls) -> pl.DataFrame:
     """一年日线面板 + 三个派生列。缺失列一律当无数据，不猜。"""
     days = [d for d in kline_trading_days(data_dir) if d <= as_of]
     if not days:
         return pl.DataFrame()
     days = days[-LOOKBACK_DAYS:]
-    files = _enriched_files(data_dir, days[0], days[-1])
+    files = enriched_files(data_dir, days[0], days[-1])
     if not files:
         return pl.DataFrame()
     lf = pl.scan_parquet([str(f) for f in files], extra_columns="ignore")

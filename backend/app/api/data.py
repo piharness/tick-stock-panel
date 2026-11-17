@@ -755,6 +755,15 @@ def _compute_storage(data_dir: Path) -> dict:
         "etf_instruments": data_dir / "instruments_etf",
         "etf_adj_factor": data_dir / "adj_factor_etf",
         "minute": data_dir / "kline_minute",
+        # 多周期分钟归档 (2026-11 起)。不进上面 "minute" 一项: 体量差 3 倍以上
+        # (1m 1.5G / 5m 2.4G / 15m 1G / 30m 0.55G / 60m 0.3G), 合在一起会让
+        # 「分钟占了多少」这个问题失去分辨率。
+        "minute_5m": data_dir / "kline_5min",
+        "minute_15m": data_dir / "kline_15min",
+        "minute_30m": data_dir / "kline_30min",
+        "minute_60m": data_dir / "kline_60min",
+        # 日K全历史前复权归档 (1990-12 起)。与 kline_daily 口径不同, 单独计。
+        "daily_qfq_archive": data_dir / "archive" / "kline_daily_qfq",
         "adj_factor": data_dir / "adj_factor",
         "instruments": data_dir / "instruments",
         "ext_data": data_dir / "ext_data",
@@ -995,6 +1004,13 @@ def _clear_data_impl(request: Request):
         "kline_etf_enriched": EnrichedPublication(data_dir, "etf", recover=True),
     }
 
+    # ⚠️ 下面这份清单**故意不包含** kline_5min / kline_15min / kline_30min /
+    # kline_60min 与 archive/kline_daily_qfq:
+    #   - 它们是「上游只保留最近 N 根」的一次性归档, 删掉要按小时重拉;
+    #   - 更关键的是**拿不回同一批日期**: 上游窗口每天向前滚, 重拉只会得到
+    #     更新的 500 天, 清空时丢掉的那段永远消失。
+    # 要连归档一起清, 按 `scripts/archive_intraday_periods.py` 的目录手动处理 ——
+    # 那是不可逆操作, 不该混在「清空本地数据重来」这种日常动作里。
     for sub in (
         "kline_daily", "kline_daily_enriched", "kline_index_daily", "kline_index_enriched",
         "kline_etf_daily", "kline_etf_enriched", "kline_etf_minute", "kline_minute",

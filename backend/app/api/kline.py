@@ -1084,10 +1084,33 @@ def get_minute_batch(request: Request, body: dict):
 def get_minute_range(
     request: Request,
     symbol: str = Query(..., description="标的代码"),
-    days: int = Query(10, ge=1, le=20, description="最近交易日数量"),
+    days: int = Query(10, ge=1, le=250, description="最近交易日数量（按周期有上限，见 freq）"),
+    freq: str = "1m",  # 分钟周期: 1m / 5m / 15m / 30m / 60m
 ):
-    """读取单只标的最近 N 个已落库交易日的分钟 K。"""
+    """读取单只标的最近 N 个已落库交易日的分钟 K。
+
+    freq 非 1m 时读本地归档表 (kline_5min / kline_15min / …)。这些表只有约
+    500 个交易日 (上游按"最近 N 根"保留), 且没有增量写入链路 —— 因此历史日期
+    取得到、今天之后的日期随上游滚动而消失。1m 走原有 kline_minute, 行为不变。
+    """
     import polars as pl
+
+    from app.tickflow.repository import MINUTE_FREQ_TABLES
+
+    if freq not in ("1m", *MINUTE_FREQ_TABLES):
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的分钟周期 {freq!r}, 可选: 1m/{'/'.join(MINUTE_FREQ_TABLES)}",
+        )
+    # 每日根数不同, 同一个 days 对应的行数差 48 倍: 1m 的 20 天已经是 4800 行,
+    # 5m 的 20 天只有 960 行 (看图够, 看趋势不够)。上限按周期给, 避免前端
+    # 想拉 60 天 5 分钟时被 1m 的 20 天限制挡住。
+    max_days = {"1m": 20, "5m": 60, "15m": 120, "30m": 250, "60m": 250}[freq]
+    if days > max_days:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{freq} 的 days 上限是 {max_days}（每日 {'240' if freq == '1m' else '48/16/8/4'} 根，再大会撑爆响应）",
+        )
 
     repo = request.app.state.repo
     asset_type = repo.resolve_asset_type(symbol)
@@ -1101,6 +1124,7 @@ def get_minute_range(
         "name": stock_info.get("name"),
         "asset_type": asset_type,
         "requested_days": days,
+        "freq": freq,
     }
 
     # 指数分钟 K 不落本地仓库, 最新分时仍由 /api/index/minute 实时读取。
@@ -1112,8 +1136,13 @@ def get_minute_range(
         )
 
     end = cn_today()
-    start = end - timedelta(days=days * 3 + 20)
-    minute = repo.get_minute_range([symbol], start, end, asset_type=asset_type)
+    # 窗口只要覆盖 `days` 个交易日, 不是 `days` 个自然日。原 `days*3+20` 是
+    # 3 倍余量 (10 个交易日 → 50 天): 对 1m 只是多扫几十个分区, 对归档周期
+    # 是灾难 —— 5m 的 days=60 会枚举 200 天 / 286 个文件, 其中 226 个读出来
+    # 又被 `[-days:]` 截掉。7/5 是「自然日/交易日」的换算, +15 天覆盖春节
+    # 与国庆这类连续休市。
+    start = end - timedelta(days=int(days * 7 / 5) + 15)
+    minute = repo.get_minute_range([symbol], start, end, asset_type=asset_type, freq=freq)
     if minute.is_empty() or "datetime" not in minute.columns:
         return _gzip_payload(
             request,

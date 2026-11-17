@@ -86,7 +86,7 @@ class _DetailRepo:
     def get_minute(self, symbol, trade_date, asset_type="stock") -> pl.DataFrame:
         return self.minute
 
-    def get_minute_range(self, symbols, start, end, asset_type="stock") -> pl.DataFrame:
+    def get_minute_range(self, symbols, start, end, asset_type="stock", freq="1m") -> pl.DataFrame:
         return self.minute
 
 

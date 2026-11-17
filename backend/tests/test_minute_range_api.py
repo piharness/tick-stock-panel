@@ -111,3 +111,57 @@ def test_sync_minute_single_rejects_invalid_days():
             _request(),
             {"symbol": "600000.SH", "days": 0},
         ))
+
+
+def _repo_with_one_session(freq_close: float = 11.1):
+    repo = MagicMock()
+    repo.resolve_asset_type.return_value = "stock"
+    repo.get_instruments.return_value = pl.DataFrame({
+        "symbol": ["600000.SH"],
+        "name": ["浦发银行"],
+        "total_shares": [1.0],
+        "float_shares": [1.0],
+    })
+    repo.get_minute_range.return_value = pl.DataFrame({
+        "symbol": ["600000.SH"] * 2,
+        "datetime": [datetime(2026, 8, 6, 9, 35), datetime(2026, 8, 6, 9, 40)],
+        "open": [10.0, 10.5],
+        "high": [10.2, 10.6],
+        "low": [9.8, 10.4],
+        "close": [10.1, freq_close],
+        "volume": [100.0, 110.0],
+        "amount": [101_000.0, 122_100.0],
+    })
+    repo.get_daily_asset.return_value = pl.DataFrame({
+        "date": [date(2026, 8, 5), date(2026, 8, 6)],
+        "close": [10.0, 11.0],
+    })
+    return repo
+
+
+def test_minute_range_passes_freq_through_and_echoes_it():
+    """freq 必须同时落到仓库调用与响应上 —— 只改一处会让前端拿到 1m 数据却标着 5m。"""
+    repo = _repo_with_one_session()
+
+    result = kline_api.get_minute_range(_request(repo), "600000.SH", 1, "5m")
+
+    assert result["freq"] == "5m"
+    assert result["sessions"][0]["rows"][0]["close"] == 10.1
+    assert repo.get_minute_range.call_args.kwargs["freq"] == "5m"
+
+
+def test_minute_range_defaults_to_1m():
+    repo = _repo_with_one_session()
+
+    result = kline_api.get_minute_range(_request(repo), "600000.SH", 1)
+
+    assert result["freq"] == "1m"
+    assert repo.get_minute_range.call_args.kwargs["freq"] == "1m"
+
+
+def test_minute_range_rejects_unknown_freq():
+    with pytest.raises(HTTPException) as exc:
+        kline_api.get_minute_range(_request(), "600000.SH", 1, "7m")
+
+    assert exc.value.status_code == 400
+    assert "不支持的分钟周期" in str(exc.value.detail)
