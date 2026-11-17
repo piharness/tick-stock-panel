@@ -223,3 +223,14 @@ export const IconDecision = make(
     <path d="M13.5 15.5L16 18L21 13" />
   </>,
 )
+
+/** 操盘档案 — 卷宗 + 右侧时间轴刻度 (把一段介入摊成可核对的痕迹) */
+export const IconCaseLab = make(
+  <>
+    <path d="M3.5 5.5H9L11 8H20.5V20.5H3.5Z" />
+    <line x1="6.5" y1="11.5" x2="12.5" y2="11.5" strokeWidth="1.4" strokeOpacity="0.75" />
+    <line x1="15.5" y1="10" x2="15.5" y2="18" strokeWidth="1.4" strokeOpacity="0.6" />
+    <rect x="14.2" y="12" width="2.6" height="4" fill="currentColor" stroke="none" />
+    <line x1="6.5" y1="15" x2="11.5" y2="15" strokeWidth="1.4" strokeOpacity="0.75" />
+  </>,
+)

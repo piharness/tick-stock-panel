@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { api, friendlyStreamError, type PriceLevel, type LevelType } from './api'
+import { cnToday } from './kline'
 
 /**
  * AI 个股分析 —— 全局任务/报告 store(与 aiReportStore 解耦、并行存在)。
@@ -148,12 +149,19 @@ export async function findLatestHistoryReport(symbol: string): Promise<HistoryRe
 
 /**
  * 查询某只股票【当日】是否已生成过分析报告(用于二次确认)。
- * 判断依据:created_at 的日期部分 == 本地今天。
+ *
+ * 判断依据: created_at 的日期部分 == **北京**今天。
+ * created_at 由后端 `json_report_store._now_iso()` 写成北京墙钟 naive 串
+ * ("2026-11-15T14:02:26"), 所以「今天」也只能按北京日历算。此前用
+ * `new Date().toISOString().slice(0,10)` (UTC 今天) 比较, 在北京时间
+ * 00:00-08:00 之间 UTC 还停在前一天 —— 凌晨新生成的报告认不出来 (重复扣
+ * 一次 AI 分析), 而昨晚 23:xx 的旧报告会被当成今天的 (复用过期结论)。
+ *
  * @returns 当天最近一条报告,或 null
  */
 export async function findTodayReport(symbol: string): Promise<HistoryReport | null> {
   if (!historyLoaded) await loadHistory()
-  const today = new Date().toISOString().slice(0, 10)  // YYYY-MM-DD
+  const today = cnToday()
   return history.find(r => r.symbol === symbol && (r.created_at ?? '').slice(0, 10) === today) ?? null
 }
 

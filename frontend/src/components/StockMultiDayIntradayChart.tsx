@@ -1,19 +1,33 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Loader2, RefreshCw } from 'lucide-react'
 import { api, type MinuteKlineSession } from '@/lib/api'
 import { klineMinuteQueryOptions, klineMinuteRangeQueryOptions, minuteRefetchInterval } from '@/lib/kline'
+import { minuteTimesForFreq } from '@/lib/intraday-chart'
 import { toast } from '@/components/Toast'
 import { EChartsMultiDayIntraday } from '@/components/EChartsMultiDayIntraday'
 
 interface Props {
   symbol: string
   days: number
+  /** 分钟周期: 1m（本地增量落盘，有当日实时）或 5m/15m/30m/60m（本地归档，
+   *  只有约 500 个交易日、无增量链路 ⇒ 不拉当日实时、不自动补齐）。 */
+  freq?: string
+  /** 是否显示周期切换条 (1分/5分/15分/30分/60分)。关掉时用 freq 固定渲染。 */
+  showPeriodSwitcher?: boolean
   height?: number
   refetchIntervalMs?: number
   onPriceDoubleClick?: (price: number, currentPrice: number) => void
   priceLines?: { value: number; label?: string; color?: string }[]
 }
+
+const PERIOD_OPTIONS = [
+  { key: '1m', label: '1分' },
+  { key: '5m', label: '5分' },
+  { key: '15m', label: '15分' },
+  { key: '30m', label: '30分' },
+  { key: '60m', label: '60分' },
+]
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '分钟数据获取失败'
@@ -22,21 +36,26 @@ function errorMessage(error: unknown): string {
 export function StockMultiDayIntradayChart({
   symbol,
   days,
+  freq: defaultFreq = '1m',
+  showPeriodSwitcher = true,
   height = 420,
   refetchIntervalMs,
   onPriceDoubleClick,
   priceLines,
 }: Props) {
   const queryClient = useQueryClient()
+  const [freq, setFreq] = useState(defaultFreq)
+  const isArchivePeriod = freq !== '1m'
   const history = useQuery({
-    ...klineMinuteRangeQueryOptions(symbol, days),
+    ...klineMinuteRangeQueryOptions(symbol, days, freq),
     enabled: !!symbol,
   })
   const latest = useQuery({
     // live: 当日盘中直接实时拉取, 不被分钟增量落盘的本地分区(≥60s一轮)拖慢
     ...klineMinuteQueryOptions(symbol, undefined, true),
-    enabled: !!symbol,
-    refetchInterval: minuteRefetchInterval(refetchIntervalMs),
+    // 归档周期没有 1 分钟实时链路: 硬拉会把 1m 的当日行混进 5m 的 x 轴网格
+    enabled: !!symbol && !isArchivePeriod,
+    refetchInterval: isArchivePeriod ? false : minuteRefetchInterval(refetchIntervalMs),
   })
 
   const sessions = useMemo(() => {
@@ -87,7 +106,7 @@ export function StockMultiDayIntradayChart({
   // sessions 供绘图, 若参与计数会把缺口撑成 0, 提示条与自动补齐将永不触发 (issue #305)
   const localSessionCount = history.data?.sessions?.length ?? 0
   const missingDays = Math.max(0, days - localSessionCount)
-  const showCoverage = !history.isPlaceholderData && sessions.length > 0 && missingDays > 0 && !isIndex
+  const showCoverage = !history.isPlaceholderData && sessions.length > 0 && missingDays > 0 && !isIndex && !isArchivePeriod
 
   // 自动补齐: 本地落库天数不足且非指数时, 自动触发同步
   // 用 ref 记录已触发的 symbol:days, 避免重复; 失败后清标记, 允许上限内自动重试
@@ -97,6 +116,7 @@ export function StockMultiDayIntradayChart({
     if (!symbol) return
     // 后端没运行时 history 会 error, 此时 missingDays 计算无意义, 跳过
     if (history.error || history.isPlaceholderData || loading || isIndex || localSessionCount >= days) return
+    if (isArchivePeriod) return  // 归档周期没有增量同步端点, 触发只会 403/空跑
     if (syncMinute.isPending) return
 
     const key = `${symbol}:${days}`
@@ -106,7 +126,14 @@ export function StockMultiDayIntradayChart({
     syncMinute.mutate()
   }, [symbol, days, localSessionCount, loading, isIndex, history.error, history.isPlaceholderData, syncMinute.isPending])
 
-  const chartHeight = Math.max(260, height - (showCoverage || syncMinute.isPending ? 32 : 0))
+  // 切换条固定 28px; 归档周期不显示补齐提示条, 所以两者不叠加
+  const switcherHeight = showPeriodSwitcher ? 28 : 0
+  const chartHeight = Math.max(
+    260,
+    height - switcherHeight - (showCoverage || syncMinute.isPending ? 32 : 0),
+  )
+  // 归档周期用各自的时刻网格: 48 根摊到 240 个槽位会变成一串空白
+  const timesPerDay = useMemo(() => minuteTimesForFreq(freq), [freq])
 
   if (loading) {
     return (
@@ -143,8 +170,14 @@ export function StockMultiDayIntradayChart({
           </>
         ) : (
           <>
-            <span className="text-muted">{isIndex ? '指数暂无分钟数据' : '本地暂无可展示的分钟数据'}</span>
-            {!isIndex && (
+            <span className="text-muted">
+              {isIndex
+                ? '指数暂无分钟数据'
+                : isArchivePeriod
+                  ? `本地无 ${freq} 归档数据`
+                  : '本地暂无可展示的分钟数据'}
+            </span>
+            {!isIndex && !isArchivePeriod && (
               <button
                 type="button"
                 onClick={() => syncMinute.mutate()}
@@ -161,8 +194,31 @@ export function StockMultiDayIntradayChart({
     )
   }
 
+  const periodSwitcher = showPeriodSwitcher ? (
+    <div className="flex h-7 items-center gap-1 px-1 text-[11px]">
+      {PERIOD_OPTIONS.map(option => (
+        <button
+          key={option.key}
+          type="button"
+          onClick={() => setFreq(option.key)}
+          className={
+            freq === option.key
+              ? 'rounded-btn bg-accent px-2 py-0.5 font-medium text-white'
+              : 'rounded-btn px-2 py-0.5 text-muted hover:bg-elevated hover:text-foreground'
+          }
+        >
+          {option.label}
+        </button>
+      ))}
+      {isArchivePeriod && (
+        <span className="ml-1 truncate text-muted/80">本地归档 · 最近约 500 个交易日</span>
+      )}
+    </div>
+  ) : null
+
   return (
     <div style={{ height }}>
+      {periodSwitcher}
       {(showCoverage || (syncMinute.isPending && !isIndex)) && (
         <div className="flex h-8 items-center justify-between gap-3 border-b border-border/60 bg-elevated/40 px-3 text-[11px]">
           {syncMinute.isPending ? (
@@ -192,6 +248,7 @@ export function StockMultiDayIntradayChart({
       )}
       <EChartsMultiDayIntraday
         sessions={sessions}
+        timesPerDay={timesPerDay}
         height={chartHeight}
         onPriceDoubleClick={onPriceDoubleClick}
         priceLines={priceLines}

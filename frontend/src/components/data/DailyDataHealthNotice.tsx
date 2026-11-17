@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { type DailyDataRevisions, type IntegrityAsset } from '@/lib/api'
 import { useDailyIntegrity } from '@/lib/useSharedQueries'
 import { DAILY_DATA_QUERY_PREFIXES } from '@/lib/queryKeys'
@@ -59,5 +61,3 @@ export function DailyResultStaleNotice({ result, assetType = 'stock' }: { result
     </div>
   )
 }
-import { useEffect, useRef } from 'react'
-import { useQueryClient } from '@tanstack/react-query'

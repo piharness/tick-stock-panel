@@ -23,6 +23,7 @@ import { QK } from '@/lib/queryKeys'
 import { useQuoteStatus } from '@/lib/useSharedQueries'
 import { cn } from '@/lib/cn'
 import { fmtPct, priceColorClass } from '@/lib/format'
+import { cnToday } from '@/lib/kline'
 import { boardTag } from '@/components/stock-table/primitives'
 import { PageHeader } from '@/components/PageHeader'
 import { Modal } from '@/components/Modal'
@@ -2209,7 +2210,7 @@ function AccountPanel({ acc, name, onDeleted }: { acc: string; name?: string; on
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `模拟盘成交台账_${acc}_${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `模拟盘成交台账_${acc}_${cnToday()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }

@@ -17,6 +17,9 @@ const COLORS = {
 
 interface Props {
   sessions: MinuteKlineSession[]
+  /** 每天铺多少个时刻槽位。默认 1 分钟网格 (240); 5m/15m/… 传 minuteTimesForFreq(freq),
+   *  否则 48 根数据会被摊到 240 个槽上, 图上是一串被拉长的空白。 */
+  timesPerDay?: string[]
   height?: number
   onPriceDoubleClick?: (price: number, currentPrice: number) => void
   priceLines?: { value: number; label?: string; color?: string }[]
@@ -41,7 +44,7 @@ function priceColor(close: number, prevClose: number | null): string {
   return close > prevClose ? COLORS.up : COLORS.down
 }
 
-function buildModel(sessions: MinuteKlineSession[]) {
+function buildModel(sessions: MinuteKlineSession[], times: string[] = FULL_DAY_TIMES) {
   const categories: string[] = []
   const volumeData: ({ value: number; itemStyle: { color: string } } | null)[] = []
   const dayLabelByIndex = new Map<number, string>()
@@ -61,7 +64,7 @@ function buildModel(sessions: MinuteKlineSession[]) {
     const start = categories.length
     dayStartIndexes.push(start)
     if (sessionIndex % labelStep === 0 || sessionIndex === sessions.length - 1) {
-      dayLabelByIndex.set(start + Math.floor(FULL_DAY_TIMES.length / 2), session.date.slice(5))
+      dayLabelByIndex.set(start + Math.floor(times.length / 2), session.date.slice(5))
     }
 
     const averagePrices = computeIntradayAverage(session.rows)
@@ -78,7 +81,7 @@ function buildModel(sessions: MinuteKlineSession[]) {
     // 量柱着色基准: 前一分钟 close; 当日第一根用 session 昨收。
     // 不用 row.open — 部分分钟源历史日无真实 open(为 null), close-vs-open 会全偏。
     let prevRef: number | null = session.prev_close
-    for (const time of FULL_DAY_TIMES) {
+    for (const time of times) {
       const point = rowsByTime.get(time)
       const index = categories.length
       categories.push(`${session.date} ${time}`)
@@ -144,6 +147,7 @@ function buildModel(sessions: MinuteKlineSession[]) {
 
 export function EChartsMultiDayIntraday({
   sessions,
+  timesPerDay,
   height = 420,
   onPriceDoubleClick,
   priceLines = [],
@@ -154,7 +158,7 @@ export function EChartsMultiDayIntraday({
   const priceDoubleClickHandlerRef = useRef<((event: { offsetX: number; offsetY: number }) => void) | null>(null)
   const onPriceDoubleClickRef = useRef(onPriceDoubleClick)
   onPriceDoubleClickRef.current = onPriceDoubleClick
-  const model = useMemo(() => buildModel(sessions), [sessions])
+  const model = useMemo(() => buildModel(sessions, timesPerDay), [sessions, timesPerDay])
   const modelRef = useRef(model)
   modelRef.current = model
   const [info, setInfo] = useState<InfoPoint | null>(model.latest)

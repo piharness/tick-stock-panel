@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
+import { cnToday } from '@/lib/kline'
 import {
   BookOpenCheck, RefreshCw, Sparkles, Trash2, History, ChevronRight, AlertTriangle,
   Database, Wand2, Copy, Download, Clock, X, Check, Trophy, ChevronDown, ChevronUp,
@@ -202,7 +203,9 @@ export function ReviewPage() {
 
   // 自动归档(生成完成后台静默保存)—— 通过回调注入 store,避免 store 直接依赖 qc/marketQuery
   const onGenerationDone = useCallback(async (fullContent: string, doneMeta: { as_of?: string; summary?: string; emotion_score?: number; emotion_label?: string } | null) => {
-    const reportAsOf = doneMeta?.as_of ?? marketQuery.data?.as_of ?? asOf ?? new Date().toISOString().slice(0, 10)
+    // 兜底日期必须是**北京**今天: 后端 as_of 走交易日/北京口径, 用 UTC 今天
+    // 会在 00:00-08:00 把复盘归档到前一天 (见 lib/kline.ts::cnToday)。
+    const reportAsOf = doneMeta?.as_of ?? marketQuery.data?.as_of ?? asOf ?? cnToday()
     try {
       await api.reviewReportSave({
         as_of: reportAsOf,
@@ -242,7 +245,7 @@ export function ReviewPage() {
   const downloadContent = useCallback(() => {
     const text = viewing?.content ?? content
     if (!text) return
-    const reportDate = viewing?.as_of ?? meta?.as_of ?? asOf ?? new Date().toISOString().slice(0, 10)
+    const reportDate = viewing?.as_of ?? meta?.as_of ?? asOf ?? cnToday()
     const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

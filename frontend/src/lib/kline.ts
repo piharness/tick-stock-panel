@@ -126,10 +126,10 @@ export function minuteRefetchInterval(ms?: number) {
 /** 多日分时查询配置 — 分时 tab 的 StockMultiDayIntradayChart 与 邻近预取 共用。
  * 内嵌「仅同 symbol 占位」守卫 (key 结构 ['kline-minute-range', symbol, days], index 1 为 symbol),
  * 与 klineDailyQueryOptions 同源, 调用点不再各自手写。 */
-export function klineMinuteRangeQueryOptions(symbol: string, days: number) {
+export function klineMinuteRangeQueryOptions(symbol: string, days: number, freq = '1m') {
   return {
-    queryKey: QK.klineMinuteRange(symbol, days),
-    queryFn: () => api.klineMinuteRange(symbol, days),
+    queryKey: QK.klineMinuteRange(symbol, days, freq),
+    queryFn: () => api.klineMinuteRange(symbol, days, freq),
     placeholderData: (prev: any, prevQuery: any) => {
       const prevKey = prevQuery?.queryKey as readonly unknown[] | undefined
       return prevKey?.[1] === symbol ? prev : undefined

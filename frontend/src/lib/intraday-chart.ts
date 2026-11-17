@@ -60,3 +60,25 @@ function generateFullDayTimes(): string[] {
 }
 
 export const FULL_DAY_TIMES = generateFullDayTimes()
+
+/** 分钟周期 → 每天 bar 时刻（区间**终点**标注，与 1m 的 09:31..15:00 同约定）。
+ *
+ * 不要用 FULL_DAY_TIMES 铺 5m/15m/… 的 x 轴：那会给出 240 个槽位、只填 48 个，
+ * 图上是一串被拉长的空白。这些网格由实测的通达信数据反推：
+ * 5m 每天 48 根（09:35..11:30 + 13:05..15:00）、15m 16 根、30m 8 根、60m 4 根。
+ */
+const MINUTE_FREQ_STEP: Record<string, number> = { '5m': 5, '15m': 15, '30m': 30, '60m': 60 }
+
+export function minuteTimesForFreq(freq: string): string[] {
+  const step = MINUTE_FREQ_STEP[freq]
+  if (!step) return FULL_DAY_TIMES
+  const out: string[] = []
+  const push = (totalMinutes: number) => {
+    const h = Math.floor(totalMinutes / 60)
+    const m = totalMinutes % 60
+    out.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+  }
+  for (let m = 9 * 60 + 30 + step; m <= 11 * 60 + 30; m += step) push(m)
+  for (let m = 13 * 60 + step; m <= 15 * 60; m += step) push(m)
+  return out
+}

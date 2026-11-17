@@ -25,7 +25,7 @@ import { QK, MINUTE_DATA_QUERY_PREFIXES } from '@/lib/queryKeys'
 import { setUiPref } from '@/lib/uiPrefs'
 import { getPageScale } from '@/lib/pageZoom'
 import { setKlineBatchLimits } from '@/lib/klineBatchLimits'
-import { compareByDefaultNav, defaultNavIndex, seedHiddenForNewUser } from '@/lib/navOrder'
+import { compareByDefaultNav, defaultNavIndex, seedHiddenForNewUser, CORE_NAV_PATHS, CORE_NAV_LABELS, type CoreNavPath } from '@/lib/navOrder'
 import {
   Settings,
   DatabaseZap,
@@ -58,6 +58,7 @@ import {
   IconIndices,
   IconData,
   IconDecision,
+  IconCaseLab,
   type BrandIconProps,
 } from './BrandIcons'
 import { Logo } from './Logo'
@@ -87,19 +88,28 @@ export const CORE_INDEXES = [
 
 type CoreIndex = (typeof CORE_INDEXES)[number]
 
-const nav = [
-  { to: '/',                 label: '看板',     icon: IconDashboard },
-  // 博弈链路紧跟看板：它是"今天该看什么"的入口，先有流程再有页面。
-  { to: '/battle',           label: '博弈链路', icon: IconFlow },
-  { to: '/watchlist',        label: '自选',     icon: IconWatchlist },
-  { to: '/screener',         label: '策略',     icon: IconStrategy },
-  { to: '/factors',          label: '因子',     icon: IconFactors },
-  { to: '/backtest',         label: '回测',     icon: IconBacktest },
-  { to: '/regime',           label: '市场环境', icon: IconRegime },
-  { to: '/indices',          label: '指数',     icon: IconIndices },
-  { to: '/data',             label: '数据',     icon: IconData },
-  { to: '/decisions',        label: '决策账本', icon: IconDecision },
-] as const
+/**
+ * 内置导航的图标 —— 页面清单与中文名都在 lib/navOrder (CORE_NAV_PATHS /
+ * CORE_NAV_LABELS), 这里只补图标。不另写路径清单: 两处各记一份「有哪些内置
+ * 页面」时, 新增页面只改一处不会报错, 只会让它在 nav_order 里查不到序号而
+ * 静默沉底 (/decisions 踩过)。Record<CoreNavPath, ...> 保证少写一个就是类型错误。
+ */
+const CORE_NAV_ICONS: Record<CoreNavPath, (props: BrandIconProps) => ReactNode> = {
+  '/':          IconDashboard,
+  '/battle':    IconFlow,
+  '/watchlist': IconWatchlist,
+  '/screener':  IconStrategy,
+  '/factors':   IconFactors,
+  '/backtest':  IconBacktest,
+  '/regime':    IconRegime,
+  '/indices':   IconIndices,
+  '/data':      IconData,
+  '/decisions': IconDecision,
+  '/case-lab':  IconCaseLab,
+}
+
+// 博弈链路紧跟看板：它是"今天该看什么"的入口，先有流程再有页面。
+const nav = CORE_NAV_PATHS.map(to => ({ to, label: CORE_NAV_LABELS[to], icon: CORE_NAV_ICONS[to] }))
 
 /** 亮/暗主题切换 — 状态存 localStorage, 生效见 lib/theme.ts */
 function ThemeToggle() {
@@ -596,7 +606,8 @@ export function Layout() {
   // 合并内置页面 + 可见的扩展分析菜单
   type NavIcon = (props: BrandIconProps) => ReactNode
   // arch: 'ext' = 扩展域页面 (官方扩展/自定义分析), 核心域 nav 常量不带标。
-  // 与菜单设置 ARCH_CLASS 同口径: nav 常量 8 项全部核心, 其余两个来源全部扩展。
+  // 与菜单设置 ARCH_CLASS 同口径: nav (由 CORE_NAV_PATHS 展开) 全部核心,
+  // 其余两个来源全部扩展。条数不写死, 避免新增页面后注释先行失真。
   type NavItem = { to: string; label: string; icon: NavIcon; badge?: string; arch?: 'core' | 'ext' }
   const analysisNav: NavItem[] = (analysisMenus?.items ?? [])
     .filter(m => m.visible)

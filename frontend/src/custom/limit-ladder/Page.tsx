@@ -10,6 +10,7 @@ import { DimensionMembersDialog, type DimensionKind, type DimensionMembersTarget
 import { QK } from '@/lib/queryKeys'
 import { storage } from '@/lib/storage'
 import { fmtPct, priceColorClass } from '@/lib/format'
+import { cnToday } from '@/lib/kline'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
@@ -1599,7 +1600,7 @@ export function LimitUpLadder() {
     )
   }
 
-  const dateValue = displayDate || new Date().toISOString().slice(0, 10)
+  const dateValue = displayDate || cnToday()
 
   // 请求失败与空数据分开呈现: 失败显示错误态 + 重试, 而非误导性的「暂无连板数据」
   if (isError) {

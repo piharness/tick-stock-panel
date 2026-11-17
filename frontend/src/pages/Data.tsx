@@ -915,6 +915,11 @@ export function Data() {
                 { label: '除权因子', files: storage?.adj_factor_files,  size: storage?.adj_factor_size_mb },
                 { label: 'Enriched', files: storage?.enriched_files,    size: storage?.enriched_size_mb },
                 { label: '分钟 K',   files: storage?.minute_files,      size: storage?.minute_size_mb },
+                { label: '5 分钟 K', files: storage?.minute_5m_files,   size: storage?.minute_5m_size_mb },
+                { label: '15 分钟 K',files: storage?.minute_15m_files,  size: storage?.minute_15m_size_mb },
+                { label: '30 分钟 K',files: storage?.minute_30m_files,  size: storage?.minute_30m_size_mb },
+                { label: '60 分钟 K',files: storage?.minute_60m_files,  size: storage?.minute_60m_size_mb },
+                { label: '日 K 前复权', files: storage?.daily_qfq_archive_files, size: storage?.daily_qfq_archive_size_mb },
                 { label: '财务数据', files: storage?.financials_files,   size: storage?.financials_size_mb },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between text-[11px]">

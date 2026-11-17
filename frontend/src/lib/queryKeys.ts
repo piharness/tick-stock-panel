@@ -124,8 +124,11 @@ export const QK = {
   stockLevels:          (symbol: string, days?: number) => ['stock-levels', symbol, days ?? 120] as const,
   klineMinute:          (symbol: string, date: string) =>
                              ['kline-minute', symbol, date] as const,
-  klineMinuteRange:     (symbol: string, days: number) =>
-                             ['kline-minute-range', symbol, days] as const,
+  // freq 不写进 1m 的键：保持既有缓存条目不变（避免升级后全量失效一次）。
+  klineMinuteRange:     (symbol: string, days: number, freq = '1m') =>
+                             (freq && freq !== '1m'
+                               ? ['kline-minute-range', symbol, days, freq] as const
+                               : ['kline-minute-range', symbol, days] as const),
   indexDaily:           (symbol: string, start: string, end: string) =>
                              ['index-daily', symbol, start, end] as const,
   indexMinute:          (symbol: string, date: string) =>
@@ -162,8 +165,23 @@ export const QK = {
   // AI 大盘复盘
   reviewReports:        ['review-reports'] as const,
 
+  // 操盘档案 (个人学习页) — 参数影响结果的都进键
+  caseLabFingerprints:  () => ['case-lab', 'fingerprints'] as const,
+  caseLabStats:         () => ['case-lab', 'stats'] as const,
+  caseLabScan:          (lookback: number) => ['case-lab', 'scan', lookback] as const,
+  caseLabDissect:       (symbol: string, start: string, end: string) =>
+                         ['case-lab', 'dissect', symbol, start, end] as const,
+  caseLabCases:         () => ['case-lab', 'cases'] as const,
+  caseLabCase:          (id: string) => ['case-lab', 'case', id] as const,
+  caseLabReconcile:     (id: string, tolDays: number) => ['case-lab', 'reconcile', id, tolDays] as const,
+
   // 概念涨幅轮动矩阵
   rpsRotation:          (days: number) => ['rps-rotation', days] as const,
+
+  // 市场公民（多维流动性身份分级）—— 日级离线计算, 不进 SSE 刷新
+  citizenship:          (asOf?: string) => ['citizenship', asOf ?? 'latest'] as const,
+  citizenshipLevels:    ['citizenship-levels'] as const,
+  citizenshipHistory:   (days?: number, end?: string) => ['citizenship-history', days ?? 30, end ?? 'latest'] as const,
 
   // 市场环境(Regime) — 日级离线计算, 不进 SSE 刷新
   // 历史查询键 = 实际请求三元组 (影响结果的参数全部进键): 'all' 在 coverage

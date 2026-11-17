@@ -1094,6 +1094,279 @@ export interface TableGameScan {
   }
 }
 
+// ===== 操盘档案 (case-lab) =====
+//
+// 证据三级：official（官方文书，滞后）/ trace（市场痕迹，可算）/ narrative（爆料媒体）。
+// 数字口径：`*_bp` 基点、`*_pct` 百分数原值、`*_yi` 亿元、ratio 0–1。
+
+/** 判据定义。`rule` 与 `params` 来自后端同一份参数，不会各写一遍 */
+export interface FingerprintDef {
+  id: string
+  label: string
+  family: string
+  thesis: string
+  rule: string
+  params: Record<string, number>
+  needs: string[]
+  caveat: string
+}
+
+export interface FpWindowStat {
+  n_days: number
+  mean_bp: number | null
+  median_bp: number | null
+  win_rate: number | null
+  /** 样本在时间上重叠，t 只作参考 */
+  t: number | null
+}
+
+export interface FingerprintStatItem {
+  id: string
+  label: string
+  family: string
+  /** 命中总行数（含买不进的一字板） */
+  n_raw: number
+  /** 命中且 T+1 开盘买得进的样本数 */
+  n_rows: number
+  n_days: number
+  buyable_ratio: number | null
+  hit_rate: number
+  state: 'ok' | 'insufficient'
+  fwd: { '1'?: FpWindowStat; '5'?: FpWindowStat; '20'?: FpWindowStat }
+}
+
+export interface CaseLabStats {
+  state: 'ok' | 'missing' | 'corrupt' | 'no_data'
+  as_of: string | null
+  years: number | null
+  bars?: number
+  rows?: number
+  min_hits?: number
+  generated_at?: string
+  items: FingerprintStatItem[]
+}
+
+export interface CaseScanHit {
+  id: string
+  label: string
+  count: number
+}
+
+export interface CaseScanName {
+  symbol: string
+  name: string | null
+  /** 命中了多少种不同判据 */
+  kinds: number
+  hits: CaseScanHit[]
+  bars: number
+  last_date: string
+  cum_ret_pct: number
+  turn_avg_pct: number
+  amount_yi: number
+}
+
+export interface CaseLabScan {
+  state: 'ok' | 'no_data'
+  as_of: string
+  start?: string
+  lookback?: number
+  counts: { candidates?: number; shown?: number }
+  names: CaseScanName[]
+  disclaimer?: string
+}
+
+export interface DissectBar {
+  date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  ret_pct: number
+  turn_pct: number
+  amount_yi: number
+  amp_pct: number
+  boards: number
+}
+
+export interface DissectHit {
+  id: string
+  label: string
+  family: string
+  dates: string[]
+  n: number
+}
+
+export interface DissectSeat {
+  seat: string | null
+  net_yi: number
+}
+
+export interface DissectEvent {
+  date: string
+  net_yi: number
+  org_net_yi: number
+  hot_net_yi: number
+  chg_pct: number
+  seats: DissectSeat[]
+}
+
+export interface DissectPivot {
+  date: string
+  amount_ratio: number
+  ret_pct: number
+}
+
+export interface DissectSummary {
+  bars: number
+  range_ret_pct: number | null
+  max_drawdown_pct: number | null
+  high: number
+  low: number
+  turn_median_pct: number
+  amount_yi_total: number
+}
+
+export interface CaseDissect {
+  state: 'ok' | 'no_data' | 'not_in_universe'
+  symbol: string
+  name?: string | null
+  start?: string
+  end?: string
+  bars: DissectBar[]
+  hits: DissectHit[]
+  events: DissectEvent[]
+  pivots: DissectPivot[]
+  summary?: DissectSummary
+}
+
+export interface CaseEvidence {
+  id?: string | null
+  date?: string | null
+  kind: string
+  source: string
+  url?: string | null
+  text: string
+  reliability: string
+}
+
+export interface CasePhase {
+  label: string
+  start?: string | null
+  end?: string | null
+  note: string
+}
+
+export interface CaseDoc {
+  id: string
+  symbol: string
+  name?: string | null
+  title: string
+  actor_type: string
+  status: string
+  start?: string | null
+  end?: string | null
+  thesis: string
+  evidence: CaseEvidence[]
+  phases: CasePhase[]
+  playbook: string[]
+  lessons: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CaseListItem {
+  id: string
+  symbol: string
+  name?: string | null
+  title: string
+  actor_type: string
+  status: string
+  start?: string | null
+  end?: string | null
+  updated_at?: string
+  evidence_count: number
+  playbook: string[]
+}
+
+// ===== 市场公民（多维流动性身份分级） =====
+
+export type CitizenshipLevel = 'core' | 'active' | 'background' | 'silent'
+
+export type CitizenshipTransition = 'up' | 'down' | 'stay' | 'new'
+
+export interface CitizenshipLevelSummary {
+  level: CitizenshipLevel
+  label: string
+  hint: string
+  count: number
+  share: number
+}
+
+export interface CitizenshipRow {
+  symbol: string
+  name: string | null
+  level: CitizenshipLevel
+  mcap: number
+  turnover_rate: number
+  amount: number
+  p_scale: number
+  p_turnover: number
+  p_amount: number
+  prev_level: CitizenshipLevel | null
+  transition: CitizenshipTransition
+}
+
+export interface CitizenshipData {
+  as_of: string | null
+  prev_as_of: string | null
+  window_days: number
+  summary: {
+    levels: CitizenshipLevelSummary[]
+    total: number
+    attention_top: number
+    transitions: Record<CitizenshipTransition, number>
+  }
+  rows: CitizenshipRow[]
+  disclaimer: string
+}
+
+export interface CitizenshipHistoryPoint {
+  as_of: string | null
+  total: number
+  attention_top: number
+  levels: CitizenshipLevelSummary[]
+  transitions: Record<CitizenshipTransition, number>
+}
+
+export interface CitizenshipHistory {
+  series: CitizenshipHistoryPoint[]
+  days: number
+}
+
+export interface ReconcileTrace {
+  date: string
+  kind: 'fingerprint' | 'lhb' | 'move'
+  labels: string[]
+}
+
+export interface ReconcileItem {
+  evidence: CaseEvidence
+  support: 'traced' | 'untraced' | 'undated'
+  within: number | null
+  traces: ReconcileTrace[]
+}
+
+export interface CaseReconcile {
+  state: 'ok' | 'not_found' | 'incomplete' | 'no_data' | 'not_in_universe'
+  case?: CaseDoc
+  symbol?: string
+  start?: string
+  end?: string
+  items: ReconcileItem[]
+  counts?: { total: number; traced: number; untraced: number }
+  note?: string
+}
+
 // ===== Strategy Engine =====
 /** 参数级联显隐条件 (UI 元数据, 后端原样透传)。三种形态可递归组合:
  *  { param, in } — values[param] ∈ in;  { all: [...] } — 全部成立;  { any: [...] } — 任一成立 */
@@ -3944,16 +4217,17 @@ export const api = {
     }>(
       `/api/kline/minute?symbol=${encodeURIComponent(symbol)}${date ? `&date=${date}` : ''}${live ? '&live=1' : ''}`,
     ),
-  klineMinuteRange: (symbol: string, days = 10) =>
+  klineMinuteRange: (symbol: string, days = 10, freq = '1m') =>
     request<{
       symbol: string
       name?: string
       asset_type: 'stock' | 'etf' | 'index'
       requested_days: number
+      freq?: string
       sessions: MinuteKlineSession[]
       source: 'local' | 'none'
     }>(
-      `/api/kline/minute-range?symbol=${encodeURIComponent(symbol)}&days=${days}`,
+      `/api/kline/minute-range?symbol=${encodeURIComponent(symbol)}&days=${days}${freq && freq !== '1m' ? `&freq=${encodeURIComponent(freq)}` : ''}`,
     ),
   indexDaily: (symbol: string, days = 120, dateRange?: { start: string; end: string }) =>
     request<{
@@ -5155,6 +5429,64 @@ export const api = {
       + `${asOf ? `&as_of=${encodeURIComponent(asOf)}` : ''}&days=${days}`,
     ),
 
+  // ===== 操盘档案 =====
+  /** 判据库：定义、阈值、反例（阈值与展示文本来自后端同一份参数） */
+  caseLabFingerprints: () =>
+    request<{ items: FingerprintDef[]; limit_gap: number; min_hits: number; note: string }>(
+      '/api/case-lab/fingerprints',
+    ),
+
+  /** 判据统计。首次调用会同步算一次（约 5–10 秒），之后读盘上 JSON */
+  caseLabStats: () => request<CaseLabStats>('/api/case-lab/stats'),
+
+  caseLabRebuildStats: (years?: number) =>
+    request<CaseLabStats>(
+      `/api/case-lab/stats/rebuild${years ? `?years=${years}` : ''}`,
+      { method: 'POST', timeoutMs: 180_000 },
+    ),
+
+  /** 最近 N 日的结构异常候选（不是推荐，不是指控） */
+  caseLabScan: (asOf?: string, lookback = 60, limit = 30) =>
+    request<CaseLabScan>(
+      `/api/case-lab/scan?lookback=${lookback}&limit=${limit}`
+      + `${asOf ? `&as_of=${encodeURIComponent(asOf)}` : ''}`,
+    ),
+
+  /** 个股区间痕迹：逐日 K 线 + 判据命中 + 龙虎榜 + 候选拐点 */
+  caseLabDissect: (symbol: string, start: string, end: string) =>
+    request<CaseDissect>(
+      `/api/case-lab/dissect?symbol=${encodeURIComponent(symbol)}`
+      + `&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    ),
+
+  caseLabCases: () => request<{ items: CaseListItem[] }>('/api/case-lab/cases'),
+
+  // 市场公民：全市场多维流动性身份分级 + 注意力预算
+  citizenship: (asOf?: string) =>
+    request<CitizenshipData>(`/api/citizenship${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`),
+  citizenshipHistory: (days = 30, end?: string) =>
+    request<CitizenshipHistory>(`/api/citizenship/history?days=${days}${end ? `&end=${encodeURIComponent(end)}` : ''}`),
+  citizenshipLevels: () =>
+    request<{ order: CitizenshipLevel[]; labels: Record<CitizenshipLevel, string>; hints: Record<CitizenshipLevel, string>; rules: Record<string, Record<string, number>>; window_days: number; min_bars: number }>('/api/citizenship/levels'),
+
+  caseLabCase: (id: string) =>
+    request<CaseDoc>(`/api/case-lab/cases/${encodeURIComponent(id)}`),
+
+  caseLabSaveCase: (payload: Partial<CaseDoc>) =>
+    request<CaseDoc>('/api/case-lab/cases', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  caseLabDeleteCase: (id: string) =>
+    request<{ deleted: string }>(`/api/case-lab/cases/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  /** 叙事与痕迹对账：untraced 表示本地数据看不到，不等于叙事为假 */
+  caseLabReconcile: (id: string, tolDays = 3) =>
+    request<CaseReconcile>(
+      `/api/case-lab/cases/${encodeURIComponent(id)}/reconcile?tol_days=${tolDays}`,
+    ),
+
   reviewReportSave: (r: {
     as_of: string; focus?: string; content: string
     summary?: string; emotion_score?: number | null; emotion_label?: string
@@ -5839,6 +6171,17 @@ export interface DataStatus {
     etf_adj_factor_size_mb?: number
     minute_files: number
     minute_size_mb: number
+    // 多周期分钟归档与日K前复权归档: 只读资产, 不参与"清空数据", 但占用要如实计入
+    minute_5m_files?: number
+    minute_5m_size_mb?: number
+    minute_15m_files?: number
+    minute_15m_size_mb?: number
+    minute_30m_files?: number
+    minute_30m_size_mb?: number
+    minute_60m_files?: number
+    minute_60m_size_mb?: number
+    daily_qfq_archive_files?: number
+    daily_qfq_archive_size_mb?: number
     adj_factor_files: number
     adj_factor_size_mb: number
     instruments_files: number

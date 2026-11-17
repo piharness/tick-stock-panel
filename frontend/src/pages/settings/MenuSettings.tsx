@@ -25,7 +25,7 @@ import { toast } from '@/components/Toast'
 import { QK } from '@/lib/queryKeys'
 import { usePreferences } from '@/lib/useSharedQueries'
 import { getFrontendExtensionNavigation } from '@/extensions/registry'
-import { compareByDefaultNav, defaultNavIndex } from '@/lib/navOrder'
+import { compareByDefaultNav, defaultNavIndex, CORE_NAV_PATHS, CORE_NAV_LABELS, type CoreNavPath } from '@/lib/navOrder'
 
 interface NavEntry {
   id: string
@@ -36,26 +36,33 @@ interface NavEntry {
   extensionId?: string
 }
 
-// 核心页清单; nav_order 未保存时的完整默认顺序以 lib/navOrder 基准为准
-// (含迁移到 custom/ 的扩展域页面, 保证老用户升级侧栏顺序无感)
-const BUILTIN_PAGES: NavEntry[] = [
-  { id: '/', label: '看板', type: 'builtin', visible: true },
-  { id: '/watchlist', label: '自选', type: 'builtin', visible: true },
-  { id: '/screener', label: '策略', type: 'builtin', visible: true },
-  { id: '/factors', label: '因子', type: 'builtin', visible: true },
-  { id: '/backtest', label: '回测', type: 'builtin', visible: true },
-  { id: '/regime', label: '市场环境', type: 'builtin', visible: true },
-  { id: '/indices', label: '指数', type: 'builtin', visible: true },
-  { id: '/data', label: '数据', type: 'builtin', visible: true },
-]
+// 核心页清单 —— 从 lib/navOrder 派生, 不手写。
+// 手写时漏了 /battle 与 /decisions: 这两页在侧栏正常显示, 但在本页里既不能隐藏
+// 也排不了序; 一旦用户在这里保存过一次 nav_order (不含它们), Layout 的合并逻辑
+// 只能把它们追加到末尾 —— 表现为「保存过一次菜单设置, 博弈链路就掉到最后」。
+const BUILTIN_PAGES: NavEntry[] = CORE_NAV_PATHS.map(id => ({
+  id,
+  label: CORE_NAV_LABELS[id],
+  type: 'builtin' as const,
+  visible: true,
+}))
 
 // ── 架构归属标注 (docs/open-platform-plan.md §2 核心域/扩展域边界) ──
 // 核心 = 页面承载核心域能力 (数据底座/订阅锚点/策略回测/环境生产);
 // 扩展 = 核心数据的消费页, 二开可用「扩展页面」平行实现替换 UI 而不伤核心。
 // 与「类型」列的区别: 类型标注页面来源 (内置/自定义), 归属标注架构分层。
 type ArchKind = 'core' | 'ext'
-const ARCH_CLASS: Record<string, { kind: ArchKind; reason: string }> = {
+
+/**
+ * 核心内置页的架构归属 —— 键集合由 CORE_NAV_PATHS 决定, 少一个就是类型错误。
+ *
+ * 此前这张表也是手写的, 漏了 /battle 与 /decisions: archOf() 于是把它们兜底成
+ * 「自定义分析页 — 扩展域」。那不是缺省, 是一句**错话** —— 两页都是内置核心页,
+ * 页面上却告诉用户它可被扩展页替换。缺省值只该给真正的自定义页。
+ */
+const CORE_ARCH: Record<CoreNavPath, { kind: ArchKind; reason: string }> = {
   '/':               { kind: 'core', reason: '总览页 — 聚合核心数据的多维视图' },
+  '/battle':         { kind: 'core', reason: '博弈链路入口 — 当日观察顺序与对手盘拆解' },
   '/watchlist':      { kind: 'core', reason: '订阅锚点 — 监控/提醒/看板的数据范围基准' },
   '/screener':       { kind: 'core', reason: '策略引擎 — 策略/评分/信号定义' },
   '/factors':        { kind: 'core', reason: '因子平台 — 因子检验与回测联动' },
@@ -63,6 +70,12 @@ const ARCH_CLASS: Record<string, { kind: ArchKind; reason: string }> = {
   '/regime':         { kind: 'core', reason: '环境数据生产 — 回测/挖掘/归因共用的市场状态口径' },
   '/indices':        { kind: 'core', reason: '行情数据底座 — 指数日K/分时出口' },
   '/data':           { kind: 'core', reason: '数据底座 — 同步管道与数据源路由' },
+  '/decisions':      { kind: 'core', reason: '决策账本 — 制卡/结算/校准的权威记录' },
+  '/case-lab':       { kind: 'core', reason: '操盘档案 — 判据库与案例库, 痕迹对账叙事' },
+}
+
+const ARCH_CLASS: Record<string, { kind: ArchKind; reason: string }> = {
+  ...CORE_ARCH,
   '/stock-analysis': { kind: 'ext', reason: '个股分析视图 — 消费核心数据, 可由扩展页面替换' },
   '/limit-ladder':   { kind: 'ext', reason: '连板梯队视图 — 消费核心数据, 可由扩展页面替换' },
   '/concept-analysis': { kind: 'ext', reason: '概念分析视图 — 消费核心数据, 可由扩展页面替换' },
