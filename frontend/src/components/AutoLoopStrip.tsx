@@ -331,7 +331,7 @@ export function AutoLoopStrip({ page }: { page: LoopPage }) {
                 {triggerAlpha.data && (
                   <div className="mt-0.5 text-muted/70">
                     {triggerAlpha.data.status === 'started'
-                      ? `已触发 ${triggerAlpha.data.claim}，约 5 分钟`
+                      ? `已触发 ${triggerAlpha.data.claim}，跑在后台（结果回来后这里会更新）`
                       : triggerAlpha.data.status === 'already_running'
                         ? `已有任务在跑（${triggerAlpha.data.claim}）`
                         : `未触发：${triggerAlpha.data.status}`}

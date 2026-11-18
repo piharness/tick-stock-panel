@@ -6316,7 +6316,7 @@ export const api = {
   labAlphaStatus: () =>
     request<LabAlphaStatus>('/api/backtest/lab/alpha-search/status'),
 
-  /** 手工触发一次主动搜索：立即返回，搜索在后台跑（360 公式约 5 分钟）。
+  /** 手工触发一次主动搜索：立即返回，搜索在后台跑（360 公式本地 4 分钟、容器内更慢）。
    *  `status=already_running` 表示没起新任务 —— 同一时间只允许一个。 */
   labAlphaRun: (asOf?: string) =>
     request<{ status: string; claim: string; as_of?: string; started_at?: string }>(
