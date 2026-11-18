@@ -851,3 +851,71 @@ def test_alpha_search_counts_as_research_automation(tmp_path: Path, monkeypatch)
     assert state["autonomy"]["alpha"] == {
         "enabled": True, "day": 1, "profile": "balanced", "max_formulas": 360,
     }
+
+
+def test_latest_alpha_run_skips_all_duplicate_run(tmp_path: Path):
+    """全部跳过的一次运行不能覆盖上一次真跑的报告。
+
+    `_prior_trial_keys` 会把同窗口已跑过的试验去重：evaluated=0 / skipped_prior=360
+    的 run 里 confirmed_themes 必然为 0。若把它当最新报告，前端会把「这次没有
+    新试验」读成「市场没有信号」，而上次明明确认了 14 个主题。
+    """
+    root = tmp_path / "research" / "alpha_search"
+    _write_run(
+        root, "20261109-124555-aaaaaa",
+        {"run_id": "real", "counts": {"evaluated": 360, "skipped_prior": 0,
+                                      "confirmed": 20, "confirmed_themes": 14}},
+    )
+    _write_run(
+        root, "20261118-170456-bbbbbb",
+        {"run_id": "dup", "counts": {"evaluated": 0, "skipped_prior": 360,
+                                     "confirmed": 0, "confirmed_themes": 0}},
+    )
+    result = latest_alpha_run(tmp_path)
+    assert result is not None
+    assert result["run_id"] == "real"
+    assert result["confirmed_themes"] == 14
+
+
+def test_latest_alpha_run_keeps_old_reports_without_evaluated_key(tmp_path: Path):
+    """老报告没有 evaluated 键：不能凭「缺失」就当成全跳过而丢掉。"""
+    root = tmp_path / "research" / "alpha_search"
+    _write_run(root, "20261109-124555-cccccc",
+               {"run_id": "legacy", "counts": {"confirmed": 16, "confirmed_themes": 11}})
+    result = latest_alpha_run(tmp_path)
+    assert result is not None
+    assert result["run_id"] == "legacy"
+
+
+def test_latest_alpha_run_skips_all_duplicate_run(tmp_path: Path):
+    """全部跳过的一次运行不能覆盖上一次真跑的报告。
+
+    `_prior_trial_keys` 会把同窗口已跑过的试验去重：evaluated=0 / skipped_prior=360
+    的 run 里 confirmed_themes 必然为 0。若把它当最新报告，前端会把「这次没有
+    新试验」读成「市场没有信号」，而上次明明确认了 14 个主题。
+    """
+    root = tmp_path / "research" / "alpha_search"
+    _write_run(
+        root, "20261109-124555-aaaaaa",
+        {"run_id": "real", "counts": {"evaluated": 360, "skipped_prior": 0,
+                                      "confirmed": 20, "confirmed_themes": 14}},
+    )
+    _write_run(
+        root, "20261118-170456-bbbbbb",
+        {"run_id": "dup", "counts": {"evaluated": 0, "skipped_prior": 360,
+                                     "confirmed": 0, "confirmed_themes": 0}},
+    )
+    result = latest_alpha_run(tmp_path)
+    assert result is not None
+    assert result["run_id"] == "real"
+    assert result["confirmed_themes"] == 14
+
+
+def test_latest_alpha_run_keeps_old_reports_without_evaluated_key(tmp_path: Path):
+    """老报告没有 evaluated 键：不能凭「缺失」就当成全跳过而丢掉。"""
+    root = tmp_path / "research" / "alpha_search"
+    _write_run(root, "20261109-124555-cccccc",
+               {"run_id": "legacy", "counts": {"confirmed": 16, "confirmed_themes": 11}})
+    result = latest_alpha_run(tmp_path)
+    assert result is not None
+    assert result["run_id"] == "legacy"

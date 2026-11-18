@@ -365,3 +365,24 @@ it('点「现在跑一次」真的发请求，并把 claim 回显给人', async 
   expect(api.labAlphaRun).toHaveBeenCalledTimes(1)
   expect(host.textContent ?? '').toContain('alpha-manual-20261118-165000')
 })
+
+it('全部跳过时说「本次无新试验」，不说成「0 主题」', async () => {
+  // evaluated=0 + skipped_prior>0 = 同窗口的试验被去重了，不是市场没信号。
+  vi.mocked(api.labAlphaStatus).mockResolvedValue({
+    config: { enabled: true, alpha_search_day: 1, alpha_search_profile: 'balanced', alpha_search_max_formulas: 360 },
+    schedule: {
+      latest_claim: 'alpha-manual-20261118-170456',
+      latest: { status: 'done', started_at: '2026-11-18T17:04:56',
+                counts: { evaluated: 0, skipped_prior: 360, confirmed_themes: 0 } },
+      running: false,
+    },
+    latest: null,
+  })
+  vi.mocked(api.labReport).mockResolvedValue(report())
+  await render('factor')
+  await openDetail()
+  const text = host.textContent ?? ''
+  expect(text).toContain('本次无新试验')
+  expect(text).toContain('同窗口已跑过')
+  expect(text).not.toContain('0 试验 → 0 主题')
+})

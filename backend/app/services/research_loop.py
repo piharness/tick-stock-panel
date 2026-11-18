@@ -275,6 +275,17 @@ def latest_alpha_run(data_dir: Path | str) -> dict[str, Any] | None:
         if report is None:
             continue
         counts = report.get("counts") or {}
+        # 「全部跳过」不等于「搜索没有发现」：同窗口已经跑过的试验会被
+        # `_prior_trial_keys` 去重，evaluated=0 / skipped_prior=360 的 run 里
+        # confirmed_themes 必然是 0。把它当成最新报告，会让 0 主题覆盖掉上一次
+        # 真实的 14 个主题 —— 前端会把「这次没有新试验」读成「市场没有信号」。
+        # 老报告没有这两个键，无法判断，保持原样（不能凭缺失就跳过）。
+        if (
+            counts.get("evaluated") is not None
+            and int(counts.get("evaluated") or 0) == 0
+            and int(counts.get("skipped_prior") or 0) > 0
+        ):
+            continue
         config = report.get("config") or {}
         min_dsr = config.get("min_dsr")
         themes = report.get("clusters") or []

@@ -309,7 +309,12 @@ export function AutoLoopStrip({ page }: { page: LoopPage }) {
                       )}
                       {last?.counts && (
                         <li>
-                          {last.counts.evaluated ?? 0} 试验 → {last.counts.confirmed_themes ?? 0} 主题
+                          {/* 「全部跳过」不是「没有发现」：同窗口的试验被去重了，
+                              confirmed_themes 必然是 0。写成「0 试验 → 0 主题」
+                              会让人以为市场没信号。 */}
+                          {(last.counts.evaluated ?? 0) === 0 && (last.counts.skipped_prior ?? 0) > 0
+                            ? `${last.counts.skipped_prior} 个试验同窗口已跑过 · 本次无新试验`
+                            : `${last.counts.evaluated ?? 0} 试验 → ${last.counts.confirmed_themes ?? 0} 主题`}
                         </li>
                       )}
                       <li className={sch.running ? 'text-amber-500' : ''}>
