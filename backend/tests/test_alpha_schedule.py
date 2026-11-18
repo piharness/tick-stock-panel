@@ -14,6 +14,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
+
+#: 一个「装配好了」的 app_state：调度只要求 `repo` 存在。
+READY = SimpleNamespace(repo=object())
 
 import pytest
 
@@ -114,7 +118,7 @@ def test_关闭时不点火(data_dir, fired, monkeypatch):
         "enabled": False, "alpha_search_day": 1,
         "alpha_search_profile": "balanced", "alpha_search_max_formulas": 6,
     })
-    out = mod.run_scheduled_alpha_search(object(), now=datetime(2026, 11, 18, 18, 0))
+    out = mod.run_scheduled_alpha_search(READY, now=datetime(2026, 11, 18, 18, 0))
     assert out["status"] == "disabled"
     assert fired == []
 
@@ -126,7 +130,7 @@ def test_未到日子不点火(data_dir, fired, monkeypatch):
         "enabled": True, "alpha_search_day": 20,
         "alpha_search_profile": "balanced", "alpha_search_max_formulas": 6,
     })
-    out = mod.run_scheduled_alpha_search(object(), now=datetime(2026, 11, 18, 18, 0))
+    out = mod.run_scheduled_alpha_search(READY, now=datetime(2026, 11, 18, 18, 0))
     assert out["status"] == "day_mismatch"
     assert out["target"] == 20
     assert fired == []
@@ -140,8 +144,8 @@ def test_到点只点火一次(data_dir, fired, monkeypatch):
         "alpha_search_profile": "balanced", "alpha_search_max_formulas": 6,
     })
     now = datetime(2026, 11, 18, 18, 0)
-    first = mod.run_scheduled_alpha_search(object(), now=now)
-    second = mod.run_scheduled_alpha_search(object(), now=now)
+    first = mod.run_scheduled_alpha_search(READY, now=now)
+    second = mod.run_scheduled_alpha_search(READY, now=now)
     assert first["status"] == "started"
     assert second["status"] == "already_claimed"
     assert len(fired) == 1
@@ -161,7 +165,7 @@ def test_失败过一次后当月不再重试(data_dir, fired, monkeypatch):
     monkeypatch.setattr(mod, "read_state", lambda d: state)
     monkeypatch.setattr(mod, "write_state", lambda d, s: state.update(s))
 
-    out = mod.run_scheduled_alpha_search(object(), now=datetime(2026, 11, 18, 18, 0))
+    out = mod.run_scheduled_alpha_search(READY, now=datetime(2026, 11, 18, 18, 0))
     assert out["status"] == "already_claimed"
     assert out["state"] == "failed"
     assert fired == []
@@ -175,7 +179,7 @@ def test_手工触发不看开关(data_dir, fired, monkeypatch):
         "enabled": False, "alpha_search_day": 1,
         "alpha_search_profile": "balanced", "alpha_search_max_formulas": 6,
     })
-    out = mod.run_alpha_search_now(object(), as_of=date(2026, 11, 18))
+    out = mod.run_alpha_search_now(READY, as_of=date(2026, 11, 18))
     assert out["status"] == "started"
     assert out["claim"].startswith("alpha-manual-")
     assert fired == [(out["claim"], date(2026, 11, 18))]
@@ -188,14 +192,14 @@ def test_手工claim不占用月度claim(data_dir, fired, monkeypatch):
         "enabled": True, "alpha_search_day": 1,
         "alpha_search_profile": "balanced", "alpha_search_max_formulas": 6,
     })
-    manual = mod.run_alpha_search_now(object(), as_of=date(2026, 11, 18))
+    manual = mod.run_alpha_search_now(READY, as_of=date(2026, 11, 18))
     assert manual["status"] == "started"
     assert manual["claim"].startswith("alpha-manual-")
     # 手工跑的时候不允许并发第二个（同一时间只一个）；模拟它跑完后本月自动 claim 仍可用
     assert mod.run_scheduled_alpha_search(
-        object(), now=datetime(2026, 11, 18, 18, 0))["status"] == "already_running"
+        READY, now=datetime(2026, 11, 18, 18, 0))["status"] == "already_running"
     mod._ACTIVE["run_id"] = None
-    auto = mod.run_scheduled_alpha_search(object(), now=datetime(2026, 11, 18, 18, 0))
+    auto = mod.run_scheduled_alpha_search(READY, now=datetime(2026, 11, 18, 18, 0))
     assert auto["status"] == "started"
     assert auto["claim"] == "alpha-2026-11"
 
@@ -204,7 +208,7 @@ def test_已在跑时拒绝第二个(data_dir, fired, monkeypatch):
     monkeypatch.setattr(mod, "_ACTIVE", {
         "run_id": "alpha-2026-10", "started_at": "2026-10-01T18:00:00", "thread": None,
     })
-    out = mod.run_alpha_search_now(object(), as_of=date(2026, 11, 18))
+    out = mod.run_alpha_search_now(READY, as_of=date(2026, 11, 18))
     assert out["status"] == "already_running"
     assert out["claim"] == "alpha-2026-10"
     assert fired == []
@@ -230,3 +234,33 @@ def test_状态文件损坏不当成没有claim(data_dir):
     status = mod.schedule_status(data_dir)
     assert status["latest_claim"] is None
     assert status["running"] is False
+
+
+def test_repo缺失时不写claim(data_dir, fired):
+    """装配失败不能吃掉本月名额。
+
+    原先只在后台线程里检查 `repo`：claim 先落盘、线程随后失败、状态变成 failed，
+    而 failed 同样霸占本月 —— 于是「依赖没装好」被记成「这个月已经跑过了」。
+    2026-11-18 真实踩到：一个没 mock 的测试用 SimpleNamespace() 触发了调度，
+    把 alpha-2026-11 写成了 failed。
+    """
+    out = mod.run_alpha_search_now(SimpleNamespace(), as_of=date(2026, 11, 18))
+    assert out["status"] == "not_ready"
+    assert fired == []
+    # 状态文件里一条 claim 都不该有
+    assert mod.read_state(data_dir).get("claims") == {}
+
+
+def test_repo缺失时不写claim(data_dir, fired):
+    """装配失败不能吃掉本月名额。
+
+    原先只在后台线程里检查 `repo`：claim 先落盘、线程随后失败、状态变成 failed，
+    而 failed 同样霸占本月 —— 于是「依赖没装好」被记成「这个月已经跑过了」。
+    2026-11-18 真实踩到：一个没 mock 的测试用 SimpleNamespace() 触发了调度，
+    把 alpha-2026-11 写成了 failed。
+    """
+    out = mod.run_alpha_search_now(SimpleNamespace(), as_of=date(2026, 11, 18))
+    assert out["status"] == "not_ready"
+    assert fired == []
+    # 状态文件里一条 claim 都不该有
+    assert mod.read_state(data_dir).get("claims") == {}

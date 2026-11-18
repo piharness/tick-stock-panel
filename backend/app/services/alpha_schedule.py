@@ -176,7 +176,18 @@ def _last_session(data_dir: Path) -> date | None:
 
 
 def _start_claim(app_state: Any, data_dir: Path, claim: str, target: date) -> dict[str, Any]:
-    """起一个后台 claim。已在跑或本周已 claim 过就拒绝，不排队、不覆盖。"""
+    """起一个后台 claim。已在跑或本周已 claim 过就拒绝，不排队、不覆盖。
+
+    **`repo` 缺失必须在写 claim 之前就拒绝**。原先只在后台线程里检查，后果是：
+    claim 先落进状态文件、线程随后失败、状态变成 `failed` —— 而 `failed` 同样
+    霸占本月的名额，于是「依赖没装配好」被记成「这个月的搜索已经跑过了」，
+    下个月之前再也不会有第二次机会。2026-11-18 实测踩到：一个没 mock 的测试
+    用 `SimpleNamespace()` 触发了调度，把 `alpha-2026-11` 写成了 failed。
+    """
+    if getattr(app_state, "repo", None) is None:
+        return {"status": "not_ready", "claim": claim,
+                "error": "app.state.repo 未初始化：不写 claim，否则本月名额会被一次装配失败吃掉"}
+
     with _STATE_LOCK:
         state = read_state(data_dir)
         claims = state.setdefault("claims", {})
