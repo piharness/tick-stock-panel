@@ -216,7 +216,7 @@ def test_manager_thread_named_by_kind(tmp_path):
 
 
 def test_run_scheduled_lab_triggers_both(monkeypatch, tmp_path):
-    """P3 单入口: 依次触发周度挖掘与每日守护, 各自异常互不阻断。"""
+    """P3 单入口: 依次触发周度挖掘、每日守护、月度主动搜索, 各自异常互不阻断。"""
     import app.services.lab_schedule as lab_schedule_module
 
     calls: list[str] = []
@@ -229,6 +229,10 @@ def test_run_scheduled_lab_triggers_both(monkeypatch, tmp_path):
         calls.append("guardian")
         return {"status": "enqueued"}
 
+    def fake_alpha(state):
+        calls.append("alpha")
+        return {"status": "disabled"}
+
     def boom(state):
         raise RuntimeError("boom")
 
@@ -238,13 +242,21 @@ def test_run_scheduled_lab_triggers_both(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "app.services.guardian_schedule.run_daily_guardian", fake_guardian
     )
+    # 必须 mock: 真实偏好里 alpha_search_enabled 默认 True, 不替换会在测试里
+    # 起一个真的搜索线程 (实测 360 公式 225 秒), 而测试既不等它也不该等它。
+    monkeypatch.setattr(
+        "app.services.alpha_schedule.run_scheduled_alpha_search", fake_alpha
+    )
     result = lab_schedule_module.run_scheduled_lab(SimpleNamespace())
-    assert calls == ["mining", "guardian"]
+    assert calls == ["mining", "guardian", "alpha"]
     assert result == {"mining": {"status": "enqueued"},
-                      "guardian": {"status": "enqueued"}}
+                      "guardian": {"status": "enqueued"},
+                      "alpha": {"status": "disabled"}}
 
     monkeypatch.setattr("app.services.mining_schedule.run_weekly_mining", boom)
     result = lab_schedule_module.run_scheduled_lab(SimpleNamespace())
+    # 挖掘炸了不能连坐另外两个 —— 失败域隔离是这个单入口存在的理由
     assert result["mining"] is None
     assert result["guardian"] == {"status": "enqueued"}
+    assert result["alpha"] == {"status": "disabled"}
     del tmp_path

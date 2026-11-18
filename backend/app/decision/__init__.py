@@ -44,4 +44,4 @@ Web 控制台与 kernel 信念库（那 38 个指标绑定的是另一个研究�
 """
 from __future__ import annotations
 
-__all__ = ["bars", "gates", "ledger", "pwin", "settle"]
+__all__ = ["bars", "gates", "ledger", "l1_cohort", "lu_rebound", "pwin", "settle"]

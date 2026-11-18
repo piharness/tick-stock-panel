@@ -8,7 +8,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { api, type DecisionAutoConfig, type DecisionOverview, type DecisionSlateResponse, type Preferences } from '@/lib/api'
+import {
+  api,
+  type DecisionAutoConfig,
+  type DecisionLuCandidates,
+  type DecisionOverview,
+  type DecisionSlateResponse,
+  type Preferences,
+} from '@/lib/api'
 import { toast } from '@/components/Toast'
 import { Decision } from './Decision'
 
@@ -105,6 +112,28 @@ const slateResponse: DecisionSlateResponse = {
   },
 }
 
+/** 第二条腿（涨停次日砸盘反转）的清单。
+ *
+ *  `limit_price` 4.12 = 涨停价 4.13 的下一分：这不是「愿意付的最高价」，
+ *  是「开盘没封涨停」这个可成交条件的恒等变换。3.75 × 1.1 = 4.125 → 4.13。 */
+const luResponse: DecisionLuCandidates = {
+  as_of: '2026-11-17',
+  entry_date: '2026-11-18',
+  strategy_id: 'lu_t1_crash_rebound',
+  status: 'ready',
+  drop_threshold: 0.05,
+  top_n: 40,
+  n_rows: 1,
+  truncated: 0,
+  rows: [{
+    symbol: '601929.SH', name: '吉视传媒', rank: 1,
+    limit_price: 4.12, limit_up_price: 4.13, prev_close_raw: 3.75,
+    drop_pct: -6.25, lu_date: '2026-11-14', limit_pct: 0.1, day_amount_yi: 6.8,
+  }],
+  caliber: {},
+  warnings: [],
+}
+
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.spyOn(api, 'decisionOverview').mockResolvedValue(overview)
@@ -117,6 +146,8 @@ beforeEach(() => {
   vi.spyOn(api, 'decisionProduce').mockResolvedValue({ status: 'created', card_id: 'card_test' })
   // 名单面板的依赖：不 mock 会在 jsdom 里发真请求
   vi.spyOn(api, 'decisionSlate').mockResolvedValue(slateResponse)
+  // 第二条腿的清单：同样是「不 mock 就发真请求」
+  vi.spyOn(api, 'decisionLuCandidates').mockResolvedValue(luResponse)
   host = document.createElement('div')
   document.body.appendChild(host)
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -314,4 +345,124 @@ it('名单不存在时说的是「还没生成」，不是「加载中」', asyn
   const text = host.textContent ?? ''
   expect(text).toContain('名单还没生成')
   expect(text).toContain('Step 2.9')
+})
+
+// ---------------------------------------------------------------------------
+// 第二条生产腿：涨停次日砸盘反转
+// ---------------------------------------------------------------------------
+
+it('第二条腿独立成块：与每日名单并列，不是它的一段', async () => {
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('每日名单')
+  expect(text).toContain('砸盘反转（LU）')
+  expect(text).toContain('601929.SH')
+  expect(text).toContain('4.12')                       // 挂单限价
+  expect(text).toContain('2026-11-18 开盘买、收盘卖')     // 当日回合，不留隔夜
+  expect(text).toContain('开盘没封涨停')                  // 限价口径写在页面上
+})
+
+it('LU 开关是独立的一个：不夹带主腿的 enabled', async () => {
+  // 两个开关绑在一起的后果是单向的：关掉自动发卡会连带停掉一条已经在
+  // 账本里的策略，而界面上只显示「自动发卡已关闭」。
+  await render()
+  const boxes = [...host.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[]
+  expect(boxes).toHaveLength(2)
+  const lu = boxes[1]
+  expect(lu.checked).toBe(false)                        // 默认关
+  await act(async () => { lu.click() })
+  for (let i = 0; i < 3; i++) {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+  }
+  expect(api.updateDecisionAutoConfig).toHaveBeenCalledWith({ lu_rebound_enabled: true })
+})
+
+it('次日分区未落盘说的是「还没落盘」，不是「明天没有交易」', async () => {
+  vi.mocked(api.decisionLuCandidates).mockResolvedValue({ ...luResponse, entry_date: null })
+  await render()
+  expect(host.textContent ?? '').toContain('次日分区未落盘')
+})
+
+it('盘中快照时不出清单：半天的跌幅不是日内跌幅', async () => {
+  vi.mocked(api.decisionLuCandidates).mockResolvedValue({
+    ...luResponse,
+    status: 'skipped_not_closed',
+    n_rows: 0,
+    rows: [],
+    reason: 'as_of=2026-11-18 不是收盘数据（quote_ts=10:42:47）：盘中跌幅不是日内跌幅',
+  })
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('数据未收盘')
+  expect(text).toContain('清单没有成立')
+  expect(text).not.toContain('601929.SH')              // 一只都不许渲染出来
+})
+
+/* ---------- 空仓成绩单：三种「0 条」必须分开说 ---------- */
+
+const flatZero = {
+  records: 0, settled: 0, avoided: 0, missed: 0, hit_rate: null,
+  avoided_sum_pct: 0, missed_sum_pct: 0, net_pct: 0,
+  mean_avoided_pct: null, mean_missed_pct: null,
+}
+
+it('空仓卡未启用时说「未启用」，不把 0 条读成「从没躲对过」', async () => {
+  vi.mocked(api.decisionOverview).mockResolvedValue({
+    ...overview, flat: { ...flatZero, enabled: false },
+  })
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('空仓成绩单')
+  expect(text).toContain('未启用')
+  // 必须点名开关，否则用户不知道去哪打开
+  expect(text).toContain('decision_record_flat')
+  // 「命中率」在旁边的校准卡里也有，所以只能断言空仓段自己的字段不出现
+  expect(text).not.toContain('躲开下跌')
+})
+
+it('已启用但还没有 0 命中日：说的是「还没有」，不是「躲对过 0 次」', async () => {
+  vi.mocked(api.decisionOverview).mockResolvedValue({
+    ...overview, flat: { ...flatZero, enabled: true },
+  })
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('已启用')
+  expect(text).toContain('0 命中')
+  expect(text).not.toContain('躲开下跌')
+})
+
+it('躲开与踏空并列显示，净效果带符号', async () => {
+  // 3 次躲开 +2.10%，1 次踏空 −1.40% ⇒ 净 +0.70%。
+  // 这两个数必须同时出现在页面上：只报躲开的那半，等于自己给空仓发奖状。
+  vi.mocked(api.decisionOverview).mockResolvedValue({
+    ...overview,
+    flat: {
+      records: 4, settled: 4, avoided: 3, missed: 1, hit_rate: 0.75,
+      avoided_sum_pct: 2.1, missed_sum_pct: -1.4, net_pct: 0.7,
+      mean_avoided_pct: 0.7, mean_missed_pct: -1.4, enabled: true,
+    },
+  })
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('躲开下跌')
+  expect(text).toContain('踏空上涨')
+  expect(text).toContain('2.10%')
+  expect(text).toContain('-1.40%')
+  expect(text).toContain('+0.70%')       // 净效果必须带正号，不能写成 0.70%
+  expect(text).toContain('75.0%')
+})
+
+it('净效果为负时是负号，不是把空仓包装成赚了', async () => {
+  vi.mocked(api.decisionOverview).mockResolvedValue({
+    ...overview,
+    flat: {
+      records: 2, settled: 2, avoided: 0, missed: 2, hit_rate: 0,
+      avoided_sum_pct: 0, missed_sum_pct: 3.6, net_pct: -3.6,
+      mean_avoided_pct: null, mean_missed_pct: 1.8, enabled: true,
+    },
+  })
+  await render()
+  const text = host.textContent ?? ''
+  expect(text).toContain('-3.60%')
+  expect(text).not.toContain('+3.60%')
 })

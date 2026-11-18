@@ -517,6 +517,51 @@ def get_decision_auto_config() -> dict:
         #: 的是你真正想执行的那条腿——配置里的默认值（trend_breakout）在
         #: 三百多天实测里是负的。
         "execute": bool(raw.get("decision_auto_execute", False)),
+        #: 第二条生产腿（涨停次日砸盘反转）的开关。**它不是上面这份配置的一个
+        #: 选项**：口径全在策略层固定，与 `strategy_id`/`horizon`/`fill_mode`
+        #: 无关，所以定义点在 `get_decision_lu_config()`。这里只是顺手一起返回，
+        #: 让设置页一次读完整——判定逻辑不在这里复制一份。
+        "lu_rebound_enabled": get_decision_lu_config()["enabled"],
+    }
+
+
+def get_decision_lu_config() -> dict:
+    """第二条生产腿（涨停次日砸盘反转）的开关。
+
+    为什么是**独立开关**而不是把 `decision_auto_strategy_id` 改成列表：
+    两腿的口径完全在策略层固定（L1 强制 `open_only`、LU 强制 `horizon=0`），
+    共用的只有账户、p_win 口径与门禁。做成列表会把「配置错了会静默换策略」
+    的风险从一处扩大到每一处。
+
+    默认关，与自动发卡同一纪律：给不会真实执行的策略发卡会污染校准。
+    与 `decision_auto_execute` **无关**——这条腿的回合需要底仓配对
+    （T+1 不能当日回转），自动下单只会得到一串 `round_unfunded`。
+    """
+    raw = load()
+    return {
+        "enabled": bool(raw.get("decision_lu_rebound_enabled", False)),
+    }
+
+
+def get_decision_flat_config() -> dict:
+    """「0 命中时记一张空仓卡」的开关。
+
+    **默认开**（2026-11-18 改）。原先是关的，理由是写路径要先让人看过结算口径
+    再打开；口径现在已经用真实数据走过一遍（`analysis/_probe_flat_realdatal.py`：
+    as_of=2026-09-16 造卡 → entry=次日 → 20 日后基准 −7.9555% → 净躲开 7.96%，
+    封存校验通过、重复结算写 0 条），所以「先看清楚」这个前置条件已经满足。
+
+    留着默认关的实际后果是：`flat_summary` 永远是 0 条，页面上的空仓成绩单
+    永远显示「未启用」——那不是一个保守的默认值，是一个**永远不会产生证据**的
+    默认值。前向样本只能靠时间攒，晚开一天就少一天。
+
+    它只作用于**主腿真 0 命中**（候选池正常、门槛把票全滤掉）。数据故障
+    （名单未落盘 / 扫描失败）不算空仓：那会把「读不到」记成「决定不买」，
+    而这两件事在账本里必须可分辨，否则空仓成绩单会被故障日稀释。
+    """
+    raw = load()
+    return {
+        "enabled": bool(raw.get("decision_record_flat", True)),
     }
 
 
@@ -903,6 +948,66 @@ def set_mining_schedule(enabled: bool, weekday: int, profile: str) -> dict:
         "mining_schedule_enabled": bool(enabled),
         "mining_schedule_weekday": weekday,
         "mining_budget_profile": profile,
+    }
+    save(result)
+    return result
+
+
+ALPHA_SEARCH_PROFILES = frozenset({"balanced", "strict"})
+
+
+def get_alpha_search_schedule() -> dict:
+    """主动 Alpha 搜索的调度配置。
+
+    默认**开启**（2026-11-18）。原先默认关，理由是「跑之前要知道它在这台机器上
+    要多久」；实测已给出答案：**0.8 秒/公式**，360 个约 5 分钟
+    （`analysis/_probe_alpha_cost.py`）。一个每月 5 分钟、且可以在后台线程里
+    跑完的任务，默认关的实际后果是「主动搜索永远不产生第二批证据」。
+
+    `day` 只允许 1..28：29/30/31 在部分月份不存在，一个「每月 31 日跑」的
+    配置会在 2 月静默整月不跑，而状态文件里只会留下「本月没有 claim」。
+    """
+    data = load()
+    enabled = data.get("alpha_search_enabled", True)
+    if not isinstance(enabled, bool):
+        enabled = True
+    day = data.get("alpha_search_day", 1)
+    if isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 28:
+        day = 1
+    profile = data.get("alpha_search_profile", "balanced")
+    if not isinstance(profile, str) or profile not in ALPHA_SEARCH_PROFILES:
+        profile = "balanced"
+    max_formulas = data.get("alpha_search_max_formulas", 360)
+    if (
+        isinstance(max_formulas, bool)
+        or not isinstance(max_formulas, int)
+        or not 1 <= max_formulas <= 600
+    ):
+        max_formulas = 360
+    return {
+        "enabled": enabled,
+        "alpha_search_day": day,
+        "alpha_search_profile": profile,
+        "alpha_search_max_formulas": max_formulas,
+    }
+
+
+def set_alpha_search_schedule(
+    enabled: bool, day: int, profile: str, max_formulas: int
+) -> dict:
+    """校验并一次写入 Alpha 搜索调度的整组配置。"""
+    if not isinstance(day, int) or isinstance(day, bool) or not 1 <= day <= 28:
+        raise ValueError("alpha search day must be between 1 and 28")
+    if profile not in ALPHA_SEARCH_PROFILES:
+        raise ValueError("alpha search profile must be balanced or strict")
+    if not isinstance(max_formulas, int) or isinstance(max_formulas, bool) \
+            or not 1 <= max_formulas <= 600:
+        raise ValueError("alpha search max_formulas must be between 1 and 600")
+    result = {
+        "alpha_search_enabled": bool(enabled),
+        "alpha_search_day": day,
+        "alpha_search_profile": profile,
+        "alpha_search_max_formulas": max_formulas,
     }
     save(result)
     return result

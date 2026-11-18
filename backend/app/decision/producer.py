@@ -30,6 +30,7 @@ from app.decision import (
     bars,
     l1_cohort,
     ledger,
+    lu_rebound,
     pwin as pwin_mod,
     settle as settle_mod,
     slate as slate_mod,
@@ -274,6 +275,67 @@ def produce_card(
     }
 
 
+def produce_flat_card(
+    data_dir: Path,
+    *,
+    as_of: str,
+    horizon_sessions: int,
+    reason: str,
+    benchmark: str = "000300.SH",
+    strategy_id: str | None = None,
+    account_id: str = "default",
+    scan_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """显式记一张「今天决定不参与」的卡。**与 `produce_card` 的语义相反**。
+
+    `produce_card` 在 0 命中时返回 `skipped_no_picks` 且不落盘，理由是
+    「没有判断就没有卡，不造空卡」——那条规则针对的是**尝试持仓但扫不出标的**，
+    它防止的是把「策略坏了」伪装成「策略决定空仓」。这里相反：调用方**已经**
+    做了不参与的判断，理由必须显式给出（≥10 字），否则同样是在伪造决策。
+
+    三条硬约束：
+    - `horizon_sessions >= 1`：0 天持有期的空仓没有可评价窗口（entry==exit
+      ⇒ 基准收益恒 0），结算出来全是 0，等于给自己发了一张「完美空仓」的奖状；
+    - 理由 ≥ 10 字符：和 `override_reason` 同一标准，越权/反向决定必须可读；
+    - 门禁 STOP 时不出卡：自动路径没有豁免权，空仓也不例外。
+    """
+    if int(horizon_sessions) < 1:
+        raise ValueError(
+            "空仓卡必须 horizon_sessions >= 1：0 天持有期的空仓没有可评价窗口"
+        )
+    text = (reason or "").strip()
+    if len(text) < 10:
+        raise ValueError("空仓理由至少 10 个字符：『不买』必须留下可读的依据")
+
+    gate: GateResult = evaluate_gates(data_dir, as_of=as_of, account_id=account_id)
+    if gate.blocked:
+        logger.info("decision flat: gate %s, skip card (as_of=%s)", gate.decision, as_of)
+        return {"status": "skipped_gate", "gates": gate.to_dict(),
+                "decision": gate.decision}
+
+    forecast: dict[str, Any] = dict(scan_meta or {})
+    forecast["stance"] = ledger.STANCE_FLAT
+    forecast["reason"] = text
+    card = ledger.build_card(
+        as_of=as_of,
+        picks=[],
+        horizon_sessions=int(horizon_sessions),
+        benchmark=benchmark,
+        strategy_id=strategy_id,
+        account_id=account_id,
+        forecast=forecast,
+        gates=gate.to_dict(),
+        stance=ledger.STANCE_FLAT,
+    )
+    _path, created = ledger.save_card(data_dir, card)
+    return {
+        "status": "created" if created else "exists",
+        "card_id": card["card_id"],
+        "gates": gate.to_dict(),
+        "stance": ledger.STANCE_FLAT,
+    }
+
+
 def scan_picks(
     repo: Any,
     engine: Any,
@@ -415,23 +477,109 @@ def _l1_picks(data_dir: Path, as_of: str | None
     return picks, meta, None
 
 
+def _lu_picks(data_dir: Path, as_of: str | None
+              ) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any] | None]:
+    """LU 腿的 picks：直接来自 `lu_rebound.candidates()`，**不经过每日名单**。
+
+    每日名单（`slate`）是 L1 的唯一产地，它的 `top_n`、状态机、45 日面板窗口
+    都与 L1 口径绑在一起。把第二条腿塞进去会让两份名单共享一个 `as_of` 状态，
+    而它们的「今天该挂哪几张单」是两个问题。
+
+    `forecast` 只放**内容**：`fingerprint` = sha256(as_of + strategy + rows)。
+    刻意不放 `entry_date` 与 `warnings`——它们会随时间漂移（次日分区落盘后
+    `entry_date` 从 None 变成日期、`stale` 警告会出现），而卡的身份必须是内容：
+    周五盘后建的卡，周一重跑一次不该变成第二张卡（同一份证据在 Brier 里算两遍）。
+    入场日由 `_settle_pick()` 按日历推导，不依赖卡上的这个字段。
+    """
+    if not as_of:
+        return [], {}, {"status": "skipped_no_data",
+                        "reason": "没有决策日：先同步日K"}
+    cand = lu_rebound.candidates(data_dir, str(as_of))
+    if cand.get("status") not in ("ready", "empty"):
+        return [], {}, {"status": str(cand.get("status")),
+                        "reason": str(cand.get("reason") or "候选未成立")}
+    rows = cand.get("rows") or []
+    if not rows:
+        return [], {}, {"status": "empty", "reason": "当日没有被砸的换手板"}
+    picks = [{"symbol": str(r["symbol"]), "limit_price": float(r["limit_price"])} for r in rows]
+    meta = {
+        "source": "lu_rebound",
+        "as_of": cand["as_of"],
+        "n_candidates": len(picks),
+        "truncated": cand.get("truncated"),
+        "drop_threshold": cand.get("drop_threshold"),
+        "caliber": cand.get("caliber"),
+        "lu": {
+            "fingerprint": lu_rebound.fingerprint(cand),
+            "top_n": cand.get("top_n"),
+            "n_rows": cand.get("n_rows"),
+        },
+    }
+    return picks, meta, None
+
+
+def _lu_card(
+    data_dir: Path,
+    *,
+    as_of: str | None,
+    account_id: str = "default",
+    basis: str = "median",
+) -> dict[str, Any]:
+    """LU 腿的一次封卡尝试。**任何一档不满足都返回 status != created**，不抛异常。"""
+    try:
+        day = as_of
+        if not day:
+            from app.decision import bars as _bars
+
+            day = _bars.latest_session(data_dir, _bars.STOCK_ENRICHED)
+        if not day:
+            return {"status": "skipped_no_data", "reason": "没有已落盘的交易日"}
+        picks, meta, why = _lu_picks(data_dir, day)
+        if why is not None:
+            return {"status": why["status"], "reason": why["reason"]}
+        return produce_card(
+            data_dir,
+            as_of=str(meta["as_of"]),
+            picks=picks,
+            #: 三个固定口径（见 `run_decision_stage` 的注释）：配置不许覆盖。
+            horizon_sessions=lu_rebound.HORIZON_SESSIONS,
+            strategy_id=lu_rebound.STRATEGY_ID,
+            account_id=account_id,
+            pwin_basis=basis,
+            allow_prior=True,
+            scan_meta=meta,
+            fill_mode=lu_rebound.FILL_MODE,
+        )
+    except Exception as exc:  # noqa: BLE001 - 软失败：一条腿坏了不能拖垮整条管道
+        logger.warning("decision lu_rebound failed: %s", exc)
+        return {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"}
+
+
 def run_decision_stage(repo: Any, engine: Any | None = None,
                        *, today: Any = None) -> dict[str, Any]:
-    """盘后管道阶段入口：先刷新名单，再结算到期卡，最后按配置自动发卡。
+    """盘后管道阶段入口：先刷新名单，再结算到期卡，再跑第二条腿，最后发主腿的卡。
 
-    顺序是三条独立的因果，不是三段可以互换的代码：
+    顺序是几条独立的因果，不是可以互换的代码：
 
     1. **名单**不依赖账本，也不依赖发卡开关——它只依赖收盘数据。所以排第一，
        且 `disabled` 时照样执行。
     2. **结算先于发卡**：今天结算落库的行里出场日早于今天的才对今天的卡可见
        （§9.8），先结算让 p_win 用上最新到期的证据。
-    3. **发卡**是唯一可被配置关闭的一步。
+    3. **两条腿各走各的开关**：`decision_auto_enabled` 管主腿（策略引擎 / L1），
+       `decision_lu_rebound_enabled` 管涨停次日砸盘反转。两腿都被关掉才算停摆。
+    4. **LU 腿早于主腿的四个早退出口**（未配策略 / 无引擎 / 扫描失败 / 名单没
+       落盘）：它与主腿没有因果关系，主腿的失败不该让另一条腿的承诺消失。
 
     软失败由调用方兜；残缺账本（fail-closed）上抛。
     """
     from app.services import preferences
 
     cfg = preferences.get_decision_auto_config()
+    #: 第二条生产腿的开关（涨停次日砸盘反转）。独立于 `decision_auto_*`：
+    #: 两腿的口径完全在策略层固定（L1 强制 `open_only`、LU 强制 `horizon=0`），
+    #: 共用的只有账户、p_win 口径与门禁。
+    lu_cfg = preferences.get_decision_lu_config()
+    flat_cfg = preferences.get_decision_flat_config()
     data_dir = Path(repo.store.data_dir)
     # settle 的 as_of 是 ISO 串；管道传进来的是 date，统一在这里折叠。
     as_of_str = (today.isoformat() if hasattr(today, "isoformat") else str(today)) \
@@ -440,20 +588,68 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
     # Step 0: 每日名单（唯一产地）。关掉自动发卡也要有名单。
     slate_summary = _refresh_slate(data_dir, as_of_str)
 
-    if not cfg["enabled"]:
+    # 两条腿都被自己的开关关掉，才算「本阶段停摆」。只认主腿的话，
+    # 「只开 LU」会走进下面那个 disabled 出口，而它连结算都不跑——
+    # 开关是开的、卡是发的，然后永远不结算，前向证据一条也攒不到。
+    if not cfg["enabled"] and not lu_cfg["enabled"]:
         return {"status": "disabled", "slate": slate_summary}
 
     settle_summary: dict[str, Any] = {}
     try:
         settle_summary = settle_mod.settle(data_dir, as_of=as_of_str)
+        # 空仓卡走自己的流水与自己的窗口, 但**同一次结算调用**——分两次调用会
+        # 让「今天结算了 N 条」的日志里看不见另一半, 而另一半决定了空仓成绩单
+        # 是否在更新。
+        settle_summary["flat"] = settle_mod.settle_flats(data_dir, as_of=as_of_str)
     except ledger.LedgerCorruptError:
         # 残缺账本 fail-closed：不结算也不发卡，上抛给管道记 stage_error。
         raise
 
+    # 第二条腿：涨停次日砸盘反转。**在建卡顺序上先于主腿，不是因为更重要**：
+    # 主腿的四个早退出口（未配策略 / 无引擎 / 扫描失败 / 名单没落盘）都会
+    # return，而这条腿与它们毫无因果关系。放在后面，等于让「L1 名单今天没算
+    # 出来」静默地把第二腿的卡一起吞掉——管道日志里只有 scan_failed 一个词，
+    # 看不出还丢了另一条腿的承诺。
+    #
+    # 三条固定口径不接受配置覆盖（它们是策略定义，不是显示参数）：
+    # `horizon_sessions=0`（入场日收盘出场）、`fill_mode=open_only`（只在竞价成交）、
+    # `top_n`（容量约束，研究口径同值）。配置能改的只有账户与 p_win 口径。
+    #
+    # `allow_prior=True` 是**冷启动的唯一出路**：新策略在账本里必然没有可见证据
+    # （§9.15 那个鸡生蛋），而 0.5 是 median 口径的零信息常数、不是编出来的胜率。
+    # 出处随卡封存（`source=prior`、`prior_weight=1.0`），`by_source` 会把它与
+    # 账本证据分开计分——读者不会把先验读成证据。
+    lu_summary: dict[str, Any] | None = None
+    if lu_cfg["enabled"]:
+        lu_summary = _lu_card(
+            data_dir,
+            as_of=as_of_str,
+            account_id=cfg["account_id"],
+            basis=cfg["basis"],
+        )
+
+    def _finish(payload: dict[str, Any]) -> dict[str, Any]:
+        """把与本腿无关的两块结论挂到**每一个**出口上。
+
+        名单与 LU 腿是另外两条独立的因果。让某个 `status != created` 的早退
+        把它们一并丢掉，读的人只会看到「今天没发卡」，而实际上名单算了、
+        第二腿也发了卡。
+        """
+        payload.setdefault("slate", slate_summary)
+        if settle_summary:
+            payload.setdefault("settle", settle_summary)
+        if lu_summary is not None:
+            payload["lu_rebound"] = lu_summary
+        return payload
+
+    if not cfg["enabled"]:
+        # 只开了 LU 腿：主腿的结论是「关闭」，但结算与第二腿都真的跑过了。
+        return _finish({"status": "disabled",
+                        "reason": "自动发卡未开启：只结算并跑 LU 腿"})
+
     if not cfg["strategy_id"]:
-        return {"status": "no_strategy", "settle": settle_summary,
-                "slate": slate_summary,
-                "reason": "decision_auto_strategy_id 未配置：只结算，不发卡"}
+        return _finish({"status": "no_strategy",
+                        "reason": "decision_auto_strategy_id 未配置：只结算，不发卡"})
 
     fill_mode = str(cfg.get("fill_mode") or ledger.FILL_MODE_LIMIT)
     if cfg["strategy_id"] == l1_cohort.L1_STRATEGY_ID:
@@ -462,23 +658,20 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
         # 而不是另建一套生产者——名单已经是唯一产地，这里只做读取。
         picks, scan_meta, why = _l1_picks(data_dir, slate_summary.get("as_of"))
         if why is not None:
-            return {"status": why["status"], "settle": settle_summary,
-                    "slate": slate_summary, "reason": why["reason"]}
+            return _finish({"status": why["status"], "reason": why["reason"]})
         # L1 的成交口径是策略定义的一部分，不受配置影响：`candidates()` 输出的
         # 就是「开盘 ≤ 限价才买」。用 limit 口径结算等于换了策略（多出来的那批
         # 是「高开走弱」），所以这里不接受配置覆盖。
         fill_mode = ledger.FILL_MODE_OPEN_ONLY
     else:
         if engine is None:
-            return {"status": "no_engine", "settle": settle_summary,
-                    "slate": slate_summary,
-                    "reason": "策略引擎未初始化：只结算，不发卡"}
+            return _finish({"status": "no_engine",
+                            "reason": "策略引擎未初始化：只结算，不发卡"})
         try:
             picks, scan_meta = scan_picks(
                 repo, engine, cfg["strategy_id"], today, top_n=cfg["top_n"])
         except ValueError as exc:
-            return {"status": "scan_failed", "settle": settle_summary,
-                    "slate": slate_summary, "reason": str(exc)}
+            return _finish({"status": "scan_failed", "reason": str(exc)})
 
     summary = produce_card(
         data_dir,
@@ -492,15 +685,36 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
         scan_meta=scan_meta,
         fill_mode=fill_mode,
     )
-    summary["settle"] = settle_summary
     summary["strategy_id"] = cfg["strategy_id"]
-    # 名单的身份跟着结果一起回传：同一 as_of 的卡有没有对应的名单，
-    # 在管道日志里要一眼可判，而不是去翻目录。
-    summary["slate"] = slate_summary
+
+    # 空仓决策：**只有「候选池正常但门槛把票全滤掉」才算决定不参与**。
+    # 数据故障（名单未落盘 / 扫描失败 / 未配策略）在上面就走早退出口了，
+    # 到不了这里——把故障日记成空仓，会让空仓成绩单被「读不到」稀释。
+    # 目前只接 L1：其它策略的 0 命中可能只是参数没调好，语义不同。
+    if (
+        flat_cfg["enabled"]
+        and summary.get("status") == "skipped_no_picks"
+        and cfg["strategy_id"] == l1_cohort.L1_STRATEGY_ID
+    ):
+        summary["flat"] = produce_flat_card(
+            data_dir,
+            as_of=str(scan_meta["as_of"]),
+            horizon_sessions=max(int(cfg["horizon"]), 1),
+            reason=(
+                f"{cfg['strategy_id']} 当日 0 命中：候选池正常、全部被门槛滤掉，"
+                "决定不参与"
+            ),
+            strategy_id=cfg["strategy_id"],
+            account_id=cfg["account_id"],
+            scan_meta=scan_meta,
+        )
 
     # 最后一米：建卡之后把它变成订单。默认关（`decision_auto_execute`），
     # 因为这是第一个动资金的步骤。软失败不打断管道——账单缺一天可以补，
     # 管道中断会让后面的阶段全部缺一天。
+    #
+    # **只作用于主腿的卡**：LU 腿的回合需要底仓配对（T+2 买、T+2 收盘卖），
+    # 自动下单只会得到一串 `round_unfunded`。
     if cfg.get("execute") and summary.get("card_id"):
         try:
             from app.decision import execute as execute_mod
@@ -514,6 +728,10 @@ def run_decision_stage(repo: Any, engine: Any | None = None,
             summary["execute"] = {"status": "failed",
                                   "reason": f"{type(exc).__name__}: {exc}"}
 
-    logger.info("decision stage: %s (settle written=%s)", summary.get("status"),
-                settle_summary.get("written"))
+    # 名单的身份跟着结果一起回传：同一 as_of 的卡有没有对应的名单，
+    # 在管道日志里要一眼可判，而不是去翻目录。
+    summary = _finish(summary)
+    logger.info("decision stage: %s (settle written=%s, lu=%s)",
+                summary.get("status"), settle_summary.get("written"),
+                (lu_summary or {}).get("status"))
     return summary

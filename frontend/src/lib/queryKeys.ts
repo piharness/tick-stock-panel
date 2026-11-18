@@ -91,6 +91,7 @@ export const QK = {
   guardianOverview:     ['backtest-guardian-overview'] as const,
   guardianRuns:         ['backtest-guardian-runs'] as const,
   labReport:            ['backtest-lab-report'] as const,
+  labAlphaStatus:       ['backtest-lab-alpha-status'] as const,
   researchCandidates:  ['research-candidates'] as const,
   strategyLinkOptions: (assetType?: 'stock' | 'etf') => assetType
     ? ['strategy-link-options', assetType] as const
@@ -122,6 +123,13 @@ export const QK = {
                          ['instrument-names', [...new Set(symbols)].sort().join(',')] as const,
   klineLatest:          (symbol: string) => ['kline-latest', symbol] as const,
   stockLevels:          (symbol: string, days?: number) => ['stock-levels', symbol, days ?? 120] as const,
+  stockRiskGuard:       (symbol: string) => ['stock-risk-guard', symbol] as const,
+  delistingCountdown:   ['delisting-countdown'] as const,
+  crowdingVerdict:      ['crowding-verdict'] as const,
+  dragonTigerStats:     ['dragon-tiger-stats'] as const,
+  dragonTigerVerdict:   ['dragon-tiger-verdict'] as const,
+  stockShareholder:     (symbol: string) => ['stock-shareholder', symbol] as const,
+  stockEntryPoint:      (symbol: string) => ['stock-entry-point', symbol] as const,
   klineMinute:          (symbol: string, date: string) =>
                              ['kline-minute', symbol, date] as const,
   // freq 不写进 1m 的键：保持既有缓存条目不变（避免升级后全量失效一次）。

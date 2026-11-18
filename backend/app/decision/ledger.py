@@ -26,6 +26,17 @@ from app.services.fs_utils import atomic_write_text
 CARD_KIND = "TSP-DECISION-CARD-v1"
 SETTLEMENT_KIND = "TSP-DECISION-SETTLEMENT-v1"
 
+#: 空仓结算流水。**与 pick 级结算分文件**不是「第二个真相点」：它们是两个对象
+#: （日级立场 vs 股级成交），混在一个文件里会让 `score()` 把「没买」当成
+#: 「买了 0 只」来计分，分母静默变形。共用的是同一份账本目录与同一套封卡机制。
+FLAT_KIND = "TSP-DECISION-FLAT-v1"
+
+#: 卡上的立场。`long` 是唯一允许带 picks 的立场；`flat` 必须为空。
+#: 旧卡没有这个键 ⇒ 一律按 `long` 读（见 `card_stance`）。
+STANCE_LONG = "long"
+STANCE_FLAT = "flat"
+STANCES = (STANCE_LONG, STANCE_FLAT)
+
 SYMBOL_RE = re.compile(r"^\d{6}\.(SH|SZ|BJ)$")
 CARD_ID_RE = re.compile(r"^dc-\d{4}-\d{2}-\d{2}-[0-9a-f]{10}$")
 
@@ -134,7 +145,12 @@ def commitment(card: dict[str, Any]) -> dict[str, Any]:
     当然属于承诺——而是账本只追加：历史卡里没有这个键，无条件加进去会让每一张
     旧卡的 `verify_card` 重算失败，等于把既往承诺全部作废。默认档本来就等于旧
     行为，省略它才是同一个承诺。
+
+    `stance` 同一条推理：只有 `flat` 才写进哈希。`long` 是旧卡的全部历史行为，
+    给它补一个键会让所有在册承诺失效。空仓卡没有 picks，所以这里的 picks 走
+    空列表分支而不是 `normalize_picks`（后者按设计拒绝空）。
     """
+    stance = card_stance(card)
     out: dict[str, Any] = {
         "kind": CARD_KIND,
         "as_of": str(card["as_of"]),
@@ -143,11 +159,13 @@ def commitment(card: dict[str, Any]) -> dict[str, Any]:
         "horizon_sessions": int(card["horizon_sessions"]),
         "benchmark": str(card["benchmark"]),
         "forecast": card.get("forecast") or {},
-        "picks": normalize_picks(card.get("picks") or []),
+        "picks": [] if stance == STANCE_FLAT else normalize_picks(card.get("picks") or []),
     }
     mode = card.get("fill_mode")
     if mode not in (None, FILL_MODE_LIMIT):
         out["fill_mode"] = str(mode)
+    if stance != STANCE_LONG:
+        out["stance"] = stance
     return out
 
 
@@ -178,6 +196,7 @@ def build_card(
     override_reason: str | None = None,
     created_at: str | None = None,
     fill_mode: str = FILL_MODE_LIMIT,
+    stance: str = STANCE_LONG,
 ) -> dict[str, Any]:
     """构造并封卡；不落盘。重复调用同样入参得到同样 card_id。
 
@@ -185,6 +204,12 @@ def build_card(
     `exit_i = entry_i + horizon`，所以 0 表示入场当天平仓（L1 的
     「T+1 开盘买、T+1 收盘卖」）。它不等于「持有 1 天」——那是
     `horizon_sessions=1`，出场在下一个交易日收盘，多隔一夜。
+
+    `stance` 区分「买了什么」与「决定不买」：两者都是决策，都需要被封签，
+    但只有前者有 picks。`normalize_picks` 拒绝空列表的理由是「没有标的的
+    决策卡不是决策」——那对 `long` 成立，对 `flat` 不成立，所以这里**反过
+    来校验**：`flat` 必须为空。**`stance` 只在非 `long` 时写进卡并进哈希**，
+    否则旧卡（无此键）重算 digest 会全部对不上。
     """
     try:
         date.fromisoformat(str(as_of))
@@ -194,12 +219,16 @@ def build_card(
         raise ValueError(f"horizon_sessions 必须落在 [{MIN_HORIZON}, {MAX_HORIZON}]")
     if str(fill_mode) not in FILL_MODES:
         raise ValueError(f"fill_mode 必须是 {FILL_MODES} 之一: {fill_mode!r}")
-    if not SYMBOL_RE.match(str(benchmark)):
+    if not SYMBOL_RE.match(str(benchmark or "")):
         raise ValueError(f"benchmark 格式非法: {benchmark!r}")
     if override_reason is not None and len(override_reason.strip()) < 10:
         raise ValueError("override_reason 至少 10 个字符：越权必须留下可读的理由")
+    if str(stance) not in STANCES:
+        raise ValueError(f"stance 必须是 {STANCES} 之一: {stance!r}")
+    if stance == STANCE_FLAT and picks:
+        raise ValueError("空仓卡不能带标的：立场与标的自相矛盾")
 
-    norm = normalize_picks(picks)
+    norm = [] if stance == STANCE_FLAT else normalize_picks(picks)
     card: dict[str, Any] = {
         "kind": CARD_KIND,
         "as_of": str(as_of),
@@ -211,6 +240,8 @@ def build_card(
         "forecast": dict(forecast or {}),
         "picks": norm,
     }
+    if stance != STANCE_LONG:
+        card["stance"] = str(stance)
     digest = card_digest(card)
     card["card_id"] = _new_card_id(str(as_of), digest)
     card["created_at"] = created_at or datetime.now().astimezone().isoformat(timespec="seconds")
@@ -452,13 +483,35 @@ def ledger_health(data_dir: Path) -> dict[str, Any]:
             if r.get("outcome") is not None and r.get("outcome_med") is None)
 
     frozen = settle_info["filled_without_outcome"] + settle_info["median_missing"]
+
+    # 空仓流水: 只报可读性, 统计量在 `flat_summary()`。两者分开是因为
+    # 「有 0 条」和「有 3 条读不出来」要触发的动作相反, 而成绩单本身
+    # 不该在可读性受损时被算出来。
+    fpath = flat_path(data_dir)
+    flat_info: dict[str, Any] = {
+        "path": str(fpath),
+        "exists": fpath.exists(),
+        "lines": 0,
+        "rows": 0,
+        "problems": [],
+        "settled": 0,
+    }
+    if fpath.exists():
+        flat_rows, flat_problems = scan_flats(fpath)
+        text = fpath.read_text(encoding="utf-8")
+        flat_info["lines"] = sum(1 for line in text.splitlines() if line.strip())
+        flat_info["rows"] = len(flat_rows)
+        flat_info["problems"] = flat_problems
+        flat_info["settled"] = sum(1 for r in flat_rows if r.get("benchmark_ret") is not None)
+
     if not base.exists():
         status = HEALTH_NEVER_WRITTEN
         detail = (f"{base} 不存在：账本从未被写过。「没有结算」在此只等于"
                   f"「还没开始计时」，不是「计时坏了」。")
-    elif settle_info["problems"] or cards_info["error"]:
+    elif settle_info["problems"] or cards_info["error"] or flat_info["problems"]:
         status = HEALTH_CORRUPT
         detail = (f"账本可读性受损：结算流水 {len(settle_info['problems'])} 处问题、"
+                  f"空仓流水 {len(flat_info['problems'])} 处问题、"
                   f"决策卡 {'有' if cards_info['error'] else '无'}问题。"
                   f"在此之上算出的任何统计量都不成立。")
     elif frozen:
@@ -478,9 +531,119 @@ def ledger_health(data_dir: Path) -> dict[str, Any]:
         "root_exists": base.exists(),
         "cards": cards_info,
         "settlements": settle_info,
+        "flat": flat_info,
         "detail": detail,
     }
 
 
 def settlement_key(card_id: str, symbol: str) -> str:
     return f"{card_id}:{symbol}"
+
+
+# ---------------------------------------------------------------------------
+# 空仓流水（stance=flat 的结算）
+# ---------------------------------------------------------------------------
+
+
+def card_stance(card: Mapping[str, Any]) -> str:
+    """卡上的立场。旧卡没有 `stance` 键 ⇒ `long`。
+
+    不能写成 `card.get("stance", STANCE_LONG)` 就完事: 一个被写坏的
+    `stance=""` 会原样返回空串, 后续 `if stance == "flat"` 静默为假 ——
+    空仓卡因此被当成持仓卡、永远不进空仓流水, 而卡上明明写着 flat。
+    """
+    value = str(card.get("stance") or "")
+    return value if value in STANCES else STANCE_LONG
+
+
+def flat_path(data_dir: Path) -> Path:
+    return root(data_dir) / "flat.jsonl"
+
+
+def flat_key(card_id: str) -> str:
+    return f"{card_id}:flat"
+
+
+def append_flats(data_dir: Path, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    path = flat_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    return len(rows)
+
+
+def scan_flats(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    """逐行读空仓流水, 返回 (可解析记录, 问题清单)。**不抛异常**。
+
+    校验与 `_scan_settlements` 同构: kind 不对、缺 key、key 重复都是不可用。
+    缺 key 尤其危险 —— 幂等靠 key, 无 key 的行每次读都会被当成新样本,
+    同一段空仓会被累计成多段。
+    """
+    rows: list[dict[str, Any]] = []
+    problems: list[str] = []
+    seen: dict[str, int] = {}
+    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            problems.append(f"第 {lineno} 行 JSON 解析失败（{exc.msg}）")
+            continue
+        if not isinstance(row, dict) or row.get("kind") != FLAT_KIND:
+            problems.append(f"第 {lineno} 行不是空仓流水")
+            continue
+        key = row.get("key")
+        if not key:
+            problems.append(f"第 {lineno} 行缺 key")
+            continue
+        key = str(key)
+        if key in seen:
+            problems.append(f"第 {lineno} 行 key 重复（同第 {seen[key]} 行）")
+            continue
+        seen[key] = lineno
+        rows.append(row)
+    return rows, problems
+
+
+def load_flats(data_dir: Path) -> list[dict[str, Any]]:
+    path = flat_path(data_dir)
+    if not path.exists():
+        return []
+    rows, _problems = scan_flats(path)
+    return rows
+
+
+def flat_summary(data_dir: Path) -> dict[str, Any]:
+    """空仓决策的成绩单。
+
+    口径只有一条, 必须写死在这里而不是让各调用方各算一遍:
+    **`avoided_pct = −benchmark_ret`**（从决策日收盘到 horizon 后收盘）。
+    它是「没参与这段行情」的相对结果, 不是「赚了多少钱」。正数表示避开了
+    下跌, 负数表示踏空了上涨 —— 后者也是信息, 不能只统计前者。
+    """
+    rows = load_flats(data_dir)
+    settled = [r for r in rows if r.get("benchmark_ret") is not None]
+    avoided = [r for r in settled if float(r["benchmark_ret"]) < 0]
+    missed = [r for r in settled if float(r["benchmark_ret"]) > 0]
+    avoided_sum = sum(-float(r["benchmark_ret"]) for r in avoided)
+    missed_sum = sum(-float(r["benchmark_ret"]) for r in missed)
+    return {
+        "records": len(rows),
+        "settled": len(settled),
+        #: 空仓后基准下跌 = 这次空仓躲对了
+        "avoided": len(avoided),
+        #: 空仓后基准上涨 = 踏空。它不是「失败」, 是空仓的成本, 必须并列显示。
+        "missed": len(missed),
+        "hit_rate": round(len(avoided) / len(settled), 4) if settled else None,
+        "avoided_sum_pct": round(avoided_sum * 100, 3),
+        "missed_sum_pct": round(missed_sum * 100, 3),
+        #: 净效果: 躲开的跌幅 − 踏空的涨幅。正数才说明「这段时间空仓是对的」。
+        "net_pct": round((avoided_sum + missed_sum) * 100, 3),
+        "mean_avoided_pct": round(avoided_sum / len(avoided) * 100, 3) if avoided else None,
+        "mean_missed_pct": round(missed_sum / len(missed) * 100, 3) if missed else None,
+    }

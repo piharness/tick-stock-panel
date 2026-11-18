@@ -26,8 +26,10 @@ from app.decision import bars, pwin as pwin_mod
 from app.decision import gates as gates_mod
 from app.decision import ledger, producer as producer_mod, settle as settle_mod
 from app.decision import l1_cohort as l1_cohort_mod
+from app.decision import lu_rebound as lu_rebound_mod
 from app.decision import slate as slate_mod
 from app.decision.l1_cohort import L1_TOP_N
+from app.services import preferences
 
 router = APIRouter(prefix="/api/decision", tags=["decision"])
 
@@ -136,6 +138,12 @@ def overview(request: Request, as_of: str | None = Query(default=None)) -> dict[
         # 就出现在这个端点上：读者需要就地看到它是「从未写入」还是「读不出」。
         # 同一个 `data_dir` 再扫一遍，代价是一次 jsonl 顺序读——比读错的代价便宜。
         "health": ledger.ledger_health(data_dir),
+        # 空仓成绩单。与 `health` 分工:「读得出吗」vs「不参与这个判断对不对」。
+        # 两者都必须在首屏可见 —— 只看持仓腿的分数, 无法证明空仓是对的。
+        # `enabled` 也放进来: 0 条记录有两种完全不同的原因（开关没开 / 开了但
+        # 还没有一天真的 0 命中）, 让前端去猜等于把「未启用」显示成「没躲对过」。
+        "flat": {**ledger.flat_summary(data_dir),
+                 "enabled": preferences.get_decision_flat_config()["enabled"]},
         # 两个口径并列返回，不做取舍：`abs` 回答"赚没赚"，`median` 回答"选得准不准"。
         # 它们的样本量含义完全不同，混在一起看会得出相反结论。
         "score": settle_mod.score(rows, pending=pending, basis=settle_mod.BASIS_ABS),
@@ -409,6 +417,35 @@ def l1_candidates(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/lu-rebound/candidates")
+def lu_rebound_candidates(
+    request: Request,
+    as_of: str | None = Query(default=None),
+) -> dict[str, Any]:
+    """涨停次日砸盘反转的次日挂单清单（第二条生产腿）。
+
+    **与 `GET /slate` 并列，不是它的一项。** 每日名单（slate）是 L1 的唯一产地，
+    它的 `top_n`、45 日面板与状态机都与 L1 口径焊在一起；这条腿的口径是
+    `horizon=0` + `open_only`，塞进同一份名单会让两份「今天买哪几只」共用一个
+    `as_of` 状态。
+
+    读法（三点容易看错，所以写在响应里而不是文档里）：
+    - `rows[].limit_price` 是**涨停价 − 0.01**：开盘 ≤ 它才成交，恰好等于
+      「开盘没封涨停」。它不是「愿意付的最高价」这种主观参数；
+    - `entry_date` 为空 ⇒ 次日分区还没落盘，不是「明天没有交易」；
+    - `status != ready` 时看 `reason`：`skipped_not_closed` 表示用的是盘中快照，
+      那半天的跌幅不是日内跌幅。
+    """
+    data_dir = _data_dir(request)
+    days = lu_rebound_mod.sessions(data_dir)
+    if not days:
+        raise HTTPException(status_code=400, detail="没有可用交易日：请先同步日K数据")
+    try:
+        return lu_rebound_mod.candidates(data_dir, as_of or days[-1])
+    except lu_rebound_mod.LuReboundError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/settle")

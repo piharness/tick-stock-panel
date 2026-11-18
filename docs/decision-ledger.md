@@ -158,7 +158,64 @@
    对拍：`python analysis/_verify_slate_vs_cards.py --check` 用**今天的产地**重算
    历史卡那天的名单，10 张卡逐位相同（0 分叉）。它同时验证了 `--backfill`：
    补出来的 10-29..11-11 与当时封存的 picks 一字不差。
-4. **组合层**：把 `sizing.py` 的 E[log] 仓位接到 `paper` 的下单金额上，但必须先有
+4. ~~**账本里只有一条腿**~~ → 已实现第二条生产腿 `app/decision/lu_rebound.py`
+   （`strategy_id = lu_t1_crash_rebound`）。它**不是形态策略**，赚的是执行约束的钱：
+
+   ```
+   T   日：换手板（收盘涨停，且开盘不在涨停价上 ⇒ 买得到的那一类涨停）
+   T+1 日：日内 open → close ≤ −5%（被砸）
+   T+1 收盘后决策 → T+2 开盘买 → T+2 收盘卖（不留隔夜）
+   ```
+
+   收益来自「砸盘的人必须在 T+1 卖完，而买盘第二天才回来」这一段时点错配。
+   形态（高开、封板强度、量比）在上一轮已经证伪（`docs/early-entry-ignition.md`）。
+
+   口径与研究侧共用**同一个定义点**（`docs/hotmoney-quant-game.md` §3、
+   `analysis/_diag_game_shift3.py`）：2018–2026 共 15,848 个信号 / 15,828 笔成交
+   （成交率 99.87%），日均超额 **+0.836%**、t=12.87、命中中位数 52.7%，九年逐年为正。
+   按成交额截断到 20/40/60/100 只，日超额恒为 +0.84%（四位小数不变）⇒
+   `TOP_N=40` 是容量约束，不是信号参数。
+
+   三条口径在策略层**固定**，配置改不了（改任何一条都是换策略）：
+
+   | 项 | 取值 | 为什么 |
+   |---|---|---|
+   | `horizon_sessions` | `0` | 入场日收盘出场。多隔一夜实测恒负 |
+   | `fill_mode` | `open_only` | 只在集合竞价成交，不含「盘中回落补票」那批 |
+   | `limit_price` | 涨停价 − 0.01 | 把「开盘 ≤ 限价」恒等变换成「开盘没封涨停」 |
+
+   为什么它比 L1 更早能拿到判决：`horizon=0` ⇒ `_overlap_lag = 0` ⇒ 相邻决策日收益
+   不重叠，`n_eff` 约等于决策日数。L1 用 20 日持有时要 400 个决策日才攒到 30 个
+   等效样本，这条腿 **30 天**就到——它是账本里第一条能在两个月内给出判决的策略。
+
+   **接线（与 L1 完全解耦，不共用名单）**：
+
+   - 开关 `decision_lu_rebound_enabled`（默认关）。**与 `decision_auto_enabled` 无关**：
+     两腿都被自己的开关关掉才算停摆。只认主腿时，「只开 LU」会走进 `disabled`
+     出口，而它连结算都不跑 —— 开关是开的、卡是发的，然后永远不结算。
+   - LU 分支跑在主腿四个早退出口（未配策略 / 无引擎 / 扫描失败 / 名单没落盘）
+     **之前**。放在后面，主腿的失败会静默地把另一条腿的承诺一起吞掉，而管道日志里
+     只有 `scan_failed` 一个词。
+   - `GET /api/decision/lu-rebound/candidates` 只读返回清单，**与 `/slate` 并列**；
+     Decision 页有独立的「砸盘反转（LU）」面板，不是「每日名单」的一段。
+   - `python -m app.decision.lu_rebound --study` 是**唯一**的口径重算入口：本文里的
+     每个数都必须能由它重现；`--candidates --as-of` 出某日清单。
+   - 不接 `decision_auto_execute`：这条腿的回合需要底仓配对（T+2 买、T+2 收盘卖），
+     自动下单只会得到一串 `round_unfunded`。
+
+   **判据**（每条都做过变异检验，改分支条件或返回值，7/7 被杀）：
+
+   | 用例 | 钉住的那句话 |
+   |---|---|
+   | `test_buy_cap_is_the_last_tick_below_limit_up` | 上限价 = 涨停价下一分（6 组价格参数化），写错一分一字板就变成成交 |
+   | `test_candidates_keep_only_turnover_board_that_was_crashed` | 一字板必须**同时**跌破跌幅阈值才算被剔除，否则 `~yizi` 恒真 |
+   | `test_candidates_reject_intraday_snapshot` | `quote_ts=10:42` 就是半天的跌幅，行数/字段/唯一性全都正常 |
+   | `test_candidates_without_next_partition_still_list_but_has_no_entry` | 次日未落盘 ⇒ `entry_date` 为空，不是「明天没交易」 |
+   | `test_card_carries_fixed_caliber_and_settles_same_day` | `horizon=0` 的出场日 = 入场日；一字板是 `NOT_FILLED`，不是「没发生」 |
+   | `test_rerun_is_idempotent_and_identity_ignores_drift` | 指纹只认内容：`entry_date`/`warnings` 漂移不换卡，限价差一分换卡 |
+   | `test_endpoint_returns_the_same_list_as_candidates` | HTTP 层不重算；顺序即 `rank`，也就是截断时谁被留下 |
+   | `test_stage_runs_lu_leg_when_primary_leg_is_off` | 开关打开必须**真的发生**，且结算照跑 |
+5. **组合层**：把 `sizing.py` 的 E[log] 仓位接到 `paper` 的下单金额上，但必须先有
    `n ≥ 8` 且 `significant=true` 的校准证据。
 
 ---
@@ -5444,3 +5501,67 @@ analysis 口径时逐键报的是 **80 条 STALE**（82 条封存 折成 80 个�
 可见形态是 `claims` 下降。** 这条比任何一次合并都值钱：合并、跳表、rebaseline 都只是
 它的特例。它由测试看而不是由检查器看，因为 `--rebaseline` 会把「文件不在射程」这条
 债务连着删掉——**写侧永远不能说「这条不算数」**。
+
+### 9.30 空仓卡：把「没参与」变成一个可结算的判断（2026-11-18）
+
+账本原先只有一种卡：`picks` 非空。于是「今天我一个都不买」这件事在账本里**不存在**，
+而它恰恰是最常见的判断——0 命中的日子里，人不是没有主张，而是主张「不参与」。
+
+#### 为什么不能只统计「没出卡的日子」
+
+缺席是**没有决策**，空仓是**做了决策**。两者的区别不是修辞：前者包含数据故障、
+管道没跑、策略没配，把三者混成一类，算出来的「躲开了多少」会被失败日稀释成噪声。
+
+所以空仓卡必须是**显式产出的**，且满足三条硬约束（都在 `produce_flat_card` 里）：
+
+1. `horizon_sessions >= 1`。0 天持有期的空仓没有可评价窗口（entry == exit ⇒ 基准收益
+   恒 0），结算出来全是 0，等于给自己发一张「完美空仓」的奖状。
+2. 理由 ≥ 10 字符。与 `override_reason` 同一标准：反向决定必须可读。
+3. 门禁 STOP 时不出卡。自动路径没有豁免权，空仓也不例外。
+
+#### 口径（唯一一条，不许各调用方各算一遍）
+
+`benchmark_ret` = 基准在 `[entry, exit]` 的 **close→close** 收益，`entry` 是决策日
+**之后第一个交易日**，`exit = entry + horizon_sessions`。
+
+选择 close→close 而不是 open→close 是有意的：空仓评价问的是「这段行情怎么走」，
+不是「我能在哪个价成交」——后者是持仓腿的问题，它有自己的撮合口径。
+
+`flat_summary.avoided_pct = −benchmark_ret`。正数 = 躲开下跌，负数 = 踏空上涨。
+**两者必须并列显示**：只报躲对的那半，就不是成绩单，是自我表扬。
+
+#### 哈希层：不能因为多了一个字段就让历史卡失效
+
+`stance` 进 `commitment()` 的方式是「只有非 long 才写」：
+
+```python
+if stance != STANCE_LONG:
+    out["stance"] = stance
+```
+
+这样已有的 12 张卡重算 digest 仍然逐位相同（实测 12/12 验签通过），
+而空仓卡因为多了 `stance` 而有自己的身份。测试用 **frozen golden digest 常量**钉住
+这一点——只断言 `build_card` 的返回值抓不到哈希层的变异（见母题 11）。
+
+#### 真实数据验证（不是 fixture）
+
+`analysis/_probe_flat_realdatal.py`：as_of=2026-09-16 造卡 → `verify_card` 通过 →
+entry=2026-09-17（决策日之后第一个交易日）→ exit=2026-10-23 →
+`benchmark_ret=−7.9555%` ⇒ 净躲开 7.96%；重复结算写入 0 条（幂等）。
+
+#### 前端：0 条记录有三种原因，不能合并显示
+
+| 状态 | 页面文案 |
+|---|---|
+| `enabled=false` | 「未启用」+ 点名 `decision_record_flat` |
+| `enabled=true, settled=0` | 「已启用，但还没有一天真的 0 命中」 |
+| `settled>0` | 躲开 / 踏空并列 + 净效果带符号 |
+
+把前两者合并成「暂无数据」，读者会以为「从没躲对过」——那是对一个从未被记录的
+能力的错误评价。
+
+#### 开关默认值改了（False → True）
+
+原默认关的理由是「写路径要先让人看过结算口径」。口径现在走过了（上一节），
+而默认关的实际后果是：`flat_summary` 永远是 0 条，前向样本只能靠时间攒，
+**晚开一天就少一天**。留着关不是保守，是让这个功能永远不会产生证据。

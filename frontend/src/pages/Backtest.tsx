@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { BookmarkCheck, FlaskConical, Info, ShieldCheck } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
+import { AutoLoopStrip } from '@/components/AutoLoopStrip'
 import { ResearchCandidatesDialog } from './backtest/ResearchCandidatesDialog'
 import { RobustnessValidation } from './backtest/RobustnessValidation'
 import { StrategyBacktest } from './backtest/StrategyBacktest'
@@ -111,7 +112,10 @@ export function Backtest() {
         )}
       />
 
-      <main className="min-h-0 flex-1 px-3 pb-3 pt-3 lg:px-4 lg:pb-4">
+      <main className="flex min-h-0 flex-1 flex-col px-3 pb-3 pt-3 lg:px-4 lg:pb-4">
+        <AutoLoopStrip page="backtest" />
+        {/* 策略/验证两个子视图都是 h-full: 用 flex-1 容器接住状态条之外的高度。 */}
+        <div className="flex min-h-0 flex-1 flex-col">
         <p role="note" aria-label="回测说明" className="mb-3 flex items-start gap-2 rounded-btn border border-border/60 bg-surface px-3 py-2 text-xs leading-5 text-secondary">
           <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
           <span>
@@ -126,6 +130,7 @@ export function Backtest() {
           />
         )}
         {activeTab === 'robustness' && <RobustnessValidation />}
+        </div>
       </main>
 
       {candidatesOpen && (

@@ -12,6 +12,7 @@ import { useWatchlistBatchAdd } from '@/lib/useSharedMutations'
 import { QK } from '@/lib/queryKeys'
 import { storage } from '@/lib/storage'
 import { PageHeader } from '@/components/PageHeader'
+import { AutoLoopStrip } from '@/components/AutoLoopStrip'
 import { EmptyState } from '@/components/EmptyState'
 import { DatePicker } from '@/components/DatePicker'
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
@@ -1040,6 +1041,7 @@ export function Screener() {
       />
 
       <div className="px-8 py-4 space-y-3">
+        <AutoLoopStrip page="strategy" />
         {/* 策略卡片 */}
         {cardSize !== 'hidden' && (
         <section>

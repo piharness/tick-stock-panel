@@ -228,14 +228,239 @@ export interface LevelSeries {
   atr?: { stop_loss: (number | null)[]; take_profit: (number | null)[] }
 }
 
+/**
+ * 筹码分布（换手率衰减模型的完整输出）。
+ *
+ * 与 `levels.sr` 共用后端同一个 `_chip_weights` 内核 —— 分布图最高的那根柱
+ * 与 K 线上的 POC 线必然是同一个价位。所有字段都是 close/volume/turnover 的
+ * 确定性函数：它描述「成本在哪里」，不预测「会涨到哪」。
+ */
+export interface ChipDistribution {
+  /** 桶中心价，升序 */
+  prices: number[]
+  /** 该桶筹码占比（与 prices 等长，合计 1） */
+  weights: number[]
+  /** 筹码最重的价位 */
+  poc: number
+  /** 筹码加权平均成本 */
+  avg_cost: number
+  close: number
+  /** 现价及以下的筹码占比 —— 获利盘 */
+  profit_ratio: number
+  /** 现价以上的筹码占比 —— 套牢盘（上方供给） */
+  trapped_ratio: number
+  /** 90% 筹码价格带宽度 / 中位价，越小越集中；样本不足时为 null */
+  concentration: number | null
+  /** 现价 +5% / +10% / +20% 以内的套牢盘占比 */
+  overhead: { p5: number; p10: number; p20: number }
+  span: { low: number; high: number }
+  lookback: number
+}
+
 export interface StockLevels {
   levels: Record<LevelType, PriceLevel[]>
+  chip?: ChipDistribution | null
   close: number | null
   summary: string
   symbol: string
   /** dates 与 series 对齐;前端按自身 rows 的日期映射,缺失填 null */
   dates?: string[]
   series?: LevelSeries
+}
+
+// ===== 股东结构 / 抛压象限 =====
+
+/** 单期股东户数。chg_* 为比例（0.12 = +12%），null 表示该期没有上期可比。 */
+export interface HolderPeriod {
+  period_end: string
+  notice_date: string | null
+  holder_num: number | null
+  chg_q: number | null
+  chg_yoy: number | null
+  /** 户均持股市值，万元 */
+  avg_mcap: number | null
+  /** 户数同比在**同报告期全市场**的横截面分位（0-1，越大＝户数增得越多） */
+  pct_yoy: number | null
+}
+
+export interface TopFloatHolder {
+  rank: number | null
+  name: string
+  /** 占流通股比例（0-1） */
+  ratio: number | null
+  is_org: boolean
+  type: string | null
+  /** 股数变化：数字字符串 = 增减股数；「不变」/「新进」为文本 */
+  change: string | null
+}
+
+export interface LiftEvent {
+  free_date: string
+  days_to: number
+  pct_of_float: number | null
+  pct_of_total: number | null
+  /** 解禁市值，亿元 */
+  mcap_yi: number | null
+  shares_type: string | null
+}
+
+/** 象限的实测表现。数字来自回测产出（data/shareholder/quadrant_stats.json）。 */
+export interface QuadrantStats {
+  label: string
+  /** 未来 20 日相对全市场等权的超额，bp */
+  bp: number
+  t: number
+  win: number
+  avg_n: number
+}
+
+// ===== 买点体检 =====
+
+/** 单个判据条件（多头 C1~C4 / 空头 R1~R3）。 */
+export interface EntryCheck {
+  id: string
+  label: string
+  value?: number | null
+  hit: boolean
+  detail: string
+}
+
+/** 一档的历史表现。数字来自 data/entry_check/stats.json（回测产出）。 */
+export interface EntryTierStat {
+  label?: string
+  n: number
+  share?: number
+  /** 未来 20 日胜率（绝对收益 > 0） */
+  win: number
+  win_delta_pp: number
+  med: number
+  q10: number
+  /** 暴跌率：未来 20 日跌幅 > 10% 的占比 */
+  crash: number
+  crash_delta_pp: number
+  pl?: number | null
+}
+
+export interface EntryStatsMeta {
+  criteria?: string
+  sample?: string
+  n_dates?: number
+  n_rows?: number
+  fwd_days?: number
+  return_basis?: string
+  thresholds?: Record<string, unknown>
+  generated_by?: string
+  honest_note?: string
+}
+
+export interface EntryJournalTier {
+  n: number
+  win?: number
+  crash?: number
+  mean?: number
+}
+
+export interface EntryJournal {
+  criteria: string
+  total: number
+  settled: number
+  pending: number
+  tiers: Record<string, EntryJournalTier>
+  symbol_history: { as_of: string; tier: string; fwd20: number | null; settled_on: string | null }[]
+  symbol_settled: number
+  recorded_now?: boolean
+}
+
+/**
+ * 买点体检结果。
+ *
+ * 它是**风险档位**，不是买入信号：低风险档历史胜率 51.0%（基准 47.35%），
+ * 中位 +0.3%；真正的价值在暴跌率（9.7% vs 基准 17.6%）。
+ * `calibrated=false` 表示 stats.json 缺失，此时页面不显示任何历史数字。
+ */
+export interface EntryPointState {
+  turnover_pct: number | null
+  vol_pct: number | null
+  rev_pct: number | null
+  holder_pct: number | null
+  turnover_abs?: number | null
+  ann_vol_abs?: number | null
+  ret20_abs?: number | null
+}
+
+export interface EntryPointVerdict {
+  tier: 'low' | 'mid' | 'high'
+  bull_hits: number
+  bear_hits: number
+  checks: EntryCheck[]
+  risks: EntryCheck[]
+  missing: string[]
+  criteria: string
+}
+
+/**
+ * 判别联合：`available=false` 时没有 verdict/state/journal。
+ *
+ * 写成联合而不是"全可选"，是为了让前端**无法**在不可用的情况下读到档位字段 ——
+ * 接口失败时最危险的行为是页面上残留一个上一次的「低风险」。
+ */
+export type EntryPoint =
+  | {
+      available: false
+      symbol: string
+      calibrated: false
+      reason?: string | null
+    }
+  | {
+      available: true
+      symbol: string
+      as_of: string
+      calibrated: boolean
+      state: EntryPointState
+      verdict: EntryPointVerdict
+      tier_label: string
+      stats: {
+        base: EntryTierStat | null
+        tier: EntryTierStat | null
+        all_tiers: Record<string, EntryTierStat> | null
+        stability: { years: number; win_below_base: number; crash_worse_than_base: number } | null
+        meta: EntryStatsMeta | null
+      }
+      journal: EntryJournal
+    }
+
+export interface ShareholderProfile {
+  symbol: string
+  available: boolean
+  reason: string | null
+  holder: {
+    latest: HolderPeriod | null
+    trend: HolderPeriod[]
+    percentile_basis: string
+  }
+  top_float: { period_end: string | null; rows: TopFloatHolder[]; org_ratio: number | null }
+  lift: LiftEvent[]
+  pressure: {
+    turnover_pct: number | null
+    holder_pct: number | null
+    as_of: string
+    turnover_window: number
+    quadrant: {
+      key: string | null
+      label: string
+      stats: QuadrantStats | null
+      /** 四格全量，供对比；当前格在 key 里 */
+      all: Record<string, QuadrantStats> | null
+    }
+    stats_meta: {
+      sample?: string
+      n_dates?: number
+      avg_stocks_per_date?: number
+      fwd_days?: number
+      return_basis?: string
+      split?: string
+    } | null
+  }
 }
 
 export interface AiStockReport {
@@ -263,12 +488,107 @@ export interface StockNameHistory {
   snapshots: number
 }
 
+/** 退市红线状态：triggered 已触发 / counting 已越线在累计天数 / near 接近 / safe 安全 / unknown 数据不足 */
+export type RiskGateStatus = 'triggered' | 'counting' | 'near' | 'safe' | 'unknown'
+
+/** 一条退市红线的当前值、阈值与已连续天数。 */
+export interface RiskGate {
+  id: string
+  label: string
+  /** 规则原文，例如「连续 20 个交易日收盘价均低于 1.00 元」 */
+  rule: string
+  status: RiskGateStatus
+  value: number | null
+  threshold: number | null
+  /** 距阈值的百分比；正=余量，负=已越线 */
+  distance_pct: number | null
+  streak: number | null
+  streak_limit: number | null
+  detail: string
+}
+
+/** 个股退市红线诊断（面值 / 市值 / 净资产 / 净利润与营收）。 */
+export interface StockRiskGuard {
+  symbol: string
+  name: string | null
+  board: string
+  is_st: boolean
+  st_kind: '*ST' | 'ST' | ''
+  /** 最后一个有行情的交易日 */
+  as_of: string | null
+  gates: RiskGate[]
+  /** 口径与样本缺口声明。必须展示，不能折叠 —— 它说明哪些结论不能下 */
+  caveats: string[]
+  counts: {
+    verdict?: string
+    equity_trend?: string
+  }
+}
+
 /** 个股分析图表的取数结果：本地段 + （必要时）上游前复权段，分段标注来源。 */
 export interface ChartSegment {
   start: string
   end: string
   source: 'local' | 'upstream'
   n: number
+}
+
+/** 全市场退市「连续 20 日」倒计时的一行：一只已进入倒数的票。 */
+export interface DelistingCountdownRow {
+  symbol: string
+  close: number | null
+  mcap: number | null
+  board: string
+  /** 连续跌破面值 1 元的天数 */
+  par_streak: number
+  /** 连续跌破市值红线的天数 */
+  mcap_streak: number
+  /** 终止上市所需的连续天数（20） */
+  streak_limit: number
+}
+
+export interface DelistingCountdown {
+  as_of: string
+  countdown: DelistingCountdownRow[]
+  caveats: string[]
+}
+
+/** 换手率（拥挤度代理）→ 后续 20 日超额收益的判决。 */
+export interface CrowdingVerdict {
+  as_of: string | null
+  n: number
+  quintiles: { q: number; label: string; ex20_median_bp: number | null; ex20_mean_bp: number | null }[]
+  by_size: { q: number; label: string; hi_minus_lo_bp: number | null }[]
+  caveats: string[]
+}
+
+/** 龙虎榜方向一致性统计（机构 vs 全榜 / 游资）。 */
+export interface DragonTigerDirectionStats {
+  days: number
+  start: string | null
+  end: string | null
+  org_vs_all: { same: number; total: number; rate: number | null }
+  org_vs_hotmoney: { same: number; total: number; rate: number | null }
+  series: { date: string; same: number; total: number; rate: number }[]
+  caveats: string[]
+}
+
+/** 龙虎榜「机构方向 → 后续 20 日超额收益」判决（谁对谁错的证伪）。 */
+export interface DragonTigerVerdict {
+  days: number
+  as_of: string | null
+  verdict: {
+    n: number
+    n_opposite: number
+    n_org_buy: number
+    n_org_sell: number
+    org_buy_ex20_bp: number
+    org_sell_ex20_bp: number
+    diff_bp: number
+    t: number
+    all_ex20_median_bp: number
+  } | null
+  caveats: string[]
 }
 
 export interface ChartSeries extends KlineDailyResponse {
@@ -3271,8 +3591,174 @@ export interface GuardianOverview {
   combinations: GuardianCombinations | null
 }
 
+export interface LoopAlphaTheme {
+  candidate_id: string
+  formula: string
+  template?: string | null
+  seeds?: string | null
+  direction?: 'high' | 'low' | null
+  confirmation_ic?: number | null
+  confirmation_q?: number | null
+  dsr?: number | null
+}
+
+export interface LoopAlphaRun {
+  run_id: string
+  status?: string | null
+  created_at?: string | null
+  elapsed_s?: number | null
+  generated?: number | null
+  confirmed?: number | null
+  provisional?: number | null
+  confirmed_themes?: number | null
+  /** DSR 门槛 (来自该 run 的 config.min_dsr, 老 run 缺省 0.90) */
+  min_dsr?: number | null
+  /** 通过 DSR 门槛的主题数; 为 0 时本次搜索的结论是「没找到」 */
+  dsr_pass?: number | null
+  top_themes?: LoopAlphaTheme[]
+}
+
+export interface LoopFreshnessEntry {
+  page: 'strategy' | 'factor' | 'backtest'
+  label: string
+  subject: string
+  last_at: string | null
+  age_days: number | null
+  state: 'fresh' | 'aging' | 'stale' | 'never'
+  /** 门槛随响应下发, 前端不另存一份 */
+  fresh_days: number
+  stale_days: number
+  detail: {
+    alpha_run?: LoopAlphaRun | null
+    mining_run?: { run_id?: string | null; status?: string | null; created_at?: string | null; finished_at?: string | null } | null
+    candidates?: number
+    published?: number
+    profiles?: number
+    by_status?: Record<string, number>
+  }
+}
+
+export interface LoopAdmissionItem {
+  strategy_id: string
+  verdict: 'admitted' | 'blocked'
+  stage: 'unadopted' | 'guardian_status' | 'baseline_not_oos' | 'no_check' | 'degraded' | 'admitted'
+  reasons: string[]
+  status: string | null
+  baseline_kind: string | null
+  degradation_pct: number | null
+  last_checked_at: string | null
+  last_verdict: string | null
+  in_ledger: boolean
+  in_paper: boolean
+  /** 环境标注：headwind 只表示 β 没有顺风，不改变 verdict（策略本身仍可能健康）。 */
+  regime?: 'headwind' | 'neutral'
+  /**
+   * 持仓拥挤度：该策略最近一张有标的的卡，选股落在当日换手率分位何处。
+   * 只读暴露，不改 verdict —— 高换手策略在牛市里正是靠这个暴露赚钱。
+   */
+  crowding?: LoopCrowdingExposure | null
+}
+
+export interface LoopCrowdingExposure {
+  pct: number
+  max_pct: number
+  covered: number
+  card_as_of: string | null
+  card_id: string | null
+  crowded: boolean
+}
+
+export interface LoopCrowding {
+  available: boolean
+  quantile: number
+  crowded_share: number | null
+  note: string
+}
+
+/**
+ * 市场环境层。**只描述、不阻断**：广度阈值 50% 附近是尖峰而非平台，
+ * 且该状态对未来 20 日无预测力（中位 −0.11%），所以它不会否决任何准入。
+ */
+export interface LoopMarketContext {
+  state: 'risk_on' | 'risk_off' | 'unknown'
+  as_of: string | null
+  breadth_20d: number | null
+  eq_ma20_bp: number | null
+  window: number
+  samples: number | null
+  threshold: number
+  note: string
+  error?: string
+  evidence?: {
+    fwd20_median_pct: number
+    fwd20_positive_pct: number
+    same_state_days: number
+    benchmark_10y_total_pct: number
+    source: string
+  }
+}
+
+export interface LabLoopStatus {
+  available: boolean
+  error?: string
+  as_of?: string
+  basis?: string
+  freshness?: LoopFreshnessEntry[]
+  autonomy?: {
+    mining?: { enabled: boolean; weekday: number; profile: string }
+    guardian?: { enabled: boolean }
+    decision?: { enabled: boolean }
+    any_enabled?: boolean
+  }
+  admission?: { total: number; admitted: number; blocked: number; items: LoopAdmissionItem[] }
+  market?: LoopMarketContext
+  crowding?: LoopCrowding
+  linkage?: {
+    ledger?: { enabled: boolean; execute: boolean; strategy_id: string | null; lu_rebound_enabled: boolean }
+    paper?: { accounts: number; enabled_rules: number; by_strategy: Record<string, string[]> }
+  }
+  next_actions?: { page: string; level: 'warn' | 'info'; text: string }[]
+}
+
+/** 主动搜索的调度配置（`GET /api/backtest/lab/alpha-search/status` 的 `config`）。 */
+export interface LabAlphaConfig {
+  enabled: boolean
+  /** 每月第几天跑（1..28）。29-31 在部分月份不存在，所以上界是 28。 */
+  alpha_search_day: number
+  alpha_search_profile: string
+  alpha_search_max_formulas: number
+}
+
+/** 调度状态：最近一次 claim + 现在有没有在跑。
+ *
+ *  `latest_claim === null` 表示**从来没跑过**，与「跑了但失败」不同：
+ *  前者要问为什么没触发，后者看 `latest.error`。 */
+export interface LabAlphaSchedule {
+  latest_claim: string | null
+  latest: {
+    status?: string
+    started_at?: string
+    finished_at?: string
+    as_of?: string
+    run_id?: string | null
+    error?: string
+    counts?: Record<string, number>
+  } | null
+  running: boolean
+  running_claim?: string | null
+  error?: string
+}
+
+export interface LabAlphaStatus {
+  config: LabAlphaConfig
+  schedule: LabAlphaSchedule
+  /** 最近一次成功落盘的报告摘要；`null` = 从没有任何 report.json。 */
+  latest: LoopAlphaRun | null
+}
+
 export interface LabReport {
   generated_at: string
+  loop?: LabLoopStatus
   mining: {
     last_run: {
       run_id: string
@@ -3348,6 +3834,13 @@ export type DecisionAutoConfig = {
   basis: 'abs' | 'median'
   account_id: string
   allow_prior: boolean
+  /** 撮合口径。L1 分支忽略它并强制 `open_only`（那是策略定义的一部分）。 */
+  fill_mode?: 'limit' | 'open_only'
+  /** 建卡后是否自动下单到模拟盘。只作用于主腿的卡：LU 腿的回合需要底仓配对。 */
+  execute?: boolean
+  /** 第二条腿（涨停次日砸盘反转）的开关。**与 `enabled` 无关**：主腿关着，
+   *  这条腿照样发卡。 */
+  lu_rebound_enabled?: boolean
 }
 
 /** `POST /api/decision/produce` 的返回。`status != 'created'` 时看 `reason`。
@@ -3458,6 +3951,31 @@ export type DecisionPrior = {
   reason?: string
 }
 
+/** 空仓成绩单（`GET /api/decision/overview` 的 `flat` 块）。
+ *
+ *  口径只有一条：`benchmark_ret` = 决策日收盘 → horizon 后收盘的基准收益。
+ *  「避开了多少」= 它的负号，所以正数躲对了、负数踏空了 —— 两者必须并列显示，
+ *  只报躲对的部分等于自己给自己发奖状。 */
+export type DecisionFlatSummary = {
+  /** 累计写入的空仓结算行数（含未到期）。 */
+  records: number
+  /** 已到期并算出基准收益的条数。 */
+  settled: number
+  /** 空仓后基准下跌 = 这次不参与躲对了。 */
+  avoided: number
+  /** 空仓后基准上涨 = 踏空。它不是失败，是空仓的成本。 */
+  missed: number
+  hit_rate: number | null
+  avoided_sum_pct: number
+  missed_sum_pct: number
+  /** 净效果 = 躲开的跌幅 − 踏空的涨幅，正数才说明「这段时间空仓是对的」。 */
+  net_pct: number
+  mean_avoided_pct: number | null
+  mean_missed_pct: number | null
+  /** `decision_record_flat` 开关。false 时 0 条记录说明「没在记」，不是「没躲对」。 */
+  enabled?: boolean
+}
+
 export type DecisionOverview = {
   as_of: string
   gates: DecisionGates
@@ -3467,6 +3985,7 @@ export type DecisionOverview = {
   score: DecisionScore
   /** 选股口径：因变量是「跑赢同日全市场中位数」，常数基线精确为 50%。 */
   score_median?: DecisionScore
+  flat?: DecisionFlatSummary
 }
 
 /** 每日名单的一行（`GET /api/decision/slate`）。
@@ -3570,6 +4089,47 @@ export type DecisionSlateResponse = {
   series: DecisionSlateSeries
 }
 
+/** 涨停次日砸盘反转（第二条生产腿）的一行。
+ *
+ *  `limit_price` 是**涨停价的下一分**，不是「愿意付的最高价」：A 股报价都在
+ *  0.01 的格点上，所以「开盘 ≤ 它」恰好等价于「开盘没封涨停」。用涨停价本身
+ *  当限价，一字板会被算成成交——那批正是买不到的样本。
+ *
+ *  `drop_pct` 是 T+1 **日内** `open→close` 的跌幅（百分数，负值），不是昨收
+ *  比出来的隔夜跌幅：砸盘发生在盘中，那才是信号本身。 */
+export type DecisionLuRow = {
+  symbol: string
+  name: string | null
+  rank: number
+  limit_price: number
+  limit_up_price: number
+  prev_close_raw: number
+  drop_pct: number
+  lu_date: string
+  limit_pct: number
+  day_amount_yi: number | null
+}
+
+/** `ready` 是唯一能照着挂单的状态；其余三种是「为什么今天没有清单」。 */
+export type DecisionLuStatus =
+  | 'ready' | 'empty' | 'skipped_not_closed' | 'skipped_no_data'
+
+export type DecisionLuCandidates = {
+  as_of: string
+  /** 为空 ⇒ 次日分区未落盘，不是「明天没有交易」。 */
+  entry_date: string | null
+  strategy_id: string
+  status: DecisionLuStatus
+  drop_threshold: number
+  top_n: number
+  n_rows: number
+  truncated: number
+  rows: DecisionLuRow[]
+  caliber: Record<string, unknown>
+  warnings: string[]
+  reason?: string
+}
+
 export const api = {
   // ===== 决策账本 =====
   decisionOverview: (asOf?: string) =>
@@ -3580,6 +4140,15 @@ export const api = {
   decisionSlate: (asOf?: string) =>
     request<DecisionSlateResponse>(
       `/api/decision/slate${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`,
+    ),
+  /** 第二条生产腿（涨停次日砸盘反转）的次日挂单清单。
+   *
+   *  **与 `decisionSlate` 并列，不是它的一项**：这条腿是 `horizon=0` +
+   *  `open_only`（当日收盘卖出），L1 是 20 日持有。共用一份名单会让
+   *  「今天买哪几只」有两个答案，而界面只会显示其中一个。 */
+  decisionLuCandidates: (asOf?: string) =>
+    request<DecisionLuCandidates>(
+      `/api/decision/lu-rebound/candidates${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`,
     ),
   decisionSettle: () =>
     request<{ cards: number; considered: number; written: number; pending: number; not_filled: number }>(
@@ -5323,6 +5892,29 @@ export const api = {
     request<StockNameHistory>(`/api/stock-analysis/name-history?symbol=${encodeURIComponent(symbol)}`),
 
   /**
+   * 退市红线诊断：面值 / 市值按不复权原始价逐日数连续天数，财务类只认年报。
+   * 算不出来的项返回 status="unknown"，不拿前复权价或季报冒充。
+   */
+  stockAnalysisRiskGuard: (symbol: string) =>
+    request<StockRiskGuard>(`/api/stock-analysis/risk-guard?symbol=${encodeURIComponent(symbol)}`),
+
+  /** 全市场退市「连续 20 日」倒计时 —— 只返回已进入倒数的票。 */
+  stockAnalysisDelistingCountdown: () =>
+    request<DelistingCountdown>('/api/stock-analysis/delisting-countdown'),
+
+  /** 换手率拥挤度 → 后续超额收益判决（市场常识「踩踏链」）。 */
+  stockAnalysisCrowdingVerdict: () =>
+    request<CrowdingVerdict>('/api/stock-analysis/crowding-verdict'),
+
+  /** 股东结构：户数趋势（含全市场同期分位）、十大流通股东、解禁日程、抛压象限。 */
+  stockAnalysisShareholder: (symbol: string) =>
+    request<ShareholderProfile>(`/api/stock-analysis/shareholder?symbol=${encodeURIComponent(symbol)}`),
+
+  /** 买点体检：当前风险档位 + 该档历史兑现 + 判定记录/结算状态。 */
+  stockAnalysisEntryPoint: (symbol: string) =>
+    request<EntryPoint>(`/api/stock-analysis/entry-point?symbol=${encodeURIComponent(symbol)}`),
+
+  /**
    * 长区间日K：本地优先，本地没有的头部用上游**前复权**补齐（只读，不落盘）。
    * 返回 segments 标明哪一段来自哪里 —— 图上必须能看出"这一段是临时取来的"。
    */
@@ -5403,6 +5995,14 @@ export const api = {
     request<DragonTigerPayload>(
       `/api/market-recap/dragon-tiger${date ? `?date=${encodeURIComponent(date)}` : ''}`,
     ),
+
+  /** 多日龙虎榜方向一致性统计（机构 vs 全榜 / 游资）。 */
+  dragonTigerStats: (days = 120) =>
+    request<DragonTigerDirectionStats>(`/api/market-recap/dragon-tiger-stats?days=${days}`),
+
+  /** 龙虎榜「机构方向 → 后续 20 日超额收益」判决。 */
+  dragonTigerVerdict: () =>
+    request<DragonTigerVerdict>(`/api/market-recap/dragon-tiger-verdict`),
 
   /** 盘前风向标 (fuyao 专有; 同花顺竞价筛选名单, 含当日/次日真实收益) */
   auctionBenchmark: (date?: string) =>
@@ -5712,6 +6312,23 @@ export const api = {
     }),
 
   labReport: () => request<LabReport>('/api/backtest/lab/report'),
+
+  labAlphaStatus: () =>
+    request<LabAlphaStatus>('/api/backtest/lab/alpha-search/status'),
+
+  /** 手工触发一次主动搜索：立即返回，搜索在后台跑（360 公式约 5 分钟）。
+   *  `status=already_running` 表示没起新任务 —— 同一时间只允许一个。 */
+  labAlphaRun: (asOf?: string) =>
+    request<{ status: string; claim: string; as_of?: string; started_at?: string }>(
+      '/api/backtest/lab/alpha-search/run',
+      { method: 'POST', body: JSON.stringify(asOf ? { as_of: asOf } : {}) },
+    ),
+
+  labAlphaConfig: (cfg: LabAlphaConfig) =>
+    request<LabAlphaConfig>('/api/backtest/lab/alpha-search/config', {
+      method: 'PUT',
+      body: JSON.stringify(cfg),
+    }),
 
   strategySaveConfig: (strategyId: string, overrides: Record<string, any>) =>
     request<{ ok: boolean }>('/api/strategies/config', {

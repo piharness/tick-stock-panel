@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { BookmarkCheck, FlaskConical, LibrarySquare, Search } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
+import { AutoLoopStrip } from '@/components/AutoLoopStrip'
 import { ResourceTransferButton } from '@/components/ResourceTransferDialog'
 import { FactorDiscovery } from './backtest/FactorDiscovery'
 import { FactorComposite } from './factors/FactorComposite'
@@ -117,7 +118,11 @@ export function Factors() {
         )}
       />
 
-      <main className="min-h-0 flex-1 px-3 pb-3 pt-3 lg:px-4 lg:pb-4 xl:overflow-hidden">
+      <main className="flex min-h-0 flex-1 flex-col px-3 pb-3 pt-3 lg:px-4 lg:pb-4 xl:overflow-hidden">
+        <AutoLoopStrip page="factor" />
+        {/* 子视图普遍用 h-full 填满: 必须有一个 flex-1 容器承接剩余高度,
+            否则状态条的高度会让它们溢出 main (xl 下 overflow-hidden 直接裁掉)。 */}
+        <div className="flex min-h-0 flex-1 flex-col">
         {activeTab === 'discover' && (
           <FactorDiscovery focusFactor={focusFactor} initialView={discoverView} />
         )}
@@ -164,6 +169,7 @@ export function Factors() {
             onEdit={factorId => patchParams({ tab: 'create', mode: 'editor', edit: factorId, focus: null, view: null })}
           />
         )}
+        </div>
       </main>
 
       {candidatesOpen && (

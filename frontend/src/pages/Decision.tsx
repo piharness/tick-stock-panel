@@ -21,7 +21,10 @@ import {
   type DecisionAutoConfig,
   type DecisionCheck,
   type DecisionCheckStatus,
+  type DecisionFlatSummary,
   type DecisionGateDecision,
+  type DecisionLuCandidates,
+  type DecisionLuStatus,
   type DecisionOverview,
   type DecisionProduceSummary,
   type DecisionScore,
@@ -120,6 +123,61 @@ function weakSample(d: DecisionScore | undefined): boolean {
   return d.significance === 'UNKNOWN'
 }
 
+/** 空仓成绩单。
+ *
+ *  为什么不并进「校准」卡：那条卡的评价对象是**选出来的票**（跑赢中位了吗），
+ *  「不参与」这个判断没有票可评，硬塞进去会让两类样本混成同一个命中率。
+ *  `avoided` 与 `missed` 必须并列 —— 只报躲开的跌幅，等于把空仓的成本藏起来。 */
+function FlatScorecard({ flat }: { flat: DecisionFlatSummary }) {
+  const enabled = flat.enabled !== false
+  const settled = flat.settled ?? 0
+  const net = flat.net_pct ?? 0
+  return (
+    <section className="mt-3 rounded-card border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <ShieldQuestion className="h-3.5 w-3.5 text-muted" />
+        <h2 className="text-xs font-medium text-foreground">空仓成绩单</h2>
+        <span className={cn('ml-auto rounded px-1.5 py-0.5 text-[10px]',
+          enabled ? 'bg-accent/10 text-accent' : 'bg-elevated text-muted')}>
+          {enabled ? '已启用' : '未启用'}
+        </span>
+      </div>
+
+      {settled === 0 ? (
+        <p className="mt-2 text-[11px] leading-relaxed text-muted">
+          {enabled
+            ? '已启用，但还没有一天真的 0 命中——空仓卡只在「候选池正常、门槛把票全滤掉」时产生，数据故障不算。'
+            : '未启用：0 命中时目前不落卡，所以「没参与」这段判断在账本里不存在。打开 decision_record_flat 后开始累计，到期按基准 close→close 结算。'}
+        </p>
+      ) : (
+        <>
+          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] sm:grid-cols-4">
+            {([
+              ['已结算', `${settled} 次`, undefined],
+              ['躲开下跌', `${flat.avoided} 次`, `${flat.avoided_sum_pct.toFixed(2)}%`],
+              ['踏空上涨', `${flat.missed} 次`, `${flat.missed_sum_pct.toFixed(2)}%`],
+              ['命中率', flat.hit_rate == null ? '—' : `${(flat.hit_rate * 100).toFixed(1)}%`,
+                '躲对 / 已结算'],
+            ] as Array<[string, string, string?]>).map(([k, v, hint]) => (
+              <div key={k}>
+                <dt className="text-muted">{k}{hint && <span className="ml-1 text-[9px] opacity-70">{hint}</span>}</dt>
+                <dd className="mt-0.5 font-mono text-foreground">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-2 text-[11px] text-muted">
+            净效果 <span className={cn('font-mono font-medium',
+              net > 0 ? 'text-accent' : net < 0 ? 'text-danger' : 'text-secondary')}>
+              {net > 0 ? '+' : ''}{net.toFixed(2)}%
+            </span>
+            <span className="ml-1 opacity-70">= 躲开的跌幅 − 踏空的涨幅（决策日收盘 → horizon 后收盘，基准口径）</span>
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
 function GateCheckCard({ check }: { check: DecisionCheck }) {
   const meta = CHECK_META[check.status]
   const Icon = meta.icon
@@ -180,6 +238,17 @@ export function Decision() {
   const slateQ = useQuery({
     queryKey: ['decision', 'slate', slateAsOf],
     queryFn: () => api.decisionSlate(slateAsOf ?? undefined),
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: 30_000,
+  })
+
+  // 第二条生产腿：涨停次日砸盘反转。它与上面那份名单是**两张单子**，
+  // 所以是独立查询、独立面板，不塞进 SlatePanel 的 rows 里——
+  // 塞进去之后「今天买哪几只」就有两个答案，而界面只显示一个。
+  const luQ = useQuery({
+    queryKey: ['decision', 'lu-rebound'],
+    queryFn: () => api.decisionLuCandidates(),
     refetchOnWindowFocus: false,
     retry: false,
     staleTime: 30_000,
@@ -290,6 +359,10 @@ export function Decision() {
         {(gate?.checks ?? []).map(c => <GateCheckCard key={c.id} check={c} />)}
       </div>
 
+      {/* 空仓成绩单。放在门禁之后、名单之前：读者先知道「今天能不能开仓」，
+          再知道「我之前不参与的那几次判断对不对」。 */}
+      {data?.flat && <FlatScorecard flat={data.flat} />}
+
       {/* 今日名单：唯一产地的只读视图。卡与它逐位相等是构造性的，
           所以这里看到的就是「今天该挂哪几张单」。 */}
       <SlatePanel
@@ -301,6 +374,13 @@ export function Decision() {
         onSelect={setSlateAsOf}
         failed={slateQ.isError}
         error={slateQ.error instanceof Error ? slateQ.error.message : undefined}
+      />
+
+      {/* 第二条腿的挂单清单。与上面的名单并列，不是它的一段。 */}
+      <LuReboundPanel
+        data={luQ.data}
+        failed={luQ.isError}
+        error={luQ.error instanceof Error ? luQ.error.message : undefined}
       />
 
       <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -509,6 +589,25 @@ export function Decision() {
             <Target className="h-3.5 w-3.5" /> 立即生产
           </button>
         </div>
+
+        {/* 第二条腿：**独立开关**。它不读上面的 `enabled`——主腿关着，
+            这条腿照样发卡，因为两腿的口径完全不同（当日回合 vs 20 日持有）。
+            绑在一个开关上，「关掉自动发卡」就会连带停掉一条已经在账本里的策略，
+            而界面上只会显示「自动发卡已关闭」。 */}
+        <label className="mt-2 flex cursor-pointer flex-wrap items-center gap-2 border-t border-border/60 pt-2">
+          <input
+            type="checkbox"
+            checked={cfg?.lu_rebound_enabled ?? false}
+            disabled={autoCfg.isLoading || saveAuto.isPending}
+            onChange={e => saveAuto.mutate({ lu_rebound_enabled: e.target.checked })}
+            className="h-3.5 w-3.5 accent-accent cursor-pointer"
+          />
+          <span className="text-xs font-medium text-foreground">涨停次日砸盘反转（第二条腿）</span>
+          <span className="text-[10px] text-muted">
+            T 日换手板 + T+1 日内跌 5% ⇒ T+2 开盘买、当日收盘卖。
+            口径在策略层固定（horizon=0、只在集合竞价成交），配置改不了；不与「自动下单」联动。
+          </span>
+        </label>
 
         {cfg?.enabled && (
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border/60 pt-2 text-[11px]">
@@ -838,6 +937,147 @@ function SlatePanel({ slate, card, head, series, browsing, onSelect, failed, err
             </span>
           )}
           {slate.warnings.map((w, i) => (
+            <span key={i} className="text-warning">· {w}</span>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** LU 腿的状态文案。`ready` 是唯一「可以照着挂单」的状态，其余三种是
+ *  「为什么今天没有清单」——四种病因的处置完全不同，不该共用一个灰 badge。 */
+const LU_STATUS_LABEL: Record<DecisionLuStatus, { label: string; tone: string }> = {
+  ready: { label: '清单就绪', tone: 'bg-accent/10 text-accent' },
+  empty: { label: '当日 0 只', tone: 'bg-warning/10 text-warning' },
+  skipped_not_closed: { label: '数据未收盘', tone: 'bg-warning/10 text-warning' },
+  skipped_no_data: { label: '无行情分区', tone: 'bg-danger/10 text-danger' },
+}
+
+/**
+ * 涨停次日砸盘反转 —— 第二条生产腿的次日挂单清单。
+ *
+ * 它与「每日名单」是两张单子，所以是独立面板。三件事必须同时看得见，
+ * 缺一条这个面板就会骗人：
+ *  1. **`limit_price` 是涨停价 − 0.01**：它把「开盘 ≤ 限价」恒等变换成
+ *     「开盘没封涨停」。把它读成「愿意付的最高价」，就会以为自己在议价，
+ *     实际上这是在排除买不到的一字板；
+ *  2. **`entry_date` 为空不是「明天没交易」**：是次日分区还没落盘；
+ *  3. **`drop_pct` 是 T+1 日内跌幅**，不是隔夜跌幅——砸盘发生在盘中。
+ */
+function LuReboundPanel({ data, failed, error }: {
+  data?: DecisionLuCandidates
+  failed: boolean
+  error?: string
+}) {
+  const navigate = useNavigate()
+  const meta = data ? LU_STATUS_LABEL[data.status] : undefined
+  const ready = data?.status === 'ready' || data?.status === 'empty'
+
+  return (
+    <section className="mt-3 rounded-card border border-border bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-xs font-medium text-foreground">砸盘反转（LU）</h2>
+          {data?.as_of && (
+            <span className="font-mono text-[11px] text-muted">
+              {data.as_of}
+              {data.entry_date
+                ? ` → ${data.entry_date} 开盘买、收盘卖`
+                : ' → 次日挂单（次日分区未落盘）'}
+            </span>
+          )}
+          {data && ready && (
+            <span className="font-mono text-[11px] text-secondary">
+              {data.n_rows} / {data.top_n} 只
+              {data.truncated > 0 && `（截断 ${data.truncated}）`}
+            </span>
+          )}
+          <span className="text-[10px] text-muted">
+            T 日换手板 + T+1 日内跌 {((data?.drop_threshold ?? 0.05) * 100).toFixed(0)}%
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {meta && (
+            <span className={cn('rounded px-1.5 py-0.5 text-[10px]', meta.tone)}>
+              {meta.label}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {!data ? (
+        <div className="px-3 py-6 text-center text-[11px] text-muted">
+          {failed
+            ? `清单读不到${error ? `（${error}）` : ''}。`
+            : '加载清单…'}
+        </div>
+      ) : !ready ? (
+        <div className="px-3 py-6 text-center">
+          <p className="text-xs text-secondary">这份清单没有成立。</p>
+          <p className="mx-auto mt-1 max-w-lg text-[11px] leading-relaxed text-muted">
+            {data.reason ?? data.warnings[0] ?? '没有记录原因——这本身是缺陷'}
+          </p>
+        </div>
+      ) : data.rows.length === 0 ? (
+        <div className="px-3 py-6 text-center">
+          <p className="text-xs text-secondary">当日 0 只满足条件。</p>
+          <p className="mx-auto mt-1 max-w-lg text-[11px] leading-relaxed text-muted">
+            「0 只」是清单成立的结果，不是管道没跑：全市场没有被砸的换手板。
+          </p>
+        </div>
+      ) : (
+        <table className="w-full text-left text-[11px]">
+          <thead className="text-muted">
+            <tr className="border-b border-border">
+              <th className="w-8 px-3 py-1.5 font-medium">#</th>
+              <th className="px-2 py-1.5 font-medium">代码</th>
+              <th className="px-2 py-1.5 font-medium">名称</th>
+              <th className="px-2 py-1.5 text-right font-medium">T+1 收盘</th>
+              <th className="px-2 py-1.5 text-right font-medium">挂单限价</th>
+              <th className="px-2 py-1.5 text-right font-medium">涨停价</th>
+              <th className="px-2 py-1.5 text-right font-medium">T+1 日内跌幅</th>
+              <th className="px-2 py-1.5 text-right font-medium">成交额</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map(row => (
+              <tr key={row.symbol} className="border-b border-border/60 hover:bg-elevated/60">
+                <td className="px-3 py-1.5 font-mono text-muted">{row.rank}</td>
+                <td className="px-2 py-1.5 font-mono text-foreground">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/stock-analysis?symbol=${encodeURIComponent(row.symbol)}`)}
+                    className="underline decoration-dotted underline-offset-2 hover:text-accent"
+                  >
+                    {row.symbol}
+                  </button>
+                </td>
+                <td className="px-2 py-1.5 text-secondary">{row.name ?? '—'}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-secondary">{fix(row.prev_close_raw)}</td>
+                <td className="px-2 py-1.5 text-right font-mono font-medium text-foreground">{fix(row.limit_price)}</td>
+                <td className="px-2 py-1.5 text-right font-mono text-muted">{fix(row.limit_up_price)}</td>
+                {/* 跌幅保持中性色：本页把 danger/accent 保留给「涨/跌方向」，
+                    而这里的 −6% 是**入选条件**不是看空信号。染成绿色会让
+                    「跌得越多越该买」读成「跌得越多越危险」。 */}
+                <td className="px-2 py-1.5 text-right font-mono text-secondary">
+                  {fix(row.drop_pct, 2)}%
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono text-muted">
+                  {row.day_amount_yi == null ? '—' : `${fix(row.day_amount_yi)} 亿`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {data && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border px-3 py-2 text-[10px] text-muted">
+          <span>成交：开盘 ≤ 挂单限价才成交（= 开盘没封涨停）</span>
+          <span>出场：入场日收盘，不留隔夜</span>
+          <span>剔除 ST / 次新 / 一字板</span>
+          {data.warnings.map((w, i) => (
             <span key={i} className="text-warning">· {w}</span>
           ))}
         </div>

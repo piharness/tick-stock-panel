@@ -41,9 +41,15 @@ from app.market_time import cn_today
 from app.decision.ledger import (
     FILL_MODE_LIMIT,
     FILL_MODE_OPEN_ONLY,
+    FLAT_KIND,
     SETTLEMENT_KIND,
+    STANCE_FLAT,
+    append_flats,
     append_settlements,
+    card_stance,
+    flat_key,
     load_cards,
+    load_flats,
     load_settlements,
     settlement_key,
 )
@@ -496,6 +502,88 @@ def settle(data_dir: Path, *, as_of: str | None = None) -> dict[str, Any]:
     """
     with _SETTLE_LOCK:
         return _settle_locked(data_dir, as_of=as_of)
+
+
+def settle_flats(data_dir: Path, *, as_of: str | None = None) -> dict[str, Any]:
+    """把到期的空仓卡结算成「避开了多少 / 踏空了多少」。幂等。
+
+    口径只有一条: **`benchmark_ret` = 基准在 [entry, exit] 的 close→close 收益**,
+    `entry` 是决策日之后第一个交易日, `exit = entry + horizon_sessions`。选择
+    close→close 而不是 open→close 是有意的: 空仓评价问的是「这段行情怎么走」,
+    不是「我能在哪个价成交」——后者是持仓腿的问题, 它有自己的撮合口径。
+
+    `horizon_sessions=0` 的空仓卡无意义（entry==exit ⇒ 收益恒 0）, 建卡时已拒绝。
+
+    为什么必须结算而不是只统计「没出卡的日子」: 缺席是**没有决策**, 空仓是
+    **做了决策**。把两者混成一个数, 就无法回答「你判断不参与的时候, 判断对了吗」。
+    """
+    with _SETTLE_LOCK:
+        data_path = Path(data_dir)
+        cards = [c for c in load_cards(data_path) if card_stance(c) == STANCE_FLAT]
+        calendar = bars.sessions(data_path)
+        done = {str(r.get("key")) for r in load_flats(data_path)}
+        appended: list[dict[str, Any]] = []
+        pending: dict[str, int] = {
+            "not_due": 0,
+            "entry_missing": 0,
+            "benchmark_missing": 0,
+        }
+        if not calendar:
+            return {"cards": len(cards), "written": 0, "pending": pending,
+                    "pending_total": 0, "error": "日历为空"}
+
+        for card in cards:
+            day = str(card.get("as_of"))
+            if as_of is not None and day > str(as_of):
+                continue
+            key = flat_key(str(card["card_id"]))
+            if key in done:
+                continue
+            if day in calendar:
+                entry_i = calendar.index(day) + 1
+            else:
+                # 手工建在非交易日: 顺延到之后第一个交易日, 不假装那天开过市
+                entry_i = next((i for i, d in enumerate(calendar) if d > day), len(calendar))
+            if entry_i >= len(calendar):
+                pending["not_due"] += 1
+                continue
+            horizon = int(card.get("horizon_sessions") or 0)
+            exit_i = entry_i + horizon
+            if exit_i >= len(calendar):
+                pending["not_due"] += 1
+                continue
+            entry, exit_day = calendar[entry_i], calendar[exit_i]
+            benchmark = str(card.get("benchmark") or "000300.SH")
+            bench = _benchmark_ret(data_path, benchmark, entry, exit_day)
+            if bench is None:
+                pending["benchmark_missing"] += 1
+                continue
+            forecast = card.get("forecast") or {}
+            appended.append({
+                "kind": FLAT_KIND,
+                "key": key,
+                "card_id": card["card_id"],
+                "as_of": day,
+                "strategy_id": card.get("strategy_id"),
+                "account_id": card.get("account_id"),
+                "benchmark": benchmark,
+                "horizon_sessions": horizon,
+                "entry": entry,
+                "exit": exit_day,
+                # 唯一读数: 正数 = 这段行情涨了（空仓踏空）, 负数 = 跌了（空仓躲开）。
+                # 「避开了多少」由 `ledger.flat_summary()` 取负号, 不在这里另存一份。
+                "benchmark_ret": round(bench, 6),
+                "reason": forecast.get("reason"),
+                "settled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            })
+
+        written = append_flats(data_path, appended)
+        return {
+            "cards": len(cards),
+            "written": written,
+            "pending": pending,
+            "pending_total": sum(pending.values()),
+        }
 
 
 def _settle_locked(data_dir: Path, *, as_of: str | None = None) -> dict[str, Any]:
