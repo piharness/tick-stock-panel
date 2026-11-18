@@ -264,3 +264,45 @@ def test_repo缺失时不写claim(data_dir, fired):
     assert fired == []
     # 状态文件里一条 claim 都不该有
     assert mod.read_state(data_dir).get("claims") == {}
+
+# ── 最近交易日 ──────────────────────────────────────────────────────────
+# 这条不该走 `bars.sessions()`：容器内实测 26.25 秒（5,312 个分区，9p 挂载，
+# 每个目录一次 stat），放在 POST /run 的请求路径上会直接超时。
+
+def test_last_session优先用日分区表(tmp_path):
+    for d in ("2026-11-17", "2026-11-18"):
+        (tmp_path / "kline_daily_enriched" / f"date={d}").mkdir(parents=True)
+    # kline_daily 是月分区表：目录名 date=2026-11 不是日期，不能被当成交易日
+    (tmp_path / "kline_daily" / "date=2026-11").mkdir(parents=True)
+    (tmp_path / "kline_daily" / "date=2026-10-30").mkdir(parents=True)
+    assert mod._last_session(tmp_path) == date(2026, 11, 18)
+
+
+def test_last_session在enriched缺失时退回kline_daily(tmp_path):
+    (tmp_path / "kline_daily" / "date=2026-10-30").mkdir(parents=True)
+    assert mod._last_session(tmp_path) == date(2026, 10, 30)
+
+
+def test_last_session没有任何分区返回None(tmp_path):
+    assert mod._last_session(tmp_path) is None
+
+# ── 最近交易日 ──────────────────────────────────────────────────────────
+# 这条不该走 `bars.sessions()`：容器内实测 26.25 秒（5,312 个分区，9p 挂载，
+# 每个目录一次 stat），放在 POST /run 的请求路径上会直接超时。
+
+def test_last_session优先用日分区表(tmp_path):
+    for d in ("2026-11-17", "2026-11-18"):
+        (tmp_path / "kline_daily_enriched" / f"date={d}").mkdir(parents=True)
+    # kline_daily 是月分区表：目录名 date=2026-11 不是日期，不能被当成交易日
+    (tmp_path / "kline_daily" / "date=2026-11").mkdir(parents=True)
+    (tmp_path / "kline_daily" / "date=2026-10-30").mkdir(parents=True)
+    assert mod._last_session(tmp_path) == date(2026, 11, 18)
+
+
+def test_last_session在enriched缺失时退回kline_daily(tmp_path):
+    (tmp_path / "kline_daily" / "date=2026-10-30").mkdir(parents=True)
+    assert mod._last_session(tmp_path) == date(2026, 10, 30)
+
+
+def test_last_session没有任何分区返回None(tmp_path):
+    assert mod._last_session(tmp_path) is None

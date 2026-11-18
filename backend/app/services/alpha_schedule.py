@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -164,15 +165,41 @@ def run_alpha_search_now(
 
 
 def _last_session(data_dir: Path) -> date | None:
-    """as_of 必须是交易日：确认期的最后一天落在周末，会让「确认」多含两天非交易数据。"""
-    try:
-        from app.decision import bars
+    """as_of 必须是交易日：确认期的最后一天落在周末，会让「确认」多含两天非交易数据。
 
-        sessions = bars.sessions(data_dir)
-        return date.fromisoformat(sessions[-1]) if sessions else None
-    except Exception:  # noqa: BLE001 — 拿不到就退回今天，由调用方决定怎么用
-        logger.warning("alpha search: last session unavailable, falling back to today")
-        return None
+    **不用 `bars.sessions()`**：它走 `Path.iterdir` + `Path.is_dir()`，在 9p 挂载
+    上每个目录一次 stat。容器内实测 **26.25 秒**（5,312 个分区）——放在 HTTP 请求
+    路径上会直接超时（`POST /run` 实测 curl 28）。
+
+    `os.scandir` 的 `DirEntry.is_dir()` 走 d_type，免 stat，同机同目录 4ms 级。
+    这里只需要「最大的 date= 目录名」，不需要排序整张表。
+
+    **扫 `kline_daily_enriched` 而不是 `kline_daily`**：后者是月分区表
+    （`date=2026-11` 这种目录名），真实交易日只能从 parquet 的 `date` 列读，
+    那正是 `bars.sessions` 那 26 秒的来源。enriched 是日分区主表，目录名就是日期。
+    """
+    for table in ("kline_daily_enriched", "kline_daily"):
+        base = Path(data_dir) / table
+        best: date | None = None
+        try:
+            with os.scandir(base) as entries:
+                for entry in entries:
+                    name = entry.name
+                    if not name.startswith("date="):
+                        continue
+                    try:
+                        day = date.fromisoformat(name[5:])
+                    except ValueError:
+                        # 月分区名（date=2026-11）不是日期：交给下一个表/退回日历
+                        continue
+                    if best is None or day > best:
+                        best = day
+        except OSError:
+            continue
+        if best is not None:
+            return best
+    logger.warning("alpha search: cannot scan sessions under %s", data_dir)
+    return None
 
 
 def _start_claim(app_state: Any, data_dir: Path, claim: str, target: date) -> dict[str, Any]:
