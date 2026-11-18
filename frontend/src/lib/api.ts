@@ -3707,6 +3707,8 @@ export interface LabLoopStatus {
   autonomy?: {
     mining?: { enabled: boolean; weekday: number; profile: string }
     guardian?: { enabled: boolean }
+    /** 主动搜索：唯一自己生成假设的环节，算进 `any_enabled`。 */
+    alpha?: { enabled: boolean; day: number; profile: string; max_formulas: number }
     decision?: { enabled: boolean }
     any_enabled?: boolean
   }

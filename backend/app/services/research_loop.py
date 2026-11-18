@@ -545,6 +545,7 @@ def build_loop_status(
         # 一并给出卡日期, 不让「上周的持仓」冒充「今天的暴露」。
         item["crowding"] = _strategy_crowding(cards, item["strategy_id"], crowding_levels)
 
+    alpha_cfg = preferences.get_alpha_search_schedule()
     autonomy = {
         "mining": {
             "enabled": bool(mining_cfg["mining_schedule_enabled"]),
@@ -552,12 +553,22 @@ def build_loop_status(
             "profile": mining_cfg["mining_budget_profile"],
         },
         "guardian": {"enabled": bool(guardian_cfg["guardian_schedule_enabled"])},
+        "alpha": {
+            "enabled": bool(alpha_cfg["enabled"]),
+            "day": alpha_cfg["alpha_search_day"],
+            "profile": alpha_cfg["alpha_search_profile"],
+            "max_formulas": alpha_cfg["alpha_search_max_formulas"],
+        },
         "decision": {"enabled": bool(decision_cfg.get("enabled"))},
     }
-    # 「研究自动化」只数挖掘与守护: 决策账本是消费者, 它开着不等于研究在跑;
+    # 「研究自动化」数挖掘 / 守护 / 主动搜索: 决策账本是消费者, 它开着不等于研究在跑;
     # 把它算进来会让「研究全关但账本在发卡」显示成「部分开启」。
+    # 主动搜索必须算进来 —— 它是唯一一个「自己生成假设」的环节, 不算就等于
+    # 把「每月自动找新因子」显示成「研究自动化未开启」。
     autonomy["any_enabled"] = bool(
-        autonomy["mining"]["enabled"] or autonomy["guardian"]["enabled"]
+        autonomy["mining"]["enabled"]
+        or autonomy["guardian"]["enabled"]
+        or autonomy["alpha"]["enabled"]
     )
 
     return {

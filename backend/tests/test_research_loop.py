@@ -538,6 +538,11 @@ def test_lab_report_endpoint_carries_loop_block(tmp_path: Path, monkeypatch):
         lambda: {"enabled": False, "execute": False, "strategy_id": "",
                  "lu_rebound_enabled": False},
     )
+    monkeypatch.setattr(
+        preferences, "get_alpha_search_schedule",
+        lambda: {"enabled": False, "alpha_search_day": 1,
+                 "alpha_search_profile": "balanced", "alpha_search_max_formulas": 360},
+    )
 
     class _Repo:
         def __init__(self, data_dir: Path) -> None:
@@ -798,3 +803,51 @@ def test_loop_status_exposes_crowding_without_touching_verdict(tmp_path: Path):
     assert item["verdict"] == "admitted"
     # 没有 card ⇒ 拥挤度未知, 但不能因此把策略判死
     assert item["crowding"] is None
+
+
+def test_alpha_search_counts_as_research_automation(tmp_path: Path, monkeypatch):
+    """主动搜索是唯一「自己生成假设」的环节，开着就必须算进「研究自动化」。
+
+    原先 `any_enabled` 只数 mining 与 guardian，于是每月自动找新因子的搜索
+    开着、决策账本也在发卡，状态条却显示「研究自动化：未开启」——
+    一个正在自动产出结论的系统，对外说自己没有自动化。
+    """
+    from app.services import preferences
+    from app.services.research_loop import build_loop_status
+
+    monkeypatch.setattr(
+        preferences, "get_mining_schedule",
+        lambda: {"mining_schedule_enabled": False, "mining_schedule_weekday": 4,
+                 "mining_budget_profile": "balanced"},
+    )
+    monkeypatch.setattr(
+        preferences, "get_guardian_schedule",
+        lambda: {"guardian_schedule_enabled": False, "guardian_watch_pct": 0.2,
+                 "guardian_retire_pct": 0.5, "guardian_k_max": 4,
+                 "lab_mined_slot_limit": 10},
+    )
+    # 账本是消费者，不是研究者：它开着不能让 any_enabled 变 true
+    monkeypatch.setattr(
+        preferences, "get_decision_auto_config",
+        lambda: {"enabled": True, "execute": False, "strategy_id": "x",
+                 "lu_rebound_enabled": False},
+    )
+    off = lambda: {"enabled": False, "alpha_search_day": 1,  # noqa: E731
+                   "alpha_search_profile": "balanced",
+                   "alpha_search_max_formulas": 360}
+    monkeypatch.setattr(preferences, "get_alpha_search_schedule", off)
+
+    state = build_loop_status(tmp_path, _FakeRepo(date(2026, 11, 18)), _FakeState())
+    assert state["autonomy"]["any_enabled"] is False
+    assert state["autonomy"]["alpha"]["enabled"] is False
+
+    monkeypatch.setattr(
+        preferences, "get_alpha_search_schedule",
+        lambda: {"enabled": True, "alpha_search_day": 1,
+                 "alpha_search_profile": "balanced", "alpha_search_max_formulas": 360},
+    )
+    state = build_loop_status(tmp_path, _FakeRepo(date(2026, 11, 18)), _FakeState())
+    assert state["autonomy"]["any_enabled"] is True
+    assert state["autonomy"]["alpha"] == {
+        "enabled": True, "day": 1, "profile": "balanced", "max_formulas": 360,
+    }
