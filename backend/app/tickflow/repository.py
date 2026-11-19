@@ -41,6 +41,19 @@ from app.market_time import cn_today
 from app.parquet import scan_enriched_parquet
 from app.polars_guard import guarded_collect
 from app.services.minute_adjust import apply_minute_adjustment, minute_basis_is_raw
+from app.tickflow.delisted import (
+    ALL_COLUMNS,
+    BASIS_QFQ,
+    BASIS_RAW,
+    SRC_GAP,
+    SRC_MAIN,
+    gap_basis,
+    gap_parquet,
+    gap_symbols,
+    scan_gap_raw,
+    to_qfq_basis,
+    to_raw_basis,
+)
 from app.tickflow.partitions import (
     is_monthly_daily_table,
     list_partition_dates,
@@ -353,17 +366,68 @@ class DataStore:
             f"""CREATE OR REPLACE VIEW depth5 AS
                 SELECT * FROM read_parquet('{d}/depth5/**/*.parquet', union_by_name=true)""",
         ]
+        statements.extend(self._all_sample_view_sqls())
         workers = max(1, min(len(statements), _VIEW_REGISTRATION_WORKERS))
         started = time.perf_counter()
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="duckdb-view") as pool:
             # 单条失败已在 _create_view 内降级, map 只用于等待全部完成
             list(pool.map(self._create_view, statements))
+
+        # 全样本视图（主表 + 306 只缺口股）已随 statements 并行创建；它们
+        # 直读 parquet 而不是引用 kline_enriched，原因见 _all_sample_view_sqls。
+
         # 启动诊断的唯一入口: 视图挂载是启动链路里唯一与 data/ 体积成正比的
         # 环节, 绑定挂载变慢 (9p/NFS/杀软扫描) 时这里会先变红。
         logger.info(
             "duckdb views registered: %d statements in %.2fs (workers=%d)",
             len(statements), time.perf_counter() - started, workers,
         )
+
+    def _all_sample_view_sqls(self) -> list[str]:
+        """全样本视图的 DDL；补全包不存在时返回空列表。
+
+        两张视图，口径不同，**不能互相替代**：
+          - `kline_stock_all`     主表前复权 + 缺口股原始价，`price_basis` 区分。
+            这是 `analysis/_verify_l1_survivorship.py` 的口径，也是"生存偏差
+            归零"的默认入口（日内比值不受基准影响）。
+          - `kline_stock_all_raw` 两边都投影成原始价，供"严格同口径 + 剔除权日"
+            的复检使用（对应 `analysis/_verify_survivorship_bias.py`）。
+
+        刻意不提供"看起来统一"的单一复权 close：退市股算不出前复权，伪造一个
+        会让除权日变成假跌却无人察觉 —— 那正是本仓最贵的那类错误。
+
+        两条视图都**直读 parquet**，不引用 `kline_enriched`：
+        实测 `union_by_name=true` 的视图再参与 `UNION ALL` 且外层带窗口函数时，
+        DuckDB 稳定抛 `TProtocolException: Invalid data`（threads=1/2/4/8 均复现；
+        去掉 union_by_name 立刻正常）。全样本视图显式列出 10 列，本来也不需要
+        按名合并 schema —— enriched 的加列兼容由 `kline_enriched` 自己负责。
+        """
+        gap_path = gap_parquet(self.data_dir)
+        if gap_path is None:
+            return []
+        d = self.data_dir.as_posix()
+        main_src = f"read_parquet('{d}/kline_daily_enriched/**/*.parquet')"
+        gap_src = f"read_parquet('{gap_path.as_posix()}')"
+        common_tail = f"""SELECT symbol, date, open, high, low, close,
+                   CAST(volume AS DOUBLE) AS volume, amount,
+                   '{SRC_GAP}' AS src, '{BASIS_RAW}' AS price_basis
+            FROM {gap_src}"""
+        return [
+            f"""CREATE OR REPLACE VIEW kline_stock_all AS
+                SELECT symbol, date, open, high, low, close, volume, amount,
+                       '{SRC_MAIN}' AS src, '{BASIS_QFQ}' AS price_basis
+                FROM {main_src}
+                UNION ALL
+                {common_tail}""",
+            f"""CREATE OR REPLACE VIEW kline_stock_all_raw AS
+                SELECT symbol, date,
+                       CASE WHEN close > 0 THEN open * raw_close / close END AS open,
+                       raw_high AS high, raw_low AS low, raw_close AS close,
+                       volume, amount, '{SRC_MAIN}' AS src, '{BASIS_RAW}' AS price_basis
+                FROM {main_src}
+                UNION ALL
+                {common_tail}""",
+        ]
 
     def _create_view(self, sql: str) -> None:
         """挂载单张视图; 空目录等失败降级为 debug (视图缺省不影响启动)。"""
@@ -1735,6 +1799,140 @@ class KlineRepository:
 
         # 回退 scan_parquet
         return self._scan_daily_batch(symbols, start, end, columns)
+
+    def get_daily_all(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+        columns: list[str] | None = None,
+    ) -> pl.DataFrame:
+        """**全样本**日K —— 含 306 只退市/ST/吸收合并标的。
+
+        口径（关键，不可混用）：
+          - 主表行 `price_basis='qfq'`：open/high/low/close 是**前复权**。
+          - 缺口股行 `price_basis='raw'`：只有原始价（无分红/送转记录，
+            `adj_factor` 覆盖 0/306，算不出前复权）。
+          - 日内比值（`close/open`）在任何基准下都相同，可以放心混用；
+            跨日序列（动量、持有收益）在 `raw` 行上会在除权日假跌，
+            方向固定为**压低**收益 —— 不会伪造正效应。
+
+        需要严格同口径时用 `get_daily_all_raw`（两边都投影成原始价）。
+        单票看盘仍应走 `get_daily`（复权 + 全套指标）。
+        """
+        self._assert_daily_usable(symbols=[symbol], end=end)
+        return self._scan_daily_all([symbol], start, end, columns=columns, raw_basis=False)
+
+    def get_daily_batch_all(
+        self,
+        symbols: list[str],
+        start: date,
+        end: date,
+        columns: list[str] | None = None,
+    ) -> pl.DataFrame:
+        """`get_daily_all` 的批量版本；口径与限制完全相同。"""
+        self._assert_daily_usable(symbols=symbols, end=end)
+        return self._scan_daily_all(symbols, start, end, columns=columns, raw_basis=False)
+
+    def get_daily_all_raw(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+        columns: list[str] | None = None,
+    ) -> pl.DataFrame:
+        """全样本日K，**统一投影成原始价**（两边都是 `price_basis='raw'`）。
+
+        用途：需要严格同口径的分析（例如「剔除权日」的生存偏差复检，
+        见 `analysis/_verify_survivorship_bias.py`）。代价是主表也丢掉复权，
+        跨日序列在除权日同样假跌 —— 这是有意的，因为同口径比"更准"更重要。
+        """
+        self._assert_daily_usable(symbols=[symbol], end=end)
+        return self._scan_daily_all([symbol], start, end, columns=columns, raw_basis=True)
+
+    def get_daily_batch_all_raw(
+        self,
+        symbols: list[str],
+        start: date,
+        end: date,
+        columns: list[str] | None = None,
+    ) -> pl.DataFrame:
+        """`get_daily_all_raw` 的批量版本；口径与限制完全相同。"""
+        self._assert_daily_usable(symbols=symbols, end=end)
+        return self._scan_daily_all(symbols, start, end, columns=columns, raw_basis=True)
+
+    #: 全样本日K 真正需要的列：8 个行情列 + 3 个原始价列（用来还原 raw_open）。
+    #: 少读 turnover_rate / consecutive_limit_* / quote_ts 这 4 列，单票查询快约 30%。
+    _ALL_SAMPLE_MAIN_COLS = [
+        "symbol", "date", "open", "high", "low", "close", "volume", "amount",
+        "raw_close", "raw_high", "raw_low",
+    ]
+
+    def _scan_daily_all(
+        self,
+        symbols: list[str],
+        start: date,
+        end: date,
+        columns: list[str] | None = None,
+        *,
+        raw_basis: bool = False,
+    ) -> pl.DataFrame:
+        """主表 + 缺口股，显式 union。
+
+        只有请求的标的名与缺口名单有交集时才读补全包 —— 119 万行的文件
+        对单票查询是纯浪费，而名单读一次只要 ~20ms（按文件 mtime 缓存）。
+
+        绝不做的事：把缺口股塞进 `kline_daily_enriched/date=*/`。分区多一个
+        parquet 会让同一天被读两遍，且读取器不报错（本仓已知事故）。
+        """
+        self._scan_error.last = None
+        try:
+            if len(symbols) == 1:
+                main = self._scan_daily_symbol(
+                    symbols[0], start, end, self._ALL_SAMPLE_MAIN_COLS
+                )
+            else:
+                main = self._scan_daily_batch(
+                    symbols, start, end, self._ALL_SAMPLE_MAIN_COLS
+                )
+            if not main.columns:
+                out = main
+            elif raw_basis:
+                out = to_raw_basis(main)
+            else:
+                out = to_qfq_basis(main)
+
+            wanted = gap_symbols(self.store.data_dir).intersection(symbols)
+            if wanted:
+                gap_lf = scan_gap_raw(self.store.data_dir)
+                if gap_lf is not None:
+                    gap_df = guarded_collect(
+                        gap_lf.filter(
+                            pl.col("symbol").is_in(list(wanted))
+                            & (pl.col("date") >= start)
+                            & (pl.col("date") <= end)
+                        )
+                    )
+                    if not gap_df.is_empty():
+                        # 两侧显式对齐到 ALL_COLUMNS：缺口源还带 quote_ts（恒 null），
+                        # 直接 vertical_relaxed 会因列数不等报 "schema lengths differ"。
+                        out = pl.concat(
+                            [out.select(ALL_COLUMNS), gap_basis(gap_df)],
+                            how="vertical_relaxed",
+                        )
+
+            if out.is_empty():
+                return out
+            out = out.sort(["symbol", "date"])
+            if columns:
+                existing = [c for c in columns if c in out.columns]
+                out = out.select(existing)
+            return out
+        except Exception as e:  # noqa: BLE001
+            return self._scan_failed(
+                e, table="kline_daily_all", symbol=f"{len(symbols)} 只",
+                start=start, end=end,
+            )
 
     def get_index_daily(
         self,

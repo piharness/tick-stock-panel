@@ -104,6 +104,7 @@ The `bid_volumes` / `ask_volumes` of the five-level order book follow the existi
 - `limit_up_price` / `limit_down_price` are runtime columns for **limit judgment**: the exchange-effective price with a ∓0.005 tolerance (`raw_close >= limit_up_price` means limit-up; `null` on days without price limits or when the base price is missing). They are an engine capability, not a signal — signals that reference them (limit-up/limit-down/touch-and-break/limit-up break) are ordinary custom signal definitions; deleting the definition does not affect the judgment columns, and referencing parties degrade gracefully.
 - Limit-up, limit-down, one-line boards, limit-up breaks, and exchange price limits must be determined from raw prices and the corresponding trading-day rules.
 - Which price an indicator or return series uses must be consistent with existing indicator definitions. Do not mix prices within a single formula.
+- Universe-level work that must include delisted names goes through `kline_stock_all` / `get_daily_all`, which tags every row with `price_basis` (`qfq` for the main table, `raw` for the 306 gap symbols — they have no dividend record, so no forward-adjusted price can exist). Never fabricate an adjusted close for a gap row; the known bias (ex-rights days look like crashes, which **understates** delisted returns) is documented in [`docs/delisted-daily-union.md`](docs/delisted-daily-union.md).
 
 ### 3.3 Dates, Trading Days, and Time Zones
 
