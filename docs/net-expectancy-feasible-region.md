@@ -328,9 +328,9 @@ max_notional(B) -> max{V : buy_outlay(V) <= B}  # 闭式: kink=V0=m/r 两段取�
 shares_from_budget(B, px) -> 整手股数            # m=0 == floor(B/(px*(1+buy))/lot)*lot
 ```
 
-**改了哪些点**（原表 7 处，其中 `engine.py:942` 统计口径按 1 手名义额折算，因为该路径
-`TradeRecord` 不带 shares）：`942` / `1237-8` / `1683-4` / `2195` / `2428-9` / `2832` / `3060-1`。
-顺手收掉两个 `lot_size=100` 硬编码（母题「同一真相两个定义点」的复发）。
+**改了哪些点**（commit `36e85aa0` 后的实际行号；`engine.py:1025` 是统计口径，按 1 手名义额
+折算，因为该路径 `TradeRecord` 不带 shares）：`1025` / `1318-9` / `1762-3` / `2272` / `2501-2` /
+`2903` / `3131-2`。顺手收掉两个 `lot_size=100` 硬编码（母题「同一真相两个定义点」的复发）。
 
 **验证**（`backend/tests/backtest/test_cost_model.py`，257 用例）：
 
