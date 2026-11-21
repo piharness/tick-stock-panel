@@ -119,6 +119,14 @@ class MatcherConfig:
     commission_pct: float | None = None
     stamp_tax_pct: float | None = None
     slippage_bps: float = 5.0
+    # 单笔最低佣金 (元/边)。佣金 = max(r * 单笔成交额, min_commission)。
+    # 0 表示不设最低佣金, 此时所有成本函数逐位退化为旧的乘式 (见 buy_outlay)。
+    # 必要性: A 股「免五」与否决定小单成本相差 122.6bp, 而比例成本模型的成本与成交额无关
+    # ⇒ 不设本字段时, 引擎里所有 net 都是 成交额→∞ 的极限 (见 docs/net-expectancy-feasible-region.md)。
+    min_commission: float = 0.0
+    # 手数步长 (股): 主板/创业板 100; 科创板 200 股起、1 股递增, 由调用方显式传 200。
+    # 1 或 0 表示不约束 (按 1 股为步长)。旧代码在两处硬编码 100, 已统一到本字段。
+    lot_size: int = 100
     stop_loss_pct: float | None = None
     take_profit_pct: float | None = None
     trailing_stop_pct: float | None = None
@@ -161,6 +169,81 @@ class MatcherConfig:
         # 卖出腿: 佣金 + 印花税 + 滑点。印花税未设时为 0 (向后兼容)。
         stamp = self.stamp_tax_pct if self.stamp_tax_pct is not None else 0.0
         return self._commission_pct() + stamp + self.slippage_bps / 10000.0
+
+    # ---- 金额口径成本 (含最低佣金) -------------------------------------------
+    # 以下 4 个方法都遵守同一条约束: min_commission <= 0 时必须逐位等于旧的乘式,
+    # 不做任何代数变形 (notional + notional*p != notional*(1+p) 在浮点上)。
+    # 这是「加字段但不伪造历史结果」的唯一保证方式。
+
+    def _slippage_pct(self) -> float:
+        return self.slippage_bps / 10000.0
+
+    def _stamp_pct(self) -> float:
+        return self.stamp_tax_pct if self.stamp_tax_pct is not None else 0.0
+
+    def lot(self) -> int:
+        """手数步长 (股), 至少 1。"""
+        return max(int(self.lot_size or 1), 1)
+
+    def buy_outlay(self, notional: float) -> float:
+        """买入实际支出 = 成交额 + 佣金 + 滑点。"""
+        if notional <= 0:
+            return 0.0
+        if self.min_commission <= 0.0:
+            return notional * (1.0 + self.buy_cost_pct())
+        commission = max(self._commission_pct() * notional, self.min_commission)
+        return notional + commission + self._slippage_pct() * notional
+
+    def sell_proceeds(self, notional: float) -> float:
+        """卖出实际回款 = 成交额 - 佣金 - 印花税 - 滑点。"""
+        if notional <= 0:
+            return 0.0
+        if self.min_commission <= 0.0:
+            return notional * (1.0 - self.sell_cost_pct())
+        commission = max(self._commission_pct() * notional, self.min_commission)
+        return notional - commission - self._stamp_pct() * notional - self._slippage_pct() * notional
+
+    def round_trip_cost_pct(self, notional: float) -> float:
+        """往返成本占成交额的比例 (两腿按同一成交额计, 与 TradeRecord.pnl_pct 的口径一致)。"""
+        if self.min_commission <= 0.0:
+            return self.buy_cost_pct() + self.sell_cost_pct()
+        if notional <= 0:
+            return 0.0
+        return (
+            (self.buy_outlay(notional) - notional) + (notional - self.sell_proceeds(notional))
+        ) / notional
+
+    def max_notional(self, budget: float) -> float:
+        """给定预算 (含成本), 返回可承受的最大单笔成交额: max{V : V + 买入成本(V) <= budget}。
+
+        成本对 V 分段线性且在 V0=m/r 处连续: 段 A 比例 (V0 以上)、段 B 定额 (V0 以下),
+        两段均严格递增 ⇒ 闭式取大者即可, 无需迭代。
+        """
+        if budget <= 0:
+            return 0.0
+        r = self._commission_pct()
+        other = self._slippage_pct()
+        if r <= 0.0:
+            return max((budget - self.min_commission) / (1.0 + other), 0.0)
+        v_linear = budget / (1.0 + r + other)
+        v_kink = self.min_commission / r if self.min_commission > 0.0 else 0.0
+        if v_linear >= v_kink:
+            return v_linear
+        return max((budget - self.min_commission) / (1.0 + other), 0.0)
+
+    def shares_from_budget(self, budget: float, price: float) -> float:
+        """预算内可买的最大整手股数。"""
+        if not (price > 0) or budget <= 0:
+            return 0.0
+        lot = self.lot()
+        if self.min_commission <= 0.0:
+            # 旧式: 与 patch 前逐位一致 (含 np.floor 的返回类型)。
+            return float(np.floor(budget / (price * (1.0 + self.buy_cost_pct())) / lot) * lot)
+        shares = float(np.floor(self.max_notional(budget) / (price * lot)) * lot)
+        # 向下取整跨过 V0 时 f 仍连续, 理论上必然够; 这里仍实付校验一次, 防预算静默超支。
+        while shares > 0 and self.buy_outlay(shares * price) > budget + 1e-9:
+            shares -= lot
+        return max(shares, 0.0)
 
 
 @dataclass
@@ -769,11 +852,26 @@ class BacktestEngine:
         except Exception as e:  # noqa: BLE001
             logger.debug("backtest load panel cache miss: %s", e)
 
+        from app.services.daily_panel import enriched_files
         from app.tickflow.repository import enriched_dirname
-        enriched_glob = str(self.repo.store.data_dir / enriched_dirname(asset_type) / "**" / "*.parquet")
+
+        # 只枚举 [start, end] 内的分区，不 glob 全树：后者会让 polars 逐个打开
+        # 全部 5313 个文件读 footer（容器内 16.8s），与数据体积无关、只与文件数成正比。
+        files = enriched_files(
+            self.repo.store.data_dir, start, end, enriched_dirname(asset_type)
+        )
+        # 裁剪不出文件时回退原 glob（目录不存在、或历史/测试用的扁平布局）：
+        # 多读一份只是慢，少读一份是静默丢行。
+        source: object = (
+            [str(f) for f in files]
+            if files
+            else str(
+                self.repo.store.data_dir / enriched_dirname(asset_type) / "**" / "*.parquet"
+            )
+        )
 
         try:
-            lf = scan_enriched_parquet(enriched_glob)
+            lf = scan_enriched_parquet(source)
             if symbols is not None:
                 lf = lf.filter(pl.col("symbol").is_in(symbols))
             if columns is not None:
@@ -924,7 +1022,7 @@ class BacktestEngine:
                     if exit_triggered:
                         exit_price = float(sym_exit_prices[i])
                         pnl_pct = (exit_price - entry_price) / entry_price if entry_price > 0 else 0.0
-                        fee_cost = config.buy_cost_pct() + config.sell_cost_pct()
+                        fee_cost = config.round_trip_cost_pct(entry_price * config.lot())
                         pnl_pct -= fee_cost
 
                         e_date = sym_dates[entry_idx]
@@ -1012,8 +1110,6 @@ class BacktestEngine:
         options = options or SimulationOptions()
         entry_prices = self._resolve_entry_prices(matrix, config)
         exit_prices = matrix.open if config.exit_fill == "open_t+1" else matrix.close
-        buy_cost_pct = config.buy_cost_pct()
-        sell_cost_pct = config.sell_cost_pct()
         trades: list[TradeRecord] = []
         execution_stats = {
             "buy_invalid_price": 0,
@@ -1218,9 +1314,9 @@ class BacktestEngine:
             exit_price = float(override) if override is not None else _refill(
                 time_id, asset_id, "sell", float(exit_prices[time_id, asset_id])
             )
-            shares = 100.0
-            entry_value = shares * pos["entry_price"] * (1 + buy_cost_pct)
-            exit_value = shares * exit_price * (1 - sell_cost_pct)
+            shares = float(config.lot())
+            entry_value = config.buy_outlay(shares * pos["entry_price"])
+            exit_value = config.sell_proceeds(shares * exit_price)
             pnl_amount = exit_value - entry_value
             trades.append(TradeRecord(
                 symbol=matrix.symbols[asset_id],
@@ -1509,8 +1605,6 @@ class BacktestEngine:
             row_pos_in_symbol[i] = len(rows)
             rows.append(i)
 
-        buy_cost_pct = config.buy_cost_pct()
-        sell_cost_pct = config.sell_cost_pct()
         score_min = getattr(config, "score_min", None)
         score_max = getattr(config, "score_max", None)
         trades: list[TradeRecord] = []
@@ -1664,9 +1758,9 @@ class BacktestEngine:
                 exit_price = float(exit_price_override)
             else:
                 exit_price = _refill_price(idx, "sell", float(exit_prices[idx]))
-            shares = 100.0
-            entry_value = shares * float(pos["entry_price"]) * (1 + buy_cost_pct)
-            exit_value = shares * exit_price * (1 - sell_cost_pct)
+            shares = float(config.lot())
+            entry_value = config.buy_outlay(shares * float(pos["entry_price"]))
+            exit_value = config.sell_proceeds(shares * exit_price)
             pnl_amount = exit_value - entry_value
             pnl_pct = pnl_amount / entry_value if entry_value > 0 else 0.0
             trades.append(TradeRecord(
@@ -2000,8 +2094,6 @@ class BacktestEngine:
         time_count, asset_count = matrix.shape
         entry_prices = self._resolve_entry_prices(matrix, config)
         exit_prices = matrix.open if config.exit_fill == "open_t+1" else matrix.close
-        buy_cost_pct = config.buy_cost_pct()
-        sell_cost_pct = config.sell_cost_pct()
         cash = float(config.initial_capital)
         peak = cash
         max_positions = max(int(config.max_positions), 0)
@@ -2177,7 +2269,7 @@ class BacktestEngine:
             exit_price = float(override) if override is not None else _refill_price(
                 time_id, asset_id, "sell", float(exit_prices[time_id, asset_id])
             )
-            exit_value = pos["shares"] * exit_price * (1 - sell_cost_pct)
+            exit_value = config.sell_proceeds(pos["shares"] * exit_price)
             cash += exit_value
             pnl_amount = exit_value - pos["entry_value"]
             pnl_pct = pnl_amount / pos["entry_value"] if pos["entry_value"] > 0 else 0.0
@@ -2406,8 +2498,8 @@ class BacktestEngine:
                             entry_price = _refill_price(
                                 time_id, asset_id, "buy", float(entry_prices[time_id, asset_id])
                             )
-                            shares = np.floor(allocation / (entry_price * (1 + buy_cost_pct)) / 100) * 100
-                            entry_value = shares * entry_price * (1 + buy_cost_pct)
+                            shares = config.shares_from_budget(allocation, entry_price)
+                            entry_value = config.buy_outlay(shares * entry_price)
                             if shares <= 0:
                                 _count("buy_lot_size")
                                 continue
@@ -2429,7 +2521,7 @@ class BacktestEngine:
                                 "entry_price": entry_price,
                                 "entry_value": entry_value,
                                 "shares": shares,
-                                "lots": shares / 100,
+                                "lots": shares / config.lot(),
                                 "position_pct": entry_value / equity_before if equity_before > 0 else 0.0,
                                 "entry_score": entry_score,
                                 "max_high": entry_price,
@@ -2619,8 +2711,6 @@ class BacktestEngine:
         if not all_dates:
             return self._empty_result()
 
-        buy_cost_pct = config.buy_cost_pct()
-        sell_cost_pct = config.sell_cost_pct()
         cash = float(config.initial_capital)
         peak = cash
         max_positions = max(int(config.max_positions), 0)
@@ -2810,7 +2900,7 @@ class BacktestEngine:
                 exit_price = float(exit_price_override)
             else:
                 exit_price = _refill_price(idx, "sell", float(exit_prices[idx]))
-            exit_value = pos["shares"] * exit_price * (1 - sell_cost_pct)
+            exit_value = config.sell_proceeds(pos["shares"] * exit_price)
             cash += exit_value
             pnl_amount = exit_value - pos["entry_value"]
             pnl_pct = (exit_value - pos["entry_value"]) / pos["entry_value"] if pos["entry_value"] > 0 else 0.0
@@ -3038,8 +3128,8 @@ class BacktestEngine:
                     _count("buy_exposure")
                     continue
                 entry_price = _refill_price(idx, "buy", float(entry_prices[idx]))
-                shares = np.floor(allocation / (entry_price * (1 + buy_cost_pct)) / 100) * 100
-                entry_value = shares * entry_price * (1 + buy_cost_pct)
+                shares = config.shares_from_budget(allocation, entry_price)
+                entry_value = config.buy_outlay(shares * entry_price)
                 if shares <= 0:
                     _count("buy_lot_size")
                     continue
@@ -3059,7 +3149,7 @@ class BacktestEngine:
                     "entry_price": entry_price,
                     "entry_value": entry_value,
                     "shares": shares,
-                    "lots": shares / 100,
+                    "lots": shares / config.lot(),
                     "position_pct": entry_value / account_equity_before_buy if account_equity_before_buy > 0 else 0.0,
                     "entry_score": _score,
                     "max_high": entry_price,
