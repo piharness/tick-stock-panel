@@ -1,0 +1,932 @@
+{
+ "generated": "2026-11-21",
+ "A_premium_fingerprint": {
+  "pairs": {
+   "沪深300ETF": {
+    "n_days": 3517,
+    "start": "2012-05-28",
+    "excess_all_mean_bp": 0.13,
+    "excess_all_med_bp": 0.74,
+    "by_sh_return": {
+     "大跌<=-1.5%": {
+      "n_group": 241,
+      "excess_mean_bp": 2.0,
+      "excess_med_bp": 8.4,
+      "t_vs_zero": 0.57,
+      "pos_frac": 0.656
+     },
+     "跌-1.5~-0.5%": {
+      "n_group": 655,
+      "excess_mean_bp": 3.9,
+      "excess_med_bp": 4.3,
+      "t_vs_zero": 4.02,
+      "pos_frac": 0.623
+     },
+     "平-0.5~0.5%": {
+      "n_group": 1622,
+      "excess_mean_bp": -1.5,
+      "excess_med_bp": -0.1,
+      "t_vs_zero": -2.86,
+      "pos_frac": 0.497
+     },
+     "涨0.5~1.5%": {
+      "n_group": 732,
+      "excess_mean_bp": -3.2,
+      "excess_med_bp": -2.6,
+      "t_vs_zero": -4.06,
+      "pos_frac": 0.404
+     },
+     "大涨>=1.5%": {
+      "n_group": 266,
+      "excess_mean_bp": 8.3,
+      "excess_med_bp": 4.8,
+      "t_vs_zero": 2.34,
+      "pos_frac": 0.586
+     }
+    }
+   },
+   "上证50ETF": {
+    "n_days": 5282,
+    "start": "2005-02-23",
+    "excess_all_mean_bp": 0.1,
+    "excess_all_med_bp": 0.33,
+    "by_sh_return": {
+     "大跌<=-1.5%": {
+      "n_group": 519,
+      "excess_mean_bp": 5.3,
+      "excess_med_bp": 5.6,
+      "t_vs_zero": 2.87,
+      "pos_frac": 0.601
+     },
+     "跌-1.5~-0.5%": {
+      "n_group": 942,
+      "excess_mean_bp": 2.4,
+      "excess_med_bp": 3.0,
+      "t_vs_zero": 3.83,
+      "pos_frac": 0.569
+     },
+     "平-0.5~0.5%": {
+      "n_group": 2156,
+      "excess_mean_bp": -0.7,
+      "excess_med_bp": -0.2,
+      "t_vs_zero": -1.66,
+      "pos_frac": 0.494
+     },
+     "涨0.5~1.5%": {
+      "n_group": 1102,
+      "excess_mean_bp": -2.5,
+      "excess_med_bp": -1.8,
+      "t_vs_zero": -3.2,
+      "pos_frac": 0.444
+     },
+     "大涨>=1.5%": {
+      "n_group": 562,
+      "excess_mean_bp": -0.2,
+      "excess_med_bp": 0.2,
+      "t_vs_zero": -0.1,
+      "pos_frac": 0.507
+     }
+    }
+   },
+   "中证500ETF": {
+    "n_days": 3320,
+    "start": "2013-03-15",
+    "excess_all_mean_bp": 7.74,
+    "excess_all_med_bp": 0.36,
+    "by_sh_return": {
+     "大跌<=-1.5%": {
+      "n_group": 226,
+      "excess_mean_bp": -3.2,
+      "excess_med_bp": 2.9,
+      "t_vs_zero": -0.65,
+      "pos_frac": 0.54
+     },
+     "跌-1.5~-0.5%": {
+      "n_group": 610,
+      "excess_mean_bp": 43.0,
+      "excess_med_bp": 3.8,
+      "t_vs_zero": 1.05,
+      "pos_frac": 0.589
+     },
+     "平-0.5~0.5%": {
+      "n_group": 1535,
+      "excess_mean_bp": -1.7,
+      "excess_med_bp": -0.3,
+      "t_vs_zero": -1.75,
+      "pos_frac": 0.493
+     },
+     "涨0.5~1.5%": {
+      "n_group": 696,
+      "excess_mean_bp": -1.9,
+      "excess_med_bp": -0.9,
+      "t_vs_zero": -2.34,
+      "pos_frac": 0.471
+     },
+     "大涨>=1.5%": {
+      "n_group": 252,
+      "excess_mean_bp": 16.3,
+      "excess_med_bp": 4.4,
+      "t_vs_zero": 3.47,
+      "pos_frac": 0.536
+     }
+    }
+   },
+   "创业板ETF": {
+    "n_days": 3625,
+    "start": "2011-12-09",
+    "excess_all_mean_bp": 0.32,
+    "excess_all_med_bp": -0.16,
+    "by_sh_return": {
+     "大跌<=-1.5%": {
+      "n_group": 248,
+      "excess_mean_bp": -18.2,
+      "excess_med_bp": -3.1,
+      "t_vs_zero": -3.01,
+      "pos_frac": 0.456
+     },
+     "跌-1.5~-0.5%": {
+      "n_group": 683,
+      "excess_mean_bp": -0.0,
+      "excess_med_bp": 0.6,
+      "t_vs_zero": -0.02,
+      "pos_frac": 0.512
+     },
+     "平-0.5~0.5%": {
+      "n_group": 1665,
+      "excess_mean_bp": -0.8,
+      "excess_med_bp": -1.0,
+      "t_vs_zero": -1.43,
+      "pos_frac": 0.477
+     },
+     "涨0.5~1.5%": {
+      "n_group": 752,
+      "excess_mean_bp": 1.2,
+      "excess_med_bp": 0.1,
+      "t_vs_zero": 1.28,
+      "pos_frac": 0.501
+     },
+     "大涨>=1.5%": {
+      "n_group": 276,
+      "excess_mean_bp": 22.3,
+      "excess_med_bp": 8.5,
+      "t_vs_zero": 4.01,
+      "pos_frac": 0.601
+     }
+    }
+   },
+   "科创50ETF": {
+    "n_days": 1456,
+    "start": "2020-11-16",
+    "excess_all_mean_bp": 0.39,
+    "excess_all_med_bp": 0.64,
+    "by_sh_return": {
+     "大跌<=-1.5%": {
+      "n_group": 75,
+      "excess_mean_bp": -2.1,
+      "excess_med_bp": 4.6,
+      "t_vs_zero": -0.53,
+      "pos_frac": 0.573
+     },
+     "跌-1.5~-0.5%": {
+      "n_group": 278,
+      "excess_mean_bp": 3.8,
+      "excess_med_bp": 2.4,
+      "t_vs_zero": 3.27,
+      "pos_frac": 0.572
+     },
+     "平-0.5~0.5%": {
+      "n_group": 704,
+      "excess_mean_bp": -1.2,
+      "excess_med_bp": 0.3,
+      "t_vs_zero": -1.78,
+      "pos_frac": 0.51
+     },
+     "涨0.5~1.5%": {
+      "n_group": 336,
+      "excess_mean_bp": -0.3,
+      "excess_med_bp": 0.1,
+      "t_vs_zero": -0.25,
+      "pos_frac": 0.5
+     },
+     "大涨>=1.5%": {
+      "n_group": 62,
+      "excess_mean_bp": 10.2,
+      "excess_med_bp": -0.6,
+      "t_vs_zero": 1.46,
+      "pos_frac": 0.468
+     }
+    }
+   },
+   "半导体ETF(负控:错绑科创50,只看相对自身)": {
+    "n_days": 1665,
+    "start": "2019-12-31",
+    "excess_all_mean_bp": -1.99,
+    "excess_all_med_bp": -1.11,
+    "by_sh_return": {
+     "大跌<=-1.5%": {
+      "n_group": 91,
+      "excess_mean_bp": -13.0,
+      "excess_med_bp": -51.1,
+      "t_vs_zero": -0.68,
+      "pos_frac": 0.33
+     },
+     "跌-1.5~-0.5%": {
+      "n_group": 322,
+      "excess_mean_bp": -4.0,
+      "excess_med_bp": -5.3,
+      "t_vs_zero": -0.69,
+      "pos_frac": 0.475
+     },
+     "平-0.5~0.5%": {
+      "n_group": 791,
+      "excess_mean_bp": -8.0,
+      "excess_med_bp": -3.8,
+      "t_vs_zero": -0.81,
+      "pos_frac": 0.484
+     },
+     "涨0.5~1.5%": {
+      "n_group": 372,
+      "excess_mean_bp": 12.9,
+      "excess_med_bp": 10.9,
+      "t_vs_zero": 2.04,
+      "pos_frac": 0.575
+     },
+     "大涨>=1.5%": {
+      "n_group": 88,
+      "excess_mean_bp": 8.3,
+      "excess_med_bp": 1.5,
+      "t_vs_zero": 0.38,
+      "pos_frac": 0.511
+     }
+    }
+   }
+  },
+  "note": "excess = ETF 日收益 − 跟踪指数日收益；分红日为稀疏负跳, 读中位与正比例",
+  "neg_ctrl_semiconductor": {
+   "label": "半导体ETF",
+   "n_days": 1803,
+   "excess_on_big_down_days_mean_bp": -94.7,
+   "pos_frac": 0.302,
+   "note": "行业 ETF 与上证超额本身含行业风格, 只作方向参照"
+  }
+ },
+ "A2_cross_check": {
+  "n_days": 3358,
+  "span": [
+   "2013-01-16",
+   "2026-11-17"
+  ],
+  "corr_same_index_etfs": {
+   "510300.SH_vs_159919.SZ": 0.499,
+   "510300.SH_vs_510330.SH": 0.52,
+   "159919.SZ_vs_510330.SH": 0.36
+  },
+  "big_down": [
+   {
+    "etf": "510300.SH",
+    "n_big_down": 229,
+    "excess_total_bp": 1.3,
+    "excess_total_med_bp": 7.4,
+    "excess_own_bp": -2.7,
+    "excess_own_t": -1.44,
+    "excess_own_pos_frac": 0.415
+   },
+   {
+    "etf": "159919.SZ",
+    "n_big_down": 229,
+    "excess_total_bp": 6.5,
+    "excess_total_med_bp": 7.2,
+    "excess_own_bp": 2.4,
+    "excess_own_t": 1.02,
+    "excess_own_pos_frac": 0.546
+   },
+   {
+    "etf": "510330.SH",
+    "n_big_down": 229,
+    "excess_total_bp": 4.3,
+    "excess_total_med_bp": 8.3,
+    "excess_own_bp": 0.3,
+    "excess_own_t": 0.16,
+    "excess_own_pos_frac": 0.515
+   }
+  ],
+  "verdict": "特有超额=总超额−三只均值；若 t 不显著, 则溢价指纹是指数口径的公共成分, 不能当作申购痕迹"
+ },
+ "B_signal_tradability": {
+  "by_horizon": [
+   {
+    "h": 20,
+    "group": "全样本",
+    "n": 3496,
+    "mean_pct": 0.45,
+    "med_pct": 0.2,
+    "win": 0.514,
+    "t": 4.32,
+    "ci95_pct": [
+     0.25,
+     0.66
+    ]
+   },
+   {
+    "h": 20,
+    "group": "大跌<-1.5%",
+    "n": 241,
+    "mean_pct": 0.19,
+    "med_pct": 0.52,
+    "win": 0.531,
+    "t": 0.43,
+    "ci95_pct": [
+     -0.66,
+     1.03
+    ]
+   },
+   {
+    "h": 20,
+    "group": "大跌 且 5日超额>0",
+    "n": 145,
+    "mean_pct": 0.41,
+    "med_pct": 0.35,
+    "win": 0.531,
+    "t": 0.83,
+    "ci95_pct": [
+     -0.55,
+     1.36
+    ]
+   },
+   {
+    "h": 20,
+    "group": "大跌 且 5日超额<=0",
+    "n": 96,
+    "mean_pct": -0.15,
+    "med_pct": 0.54,
+    "win": 0.531,
+    "t": -0.19,
+    "ci95_pct": [
+     -1.69,
+     1.4
+    ]
+   },
+   {
+    "h": 20,
+    "group": "大跌 且 当日超额>+0.30%",
+    "n": 32,
+    "mean_pct": -1.8,
+    "med_pct": -2.07,
+    "win": 0.469,
+    "t": -1.22,
+    "ci95_pct": [
+     -4.69,
+     1.09
+    ]
+   },
+   {
+    "h": 20,
+    "group": "非大跌 且 5日超额>0",
+    "n": 1855,
+    "mean_pct": 0.41,
+    "med_pct": 0.17,
+    "win": 0.509,
+    "t": 2.92,
+    "ci95_pct": [
+     0.13,
+     0.68
+    ]
+   },
+   {
+    "h": 60,
+    "group": "全样本",
+    "n": 3456,
+    "mean_pct": 1.62,
+    "med_pct": 0.42,
+    "win": 0.523,
+    "t": 8.28,
+    "ci95_pct": [
+     1.23,
+     2.0
+    ]
+   },
+   {
+    "h": 60,
+    "group": "大跌<-1.5%",
+    "n": 238,
+    "mean_pct": 0.94,
+    "med_pct": 0.23,
+    "win": 0.513,
+    "t": 1.14,
+    "ci95_pct": [
+     -0.67,
+     2.54
+    ]
+   },
+   {
+    "h": 60,
+    "group": "大跌 且 5日超额>0",
+    "n": 143,
+    "mean_pct": -0.08,
+    "med_pct": 0.03,
+    "win": 0.503,
+    "t": -0.08,
+    "ci95_pct": [
+     -1.93,
+     1.77
+    ]
+   },
+   {
+    "h": 60,
+    "group": "大跌 且 5日超额<=0",
+    "n": 95,
+    "mean_pct": 2.46,
+    "med_pct": 0.33,
+    "win": 0.526,
+    "t": 1.68,
+    "ci95_pct": [
+     -0.42,
+     5.35
+    ]
+   },
+   {
+    "h": 60,
+    "group": "大跌 且 当日超额>+0.30%",
+    "n": 32,
+    "mean_pct": -1.27,
+    "med_pct": 0.37,
+    "win": 0.5,
+    "t": -0.59,
+    "ci95_pct": [
+     -5.52,
+     2.98
+    ]
+   },
+   {
+    "h": 60,
+    "group": "非大跌 且 5日超额>0",
+    "n": 1834,
+    "mean_pct": 1.77,
+    "med_pct": 0.6,
+    "win": 0.527,
+    "t": 6.79,
+    "ci95_pct": [
+     1.26,
+     2.28
+    ]
+   },
+   {
+    "h": 250,
+    "group": "全样本",
+    "n": 3266,
+    "mean_pct": 7.71,
+    "med_pct": 4.7,
+    "win": 0.568,
+    "t": 16.83,
+    "ci95_pct": [
+     6.81,
+     8.6
+    ]
+   },
+   {
+    "h": 250,
+    "group": "大跌<-1.5%",
+    "n": 226,
+    "mean_pct": 4.87,
+    "med_pct": 1.98,
+    "win": 0.544,
+    "t": 3.17,
+    "ci95_pct": [
+     1.86,
+     7.88
+    ]
+   },
+   {
+    "h": 250,
+    "group": "大跌 且 5日超额>0",
+    "n": 135,
+    "mean_pct": 5.37,
+    "med_pct": 0.63,
+    "win": 0.511,
+    "t": 2.59,
+    "ci95_pct": [
+     1.31,
+     9.43
+    ]
+   },
+   {
+    "h": 250,
+    "group": "大跌 且 5日超额<=0",
+    "n": 91,
+    "mean_pct": 4.13,
+    "med_pct": 4.3,
+    "win": 0.593,
+    "t": 1.82,
+    "ci95_pct": [
+     -0.32,
+     8.58
+    ]
+   },
+   {
+    "h": 250,
+    "group": "大跌 且 当日超额>+0.30%",
+    "n": 32,
+    "mean_pct": 0.59,
+    "med_pct": -3.39,
+    "win": 0.344,
+    "t": 0.17,
+    "ci95_pct": [
+     -6.34,
+     7.51
+    ]
+   },
+   {
+    "h": 250,
+    "group": "非大跌 且 5日超额>0",
+    "n": 1728,
+    "mean_pct": 8.25,
+    "med_pct": 5.15,
+    "win": 0.572,
+    "t": 12.94,
+    "ci95_pct": [
+     7.0,
+     9.5
+    ]
+   }
+  ],
+  "n_days": 3517
+ },
+ "C_signal_mdd": {
+  "n_signal_thinned": 77,
+  "n_plain_down_thinned": 94,
+  "signal_mdd_med": -18.19,
+  "signal_mdd_p10": -26.4,
+  "plain_mdd_med": -17.86,
+  "plain_mdd_p10": -27.76,
+  "signal_dates": [
+   "2012-06-04",
+   "2012-07-09",
+   "2012-08-13",
+   "2012-09-17",
+   "2012-11-13",
+   "2013-01-11",
+   "2013-02-19",
+   "2013-03-28",
+   "2013-06-13",
+   "2013-07-12",
+   "2013-09-17",
+   "2013-11-13",
+   "2013-12-20",
+   "2014-02-24",
+   "2014-04-28",
+   "2014-06-19",
+   "2014-09-22",
+   "2015-01-08",
+   "2015-05-05",
+   "2015-06-16",
+   "2015-07-15",
+   "2015-08-20",
+   "2015-10-21",
+   "2015-11-27",
+   "2016-01-04",
+   "2016-02-01",
+   "2016-03-10",
+   "2016-05-06",
+   "2016-06-13",
+   "2016-09-12",
+   "2016-12-12",
+   "2017-08-11",
+   "2018-05-30",
+   "2018-07-02",
+   "2018-10-18",
+   "2018-12-14",
+   "2019-03-08",
+   "2019-04-11",
+   "2019-05-17",
+   "2019-07-08",
+   "2019-08-05",
+   "2019-11-11",
+   "2020-03-12",
+   "2020-05-22",
+   "2020-07-15",
+   "2020-09-07",
+   "2020-12-22",
+   "2021-01-28",
+   "2021-03-08",
+   "2021-07-02",
+   "2021-08-17",
+   "2021-09-29",
+   "2022-01-27",
+   "2022-03-07",
+   "2022-04-11",
+   "2022-05-24",
+   "2022-07-15",
+   "2022-08-24",
+   "2022-09-28",
+   "2022-12-19",
+   "2023-04-21",
+   "2023-10-19",
+   "2024-01-17",
+   "2024-02-28",
+   "2024-04-16",
+   "2024-07-23",
+   "2024-11-22",
+   "2024-12-31",
+   "2025-02-28",
+   "2025-04-07",
+   "2025-10-17",
+   "2025-11-21",
+   "2026-03-23",
+   "2026-05-14",
+   "2026-07-02",
+   "2026-08-19",
+   "2026-09-28"
+  ]
+ },
+ "D_policy_days": {
+  "rows": [
+   {
+    "date": "2008-09-18",
+    "event": "汇金宣布增持三大行",
+    "000300.SH": {
+     "fwd250_pct": 47.5,
+     "mdd_pct": -27.5,
+     "broke_entry": true
+    },
+    "399006.SZ": null,
+    "000688.SH": null,
+    "000001.SH": {
+     "fwd250_pct": 36.8,
+     "mdd_pct": -25.7,
+     "broke_entry": true
+    }
+   },
+   {
+    "date": "2011-10-10",
+    "event": "汇金增持四大行",
+    "000300.SH": {
+     "fwd250_pct": -8.5,
+     "mdd_pct": -20.9,
+     "broke_entry": true
+    },
+    "399006.SZ": {
+     "fwd250_pct": -8.3,
+     "mdd_pct": -32.1,
+     "broke_entry": true
+    },
+    "000688.SH": null,
+    "000001.SH": {
+     "fwd250_pct": -9.2,
+     "mdd_pct": -20.8,
+     "broke_entry": true
+    }
+   },
+   {
+    "date": "2012-10-10",
+    "event": "汇金增持四大行",
+    "000300.SH": {
+     "fwd250_pct": 2.8,
+     "mdd_pct": -22.2,
+     "broke_entry": true
+    },
+    "399006.SZ": {
+     "fwd250_pct": 79.7,
+     "mdd_pct": -18.0,
+     "broke_entry": true
+    },
+    "000688.SH": null,
+    "000001.SH": {
+     "fwd250_pct": 1.5,
+     "mdd_pct": -19.9,
+     "broke_entry": true
+    }
+   },
+   {
+    "date": "2013-06-20",
+    "event": "汇金首持ETF(147亿)",
+    "000300.SH": {
+     "fwd250_pct": -6.6,
+     "mdd_pct": -16.8,
+     "broke_entry": true
+    },
+    "399006.SZ": {
+     "fwd250_pct": 37.0,
+     "mdd_pct": -21.3,
+     "broke_entry": true
+    },
+    "000688.SH": null,
+    "000001.SH": {
+     "fwd250_pct": -1.2,
+     "mdd_pct": -11.7,
+     "broke_entry": true
+    }
+   },
+   {
+    "date": "2015-07-08",
+    "event": "证金公司入场",
+    "000300.SH": {
+     "fwd250_pct": -15.9,
+     "mdd_pct": -32.9,
+     "broke_entry": true
+    },
+    "399006.SZ": {
+     "fwd250_pct": -7.1,
+     "mdd_pct": -39.4,
+     "broke_entry": true
+    },
+    "000688.SH": null,
+    "000001.SH": {
+     "fwd250_pct": -17.7,
+     "mdd_pct": -35.6,
+     "broke_entry": true
+    }
+   },
+   {
+    "date": "2023-10-11",
+    "event": "汇金增持四大行+ETF",
+    "000300.SH": {
+     "fwd250_pct": 7.3,
+     "mdd_pct": -14.7,
+     "broke_entry": true
+    },
+    "399006.SZ": {
+     "fwd250_pct": 9.2,
+     "mdd_pct": -24.7,
+     "broke_entry": true
+    },
+    "000688.SH": {
+     "fwd250_pct": 8.8,
+     "mdd_pct": -28.9,
+     "broke_entry": true
+    },
+    "000001.SH": {
+     "fwd250_pct": 6.3,
+     "mdd_pct": -14.7,
+     "broke_entry": true
+    }
+   },
+   {
+    "date": "2024-02-06",
+    "event": "汇金扩大ETF增持",
+    "000300.SH": {
+     "fwd250_pct": 18.4,
+     "mdd_pct": -14.4,
+     "broke_entry": true
+    },
+    "399006.SZ": {
+     "fwd250_pct": 32.9,
+     "mdd_pct": -22.5,
+     "broke_entry": true
+    },
+    "000688.SH": {
+     "fwd250_pct": 51.6,
+     "mdd_pct": -22.1,
+     "broke_entry": true
+    },
+    "000001.SH": {
+     "fwd250_pct": 19.5,
+     "mdd_pct": -14.7,
+     "broke_entry": true
+    }
+   },
+   {
+    "date": "2024-09-24",
+    "event": "一揽子政策",
+    "000300.SH": {
+     "fwd250_pct": 35.7,
+     "mdd_pct": -15.7,
+     "broke_entry": false
+    },
+    "399006.SZ": {
+     "fwd250_pct": 89.7,
+     "mdd_pct": -29.1,
+     "broke_entry": false
+    },
+    "000688.SH": {
+     "fwd250_pct": 117.7,
+     "mdd_pct": -18.0,
+     "broke_entry": false
+    },
+    "000001.SH": {
+     "fwd250_pct": 34.6,
+     "mdd_pct": -11.3,
+     "broke_entry": false
+    }
+   },
+   {
+    "date": "2025-04-07",
+    "event": "汇金明确类平准基金定位、增持ETF",
+    "000300.SH": {
+     "fwd250_pct": 29.5,
+     "mdd_pct": -7.8,
+     "broke_entry": false
+    },
+    "399006.SZ": {
+     "fwd250_pct": 99.9,
+     "mdd_pct": -12.2,
+     "broke_entry": false
+    },
+    "000688.SH": {
+     "fwd250_pct": 51.4,
+     "mdd_pct": -19.3,
+     "broke_entry": false
+    },
+    "000001.SH": {
+     "fwd250_pct": 28.8,
+     "mdd_pct": -8.8,
+     "broke_entry": false
+    }
+   }
+  ],
+  "note": "次日收盘起算 250 日；broke_entry = 期间最低是否低于入场价"
+ },
+ "E_industry_cycle": {
+  "n_industry": 11,
+  "names": [
+   "地产",
+   "农业",
+   "传媒",
+   "电子",
+   "证券",
+   "环保",
+   "煤炭",
+   "白酒",
+   "军工",
+   "医药",
+   "有色"
+  ],
+  "grid": [
+   {
+    "look": 20,
+    "hold": 20,
+    "n": 5271,
+    "n_indep": 264,
+    "hi_minus_lo_pct": 0.061,
+    "t_overlap": 0.96,
+    "t_indep": 0.44,
+    "ci95_indep_pct": [
+     -0.43,
+     0.678
+    ],
+    "hi_abs_pct": 1.078,
+    "lo_abs_pct": 1.017,
+    "hi_ann_pct": 13.97,
+    "lo_ann_pct": 13.14,
+    "all_ann_pct": 13.56,
+    "note": "过去收益高的一半 − 低的一半 的未来 hold 日收益差；正=动量。t_overlap 被重叠样本高估, 以 t_indep 为准"
+   },
+   {
+    "look": 60,
+    "hold": 60,
+    "n": 5191,
+    "n_indep": 87,
+    "hi_minus_lo_pct": 0.622,
+    "t_overlap": 5.51,
+    "t_indep": 0.57,
+    "ci95_indep_pct": [
+     -1.234,
+     2.257
+    ],
+    "hi_abs_pct": 3.804,
+    "lo_abs_pct": 3.181,
+    "hi_ann_pct": 16.39,
+    "lo_ann_pct": 13.58,
+    "all_ann_pct": 14.98,
+    "note": "过去收益高的一半 − 低的一半 的未来 hold 日收益差；正=动量。t_overlap 被重叠样本高估, 以 t_indep 为准"
+   },
+   {
+    "look": 120,
+    "hold": 60,
+    "n": 5131,
+    "n_indep": 86,
+    "hi_minus_lo_pct": 1.022,
+    "t_overlap": 10.28,
+    "t_indep": 1.07,
+    "ci95_indep_pct": [
+     -0.733,
+     2.491
+    ],
+    "hi_abs_pct": 3.938,
+    "lo_abs_pct": 2.916,
+    "hi_ann_pct": 17.01,
+    "lo_ann_pct": 12.4,
+    "all_ann_pct": 14.69,
+    "note": "过去收益高的一半 − 低的一半 的未来 hold 日收益差；正=动量。t_overlap 被重叠样本高估, 以 t_indep 为准"
+   },
+   {
+    "look": 250,
+    "hold": 120,
+    "n": 4941,
+    "n_indep": 42,
+    "hi_minus_lo_pct": 2.121,
+    "t_overlap": 10.32,
+    "t_indep": 0.75,
+    "ci95_indep_pct": [
+     -2.999,
+     6.696
+    ],
+    "hi_abs_pct": 7.958,
+    "lo_abs_pct": 5.836,
+    "hi_ann_pct": 16.85,
+    "lo_ann_pct": 12.23,
+    "all_ann_pct": 14.52,
+    "note": "过去收益高的一半 − 低的一半 的未来 hold 日收益差；正=动量。t_overlap 被重叠样本高估, 以 t_indep 为准"
+   }
+  ]
+ }
+}
