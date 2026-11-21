@@ -1,0 +1,3427 @@
+{
+ "generated": "2026-11-21",
+ "signal_def": "上证日收益 <= -1.5% 且 沪深300ETF 5日相对指数超额 > 0",
+ "sample": [
+  "2012-05-28",
+  "2026-11-17"
+ ],
+ "A_segments": {
+  "10": {
+   "gap": 10,
+   "n_segments": 83,
+   "n_signals": 145,
+   "size_dist": {
+    "1": 54,
+    "2": 12,
+    "3": 8,
+    "4": 5,
+    "5": 3,
+    "8": 1
+   },
+   "segments": [
+    {
+     "start": "2012-06-04",
+     "end": "2012-06-04",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2012-06-25",
+     "end": "2012-07-16",
+     "n_sig": 3,
+     "span_td": 15
+    },
+    {
+     "start": "2012-08-13",
+     "end": "2012-08-27",
+     "n_sig": 2,
+     "span_td": 10
+    },
+    {
+     "start": "2012-09-17",
+     "end": "2012-09-17",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2012-11-13",
+     "end": "2012-11-13",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2013-01-11",
+     "end": "2013-01-11",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2013-02-19",
+     "end": "2013-03-28",
+     "n_sig": 4,
+     "span_td": 27
+    },
+    {
+     "start": "2013-04-23",
+     "end": "2013-04-23",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2013-06-13",
+     "end": "2013-07-12",
+     "n_sig": 5,
+     "span_td": 21
+    },
+    {
+     "start": "2013-07-29",
+     "end": "2013-07-29",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2013-09-17",
+     "end": "2013-10-16",
+     "n_sig": 3,
+     "span_td": 14
+    },
+    {
+     "start": "2013-11-13",
+     "end": "2013-11-13",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2013-12-20",
+     "end": "2014-01-06",
+     "n_sig": 3,
+     "span_td": 10
+    },
+    {
+     "start": "2014-02-24",
+     "end": "2014-03-10",
+     "n_sig": 3,
+     "span_td": 10
+    },
+    {
+     "start": "2014-04-28",
+     "end": "2014-04-28",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2014-06-19",
+     "end": "2014-06-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2014-09-22",
+     "end": "2014-09-22",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2015-01-08",
+     "end": "2015-01-08",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2015-02-02",
+     "end": "2015-02-02",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2015-05-05",
+     "end": "2015-05-15",
+     "n_sig": 4,
+     "span_td": 8
+    },
+    {
+     "start": "2015-06-16",
+     "end": "2015-07-15",
+     "n_sig": 8,
+     "span_td": 20
+    },
+    {
+     "start": "2015-08-20",
+     "end": "2015-08-21",
+     "n_sig": 2,
+     "span_td": 1
+    },
+    {
+     "start": "2015-09-17",
+     "end": "2015-09-17",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2015-10-21",
+     "end": "2015-10-21",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2015-11-27",
+     "end": "2015-12-08",
+     "n_sig": 2,
+     "span_td": 7
+    },
+    {
+     "start": "2016-01-04",
+     "end": "2016-01-15",
+     "n_sig": 4,
+     "span_td": 9
+    },
+    {
+     "start": "2016-02-01",
+     "end": "2016-02-01",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2016-02-29",
+     "end": "2016-03-10",
+     "n_sig": 2,
+     "span_td": 8
+    },
+    {
+     "start": "2016-05-06",
+     "end": "2016-05-09",
+     "n_sig": 2,
+     "span_td": 1
+    },
+    {
+     "start": "2016-06-13",
+     "end": "2016-06-13",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2016-09-12",
+     "end": "2016-09-26",
+     "n_sig": 2,
+     "span_td": 8
+    },
+    {
+     "start": "2016-12-12",
+     "end": "2016-12-12",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2017-08-11",
+     "end": "2017-08-11",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2018-05-30",
+     "end": "2018-05-30",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2018-06-19",
+     "end": "2018-07-11",
+     "n_sig": 3,
+     "span_td": 16
+    },
+    {
+     "start": "2018-10-18",
+     "end": "2018-10-18",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2018-12-14",
+     "end": "2018-12-14",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2019-03-08",
+     "end": "2019-03-08",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2019-03-26",
+     "end": "2019-03-26",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2019-04-11",
+     "end": "2019-05-17",
+     "n_sig": 5,
+     "span_td": 23
+    },
+    {
+     "start": "2019-07-08",
+     "end": "2019-07-08",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2019-08-05",
+     "end": "2019-08-06",
+     "n_sig": 2,
+     "span_td": 1
+    },
+    {
+     "start": "2019-11-11",
+     "end": "2019-11-11",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2020-03-12",
+     "end": "2020-03-18",
+     "n_sig": 3,
+     "span_td": 4
+    },
+    {
+     "start": "2020-05-22",
+     "end": "2020-05-22",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2020-07-15",
+     "end": "2020-07-16",
+     "n_sig": 2,
+     "span_td": 1
+    },
+    {
+     "start": "2020-09-07",
+     "end": "2020-09-09",
+     "n_sig": 2,
+     "span_td": 2
+    },
+    {
+     "start": "2020-09-24",
+     "end": "2020-09-24",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2020-12-22",
+     "end": "2020-12-22",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2021-01-28",
+     "end": "2021-01-28",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2021-03-08",
+     "end": "2021-03-09",
+     "n_sig": 2,
+     "span_td": 1
+    },
+    {
+     "start": "2021-07-02",
+     "end": "2021-07-02",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2021-07-27",
+     "end": "2021-07-27",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2021-08-17",
+     "end": "2021-08-17",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2021-09-29",
+     "end": "2021-09-29",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2022-01-27",
+     "end": "2022-01-27",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2022-02-24",
+     "end": "2022-03-14",
+     "n_sig": 4,
+     "span_td": 12
+    },
+    {
+     "start": "2022-04-11",
+     "end": "2022-04-25",
+     "n_sig": 3,
+     "span_td": 10
+    },
+    {
+     "start": "2022-05-24",
+     "end": "2022-05-24",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2022-07-15",
+     "end": "2022-07-15",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2022-08-02",
+     "end": "2022-08-02",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2022-08-24",
+     "end": "2022-08-24",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2022-09-16",
+     "end": "2022-10-28",
+     "n_sig": 5,
+     "span_td": 25
+    },
+    {
+     "start": "2022-12-19",
+     "end": "2022-12-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2023-04-21",
+     "end": "2023-04-21",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2023-10-19",
+     "end": "2023-10-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2024-01-17",
+     "end": "2024-01-30",
+     "n_sig": 2,
+     "span_td": 9
+    },
+    {
+     "start": "2024-02-28",
+     "end": "2024-02-28",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2024-04-16",
+     "end": "2024-04-16",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2024-07-23",
+     "end": "2024-08-05",
+     "n_sig": 2,
+     "span_td": 9
+    },
+    {
+     "start": "2024-11-22",
+     "end": "2024-11-22",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2024-12-13",
+     "end": "2024-12-13",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2024-12-31",
+     "end": "2025-01-03",
+     "n_sig": 3,
+     "span_td": 2
+    },
+    {
+     "start": "2025-02-28",
+     "end": "2025-02-28",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2025-04-07",
+     "end": "2025-04-07",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2025-10-17",
+     "end": "2025-10-17",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2025-11-21",
+     "end": "2025-11-21",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2026-03-23",
+     "end": "2026-03-23",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2026-05-14",
+     "end": "2026-05-14",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2026-06-08",
+     "end": "2026-06-08",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2026-07-02",
+     "end": "2026-07-17",
+     "n_sig": 4,
+     "span_td": 11
+    },
+    {
+     "start": "2026-08-19",
+     "end": "2026-08-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2026-09-28",
+     "end": "2026-09-28",
+     "n_sig": 1,
+     "span_td": 0
+    }
+   ],
+   "n_seg_with_3plus": 17
+  },
+  "20": {
+   "gap": 20,
+   "n_segments": 53,
+   "n_signals": 145,
+   "size_dist": {
+    "1": 26,
+    "2": 6,
+    "3": 7,
+    "4": 4,
+    "5": 2,
+    "6": 2,
+    "7": 2,
+    "8": 2,
+    "9": 2
+   },
+   "segments": [
+    {
+     "start": "2012-06-04",
+     "end": "2012-09-17",
+     "n_sig": 7,
+     "span_td": 74
+    },
+    {
+     "start": "2012-11-13",
+     "end": "2012-11-13",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2013-01-11",
+     "end": "2013-01-11",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2013-02-19",
+     "end": "2013-04-23",
+     "n_sig": 5,
+     "span_td": 43
+    },
+    {
+     "start": "2013-06-13",
+     "end": "2013-07-29",
+     "n_sig": 6,
+     "span_td": 32
+    },
+    {
+     "start": "2013-09-17",
+     "end": "2013-11-13",
+     "n_sig": 4,
+     "span_td": 34
+    },
+    {
+     "start": "2013-12-20",
+     "end": "2014-01-06",
+     "n_sig": 3,
+     "span_td": 10
+    },
+    {
+     "start": "2014-02-24",
+     "end": "2014-03-10",
+     "n_sig": 3,
+     "span_td": 10
+    },
+    {
+     "start": "2014-04-28",
+     "end": "2014-04-28",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2014-06-19",
+     "end": "2014-06-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2014-09-22",
+     "end": "2014-09-22",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2015-01-08",
+     "end": "2015-02-02",
+     "n_sig": 2,
+     "span_td": 17
+    },
+    {
+     "start": "2015-05-05",
+     "end": "2015-05-15",
+     "n_sig": 4,
+     "span_td": 8
+    },
+    {
+     "start": "2015-06-16",
+     "end": "2015-07-15",
+     "n_sig": 8,
+     "span_td": 20
+    },
+    {
+     "start": "2015-08-20",
+     "end": "2015-10-21",
+     "n_sig": 4,
+     "span_td": 37
+    },
+    {
+     "start": "2015-11-27",
+     "end": "2016-03-10",
+     "n_sig": 9,
+     "span_td": 68
+    },
+    {
+     "start": "2016-05-06",
+     "end": "2016-05-09",
+     "n_sig": 2,
+     "span_td": 1
+    },
+    {
+     "start": "2016-06-13",
+     "end": "2016-06-13",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2016-09-12",
+     "end": "2016-09-26",
+     "n_sig": 2,
+     "span_td": 8
+    },
+    {
+     "start": "2016-12-12",
+     "end": "2016-12-12",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2017-08-11",
+     "end": "2017-08-11",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2018-05-30",
+     "end": "2018-07-11",
+     "n_sig": 4,
+     "span_td": 29
+    },
+    {
+     "start": "2018-10-18",
+     "end": "2018-10-18",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2018-12-14",
+     "end": "2018-12-14",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2019-03-08",
+     "end": "2019-05-17",
+     "n_sig": 7,
+     "span_td": 46
+    },
+    {
+     "start": "2019-07-08",
+     "end": "2019-08-06",
+     "n_sig": 3,
+     "span_td": 21
+    },
+    {
+     "start": "2019-11-11",
+     "end": "2019-11-11",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2020-03-12",
+     "end": "2020-03-18",
+     "n_sig": 3,
+     "span_td": 4
+    },
+    {
+     "start": "2020-05-22",
+     "end": "2020-05-22",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2020-07-15",
+     "end": "2020-07-16",
+     "n_sig": 2,
+     "span_td": 1
+    },
+    {
+     "start": "2020-09-07",
+     "end": "2020-09-24",
+     "n_sig": 3,
+     "span_td": 13
+    },
+    {
+     "start": "2020-12-22",
+     "end": "2020-12-22",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2021-01-28",
+     "end": "2021-01-28",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2021-03-08",
+     "end": "2021-03-09",
+     "n_sig": 2,
+     "span_td": 1
+    },
+    {
+     "start": "2021-07-02",
+     "end": "2021-08-17",
+     "n_sig": 3,
+     "span_td": 32
+    },
+    {
+     "start": "2021-09-29",
+     "end": "2021-09-29",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2022-01-27",
+     "end": "2022-05-24",
+     "n_sig": 9,
+     "span_td": 73
+    },
+    {
+     "start": "2022-07-15",
+     "end": "2022-10-28",
+     "n_sig": 8,
+     "span_td": 69
+    },
+    {
+     "start": "2022-12-19",
+     "end": "2022-12-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2023-04-21",
+     "end": "2023-04-21",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2023-10-19",
+     "end": "2023-10-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2024-01-17",
+     "end": "2024-02-28",
+     "n_sig": 3,
+     "span_td": 24
+    },
+    {
+     "start": "2024-04-16",
+     "end": "2024-04-16",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2024-07-23",
+     "end": "2024-08-05",
+     "n_sig": 2,
+     "span_td": 9
+    },
+    {
+     "start": "2024-11-22",
+     "end": "2025-01-03",
+     "n_sig": 5,
+     "span_td": 29
+    },
+    {
+     "start": "2025-02-28",
+     "end": "2025-02-28",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2025-04-07",
+     "end": "2025-04-07",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2025-10-17",
+     "end": "2025-10-17",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2025-11-21",
+     "end": "2025-11-21",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2026-03-23",
+     "end": "2026-03-23",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2026-05-14",
+     "end": "2026-07-17",
+     "n_sig": 6,
+     "span_td": 45
+    },
+    {
+     "start": "2026-08-19",
+     "end": "2026-08-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2026-09-28",
+     "end": "2026-09-28",
+     "n_sig": 1,
+     "span_td": 0
+    }
+   ],
+   "n_seg_with_3plus": 21
+  },
+  "40": {
+   "gap": 40,
+   "n_segments": 24,
+   "n_signals": 145,
+   "size_dist": {
+    "1": 8,
+    "2": 4,
+    "3": 1,
+    "4": 4,
+    "6": 1,
+    "7": 1,
+    "9": 1,
+    "10": 1,
+    "18": 1,
+    "28": 1,
+    "32": 1
+   },
+   "segments": [
+    {
+     "start": "2012-06-04",
+     "end": "2014-06-19",
+     "n_sig": 32,
+     "span_td": 494
+    },
+    {
+     "start": "2014-09-22",
+     "end": "2014-09-22",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2015-01-08",
+     "end": "2015-02-02",
+     "n_sig": 2,
+     "span_td": 17
+    },
+    {
+     "start": "2015-05-05",
+     "end": "2016-06-13",
+     "n_sig": 28,
+     "span_td": 271
+    },
+    {
+     "start": "2016-09-12",
+     "end": "2016-09-26",
+     "n_sig": 2,
+     "span_td": 8
+    },
+    {
+     "start": "2016-12-12",
+     "end": "2016-12-12",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2017-08-11",
+     "end": "2017-08-11",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2018-05-30",
+     "end": "2018-07-11",
+     "n_sig": 4,
+     "span_td": 29
+    },
+    {
+     "start": "2018-10-18",
+     "end": "2018-10-18",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2018-12-14",
+     "end": "2018-12-14",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2019-03-08",
+     "end": "2019-08-06",
+     "n_sig": 10,
+     "span_td": 102
+    },
+    {
+     "start": "2019-11-11",
+     "end": "2019-11-11",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2020-03-12",
+     "end": "2020-03-18",
+     "n_sig": 3,
+     "span_td": 4
+    },
+    {
+     "start": "2020-05-22",
+     "end": "2020-09-24",
+     "n_sig": 6,
+     "span_td": 87
+    },
+    {
+     "start": "2020-12-22",
+     "end": "2021-03-09",
+     "n_sig": 4,
+     "span_td": 49
+    },
+    {
+     "start": "2021-07-02",
+     "end": "2021-09-29",
+     "n_sig": 4,
+     "span_td": 61
+    },
+    {
+     "start": "2022-01-27",
+     "end": "2022-12-19",
+     "n_sig": 18,
+     "span_td": 215
+    },
+    {
+     "start": "2023-04-21",
+     "end": "2023-04-21",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2023-10-19",
+     "end": "2023-10-19",
+     "n_sig": 1,
+     "span_td": 0
+    },
+    {
+     "start": "2024-01-17",
+     "end": "2024-04-16",
+     "n_sig": 4,
+     "span_td": 56
+    },
+    {
+     "start": "2024-07-23",
+     "end": "2024-08-05",
+     "n_sig": 2,
+     "span_td": 9
+    },
+    {
+     "start": "2024-11-22",
+     "end": "2025-04-07",
+     "n_sig": 7,
+     "span_td": 88
+    },
+    {
+     "start": "2025-10-17",
+     "end": "2025-11-21",
+     "n_sig": 2,
+     "span_td": 25
+    },
+    {
+     "start": "2026-03-23",
+     "end": "2026-09-28",
+     "n_sig": 9,
+     "span_td": 129
+    }
+   ],
+   "n_seg_with_3plus": 12
+  }
+ },
+ "B_by_k": {
+  "20": [
+   {
+    "group": "k=1",
+    "n": 53,
+    "n_seg": 53,
+    "mean_pct": 0.4,
+    "med_pct": 0.72,
+    "win": 0.528,
+    "ci95_pct": [
+     -1.14,
+     1.93
+    ]
+   },
+   {
+    "group": "k=2",
+    "n": 27,
+    "n_seg": 27,
+    "mean_pct": 0.18,
+    "med_pct": 0.29,
+    "win": 0.519,
+    "ci95_pct": [
+     -2.03,
+     2.39
+    ]
+   },
+   {
+    "group": "k=3",
+    "n": 21,
+    "n_seg": 21,
+    "mean_pct": 0.67,
+    "med_pct": 0.14,
+    "win": 0.524,
+    "ci95_pct": [
+     -2.15,
+     3.49
+    ]
+   },
+   {
+    "group": "k>=4",
+    "n": 44,
+    "n_seg": 14,
+    "mean_pct": 0.43,
+    "med_pct": 0.98,
+    "win": 0.545,
+    "ci95_pct": [
+     -1.32,
+     2.19
+    ]
+   },
+   {
+    "group": "k<=2",
+    "n": 80,
+    "n_seg": 53,
+    "mean_pct": 0.32,
+    "med_pct": 0.32,
+    "win": 0.525,
+    "ci95_pct": [
+     -0.93,
+     1.58
+    ]
+   },
+   {
+    "group": "k>=3",
+    "n": 65,
+    "n_seg": 21,
+    "mean_pct": 0.51,
+    "med_pct": 0.58,
+    "win": 0.538,
+    "ci95_pct": [
+     -0.97,
+     1.99
+    ]
+   },
+   {
+    "group": "全部",
+    "n": 145,
+    "n_seg": 53,
+    "mean_pct": 0.41,
+    "med_pct": 0.35,
+    "win": 0.531,
+    "ci95_pct": [
+     -0.55,
+     1.36
+    ]
+   }
+  ],
+  "60": [
+   {
+    "group": "k=1",
+    "n": 51,
+    "n_seg": 53,
+    "mean_pct": 1.79,
+    "med_pct": 1.44,
+    "win": 0.549,
+    "ci95_pct": [
+     -1.55,
+     5.14
+    ]
+   },
+   {
+    "group": "k=2",
+    "n": 27,
+    "n_seg": 27,
+    "mean_pct": 0.52,
+    "med_pct": 2.33,
+    "win": 0.556,
+    "ci95_pct": [
+     -4.23,
+     5.28
+    ]
+   },
+   {
+    "group": "k=3",
+    "n": 21,
+    "n_seg": 21,
+    "mean_pct": -1.53,
+    "med_pct": -1.07,
+    "win": 0.429,
+    "ci95_pct": [
+     -5.74,
+     2.69
+    ]
+   },
+   {
+    "group": "k>=4",
+    "n": 44,
+    "n_seg": 14,
+    "mean_pct": -1.93,
+    "med_pct": -0.93,
+    "win": 0.455,
+    "ci95_pct": [
+     -4.83,
+     0.98
+    ]
+   },
+   {
+    "group": "k<=2",
+    "n": 78,
+    "n_seg": 53,
+    "mean_pct": 1.35,
+    "med_pct": 1.58,
+    "win": 0.551,
+    "ci95_pct": [
+     -1.37,
+     4.08
+    ]
+   },
+   {
+    "group": "k>=3",
+    "n": 65,
+    "n_seg": 21,
+    "mean_pct": -1.8,
+    "med_pct": -0.98,
+    "win": 0.446,
+    "ci95_pct": [
+     -4.17,
+     0.58
+    ]
+   },
+   {
+    "group": "全部",
+    "n": 143,
+    "n_seg": 53,
+    "mean_pct": -0.08,
+    "med_pct": 0.03,
+    "win": 0.503,
+    "ci95_pct": [
+     -1.93,
+     1.77
+    ]
+   }
+  ],
+  "120": [
+   {
+    "group": "k=1",
+    "n": 51,
+    "n_seg": 53,
+    "mean_pct": 3.91,
+    "med_pct": 3.17,
+    "win": 0.608,
+    "ci95_pct": [
+     -0.82,
+     8.65
+    ]
+   },
+   {
+    "group": "k=2",
+    "n": 26,
+    "n_seg": 27,
+    "mean_pct": 0.36,
+    "med_pct": 1.12,
+    "win": 0.538,
+    "ci95_pct": [
+     -4.28,
+     5.0
+    ]
+   },
+   {
+    "group": "k=3",
+    "n": 20,
+    "n_seg": 21,
+    "mean_pct": -0.14,
+    "med_pct": -1.84,
+    "win": 0.35,
+    "ci95_pct": [
+     -4.78,
+     4.51
+    ]
+   },
+   {
+    "group": "k>=4",
+    "n": 41,
+    "n_seg": 14,
+    "mean_pct": 0.63,
+    "med_pct": 1.38,
+    "win": 0.537,
+    "ci95_pct": [
+     -2.25,
+     3.51
+    ]
+   },
+   {
+    "group": "k<=2",
+    "n": 77,
+    "n_seg": 53,
+    "mean_pct": 2.71,
+    "med_pct": 2.49,
+    "win": 0.584,
+    "ci95_pct": [
+     -0.79,
+     6.22
+    ]
+   },
+   {
+    "group": "k>=3",
+    "n": 61,
+    "n_seg": 21,
+    "mean_pct": 0.38,
+    "med_pct": -1.43,
+    "win": 0.475,
+    "ci95_pct": [
+     -2.07,
+     2.82
+    ]
+   },
+   {
+    "group": "全部",
+    "n": 138,
+    "n_seg": 53,
+    "mean_pct": 1.68,
+    "med_pct": 1.67,
+    "win": 0.536,
+    "ci95_pct": [
+     -0.56,
+     3.92
+    ]
+   }
+  ],
+  "250": [
+   {
+    "group": "k=1",
+    "n": 48,
+    "n_seg": 53,
+    "mean_pct": 9.46,
+    "med_pct": 4.15,
+    "win": 0.542,
+    "ci95_pct": [
+     1.3,
+     17.62
+    ]
+   },
+   {
+    "group": "k=2",
+    "n": 26,
+    "n_seg": 27,
+    "mean_pct": 5.69,
+    "med_pct": 2.05,
+    "win": 0.577,
+    "ci95_pct": [
+     -3.41,
+     14.8
+    ]
+   },
+   {
+    "group": "k=3",
+    "n": 20,
+    "n_seg": 21,
+    "mean_pct": 7.71,
+    "med_pct": -0.63,
+    "win": 0.45,
+    "ci95_pct": [
+     -4.76,
+     20.18
+    ]
+   },
+   {
+    "group": "k>=4",
+    "n": 41,
+    "n_seg": 14,
+    "mean_pct": -0.76,
+    "med_pct": -1.05,
+    "win": 0.463,
+    "ci95_pct": [
+     -4.73,
+     3.22
+    ]
+   },
+   {
+    "group": "k<=2",
+    "n": 74,
+    "n_seg": 53,
+    "mean_pct": 8.14,
+    "med_pct": 2.46,
+    "win": 0.554,
+    "ci95_pct": [
+     1.98,
+     14.29
+    ]
+   },
+   {
+    "group": "k>=3",
+    "n": 61,
+    "n_seg": 21,
+    "mean_pct": 2.02,
+    "med_pct": -0.94,
+    "win": 0.459,
+    "ci95_pct": [
+     -2.9,
+     6.94
+    ]
+   },
+   {
+    "group": "全部",
+    "n": 135,
+    "n_seg": 53,
+    "mean_pct": 5.37,
+    "med_pct": 0.63,
+    "win": 0.511,
+    "ci95_pct": [
+     1.31,
+     9.43
+    ]
+   }
+  ]
+ },
+ "C_paired": {
+  "20": {
+   "h": 20,
+   "n_seg": 21,
+   "diff_pct": 3.14,
+   "t": 2.43,
+   "ci95_pct": [
+    0.61,
+    5.67
+   ],
+   "n_seg_positive": 15,
+   "detail": [
+    {
+     "seg": 0,
+     "n_early": 2,
+     "n_late": 5,
+     "diff_pct": 2.87
+    },
+    {
+     "seg": 3,
+     "n_early": 2,
+     "n_late": 3,
+     "diff_pct": 4.88
+    },
+    {
+     "seg": 4,
+     "n_early": 2,
+     "n_late": 4,
+     "diff_pct": 10.56
+    },
+    {
+     "seg": 5,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 1.56
+    },
+    {
+     "seg": 6,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 6.15
+    },
+    {
+     "seg": 7,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 5.6
+    },
+    {
+     "seg": 12,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": -0.01
+    },
+    {
+     "seg": 13,
+     "n_early": 2,
+     "n_late": 6,
+     "diff_pct": 11.0
+    },
+    {
+     "seg": 14,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 12.15
+    },
+    {
+     "seg": 15,
+     "n_early": 2,
+     "n_late": 7,
+     "diff_pct": 0.53
+    },
+    {
+     "seg": 21,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 7.03
+    },
+    {
+     "seg": 24,
+     "n_early": 2,
+     "n_late": 5,
+     "diff_pct": -12.25
+    },
+    {
+     "seg": 25,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 6.38
+    },
+    {
+     "seg": 27,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 7.62
+    },
+    {
+     "seg": 30,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -0.19
+    },
+    {
+     "seg": 34,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -0.5
+    },
+    {
+     "seg": 36,
+     "n_early": 2,
+     "n_late": 7,
+     "diff_pct": 7.02
+    },
+    {
+     "seg": 37,
+     "n_early": 2,
+     "n_late": 6,
+     "diff_pct": -0.17
+    },
+    {
+     "seg": 41,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -8.03
+    },
+    {
+     "seg": 44,
+     "n_early": 2,
+     "n_late": 3,
+     "diff_pct": 2.81
+    },
+    {
+     "seg": 50,
+     "n_early": 2,
+     "n_late": 4,
+     "diff_pct": 0.86
+    }
+   ]
+  },
+  "60": {
+   "h": 60,
+   "n_seg": 21,
+   "diff_pct": 3.78,
+   "t": 2.1,
+   "ci95_pct": [
+    0.25,
+    7.31
+   ],
+   "n_seg_positive": 15,
+   "detail": [
+    {
+     "seg": 0,
+     "n_early": 2,
+     "n_late": 5,
+     "diff_pct": 8.69
+    },
+    {
+     "seg": 3,
+     "n_early": 2,
+     "n_late": 3,
+     "diff_pct": -7.42
+    },
+    {
+     "seg": 4,
+     "n_early": 2,
+     "n_late": 4,
+     "diff_pct": 6.97
+    },
+    {
+     "seg": 5,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 0.57
+    },
+    {
+     "seg": 6,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 5.85
+    },
+    {
+     "seg": 7,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 1.61
+    },
+    {
+     "seg": 12,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 1.86
+    },
+    {
+     "seg": 13,
+     "n_early": 2,
+     "n_late": 6,
+     "diff_pct": 12.16
+    },
+    {
+     "seg": 14,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": -7.83
+    },
+    {
+     "seg": 15,
+     "n_early": 2,
+     "n_late": 7,
+     "diff_pct": 19.35
+    },
+    {
+     "seg": 21,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 7.89
+    },
+    {
+     "seg": 24,
+     "n_early": 2,
+     "n_late": 5,
+     "diff_pct": -0.6
+    },
+    {
+     "seg": 25,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 4.78
+    },
+    {
+     "seg": 27,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 7.34
+    },
+    {
+     "seg": 30,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 4.82
+    },
+    {
+     "seg": 34,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 0.83
+    },
+    {
+     "seg": 36,
+     "n_early": 2,
+     "n_late": 7,
+     "diff_pct": 17.88
+    },
+    {
+     "seg": 37,
+     "n_early": 2,
+     "n_late": 6,
+     "diff_pct": 15.17
+    },
+    {
+     "seg": 41,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -8.29
+    },
+    {
+     "seg": 44,
+     "n_early": 2,
+     "n_late": 3,
+     "diff_pct": -6.55
+    },
+    {
+     "seg": 50,
+     "n_early": 2,
+     "n_late": 4,
+     "diff_pct": -5.72
+    }
+   ]
+  },
+  "120": {
+   "h": 120,
+   "n_seg": 20,
+   "diff_pct": 4.93,
+   "t": 2.96,
+   "ci95_pct": [
+    1.66,
+    8.19
+   ],
+   "n_seg_positive": 16,
+   "detail": [
+    {
+     "seg": 0,
+     "n_early": 2,
+     "n_late": 5,
+     "diff_pct": 22.51
+    },
+    {
+     "seg": 3,
+     "n_early": 2,
+     "n_late": 3,
+     "diff_pct": 9.21
+    },
+    {
+     "seg": 4,
+     "n_early": 2,
+     "n_late": 4,
+     "diff_pct": 1.53
+    },
+    {
+     "seg": 5,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 4.59
+    },
+    {
+     "seg": 6,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 3.86
+    },
+    {
+     "seg": 7,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 1.79
+    },
+    {
+     "seg": 12,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 4.35
+    },
+    {
+     "seg": 13,
+     "n_early": 2,
+     "n_late": 6,
+     "diff_pct": 13.93
+    },
+    {
+     "seg": 14,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 7.9
+    },
+    {
+     "seg": 15,
+     "n_early": 2,
+     "n_late": 7,
+     "diff_pct": 16.85
+    },
+    {
+     "seg": 21,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 2.21
+    },
+    {
+     "seg": 24,
+     "n_early": 2,
+     "n_late": 5,
+     "diff_pct": -2.51
+    },
+    {
+     "seg": 25,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -0.22
+    },
+    {
+     "seg": 27,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 7.2
+    },
+    {
+     "seg": 30,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 1.91
+    },
+    {
+     "seg": 34,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -3.6
+    },
+    {
+     "seg": 36,
+     "n_early": 2,
+     "n_late": 7,
+     "diff_pct": 3.66
+    },
+    {
+     "seg": 37,
+     "n_early": 2,
+     "n_late": 6,
+     "diff_pct": 9.31
+    },
+    {
+     "seg": 41,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -11.67
+    },
+    {
+     "seg": 44,
+     "n_early": 2,
+     "n_late": 3,
+     "diff_pct": 5.7
+    }
+   ]
+  },
+  "250": {
+   "h": 250,
+   "n_seg": 20,
+   "diff_pct": 6.06,
+   "t": 4.17,
+   "ci95_pct": [
+    3.21,
+    8.91
+   ],
+   "n_seg_positive": 17,
+   "detail": [
+    {
+     "seg": 0,
+     "n_early": 2,
+     "n_late": 5,
+     "diff_pct": 10.22
+    },
+    {
+     "seg": 3,
+     "n_early": 2,
+     "n_late": 3,
+     "diff_pct": 6.43
+    },
+    {
+     "seg": 4,
+     "n_early": 2,
+     "n_late": 4,
+     "diff_pct": 9.42
+    },
+    {
+     "seg": 5,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 4.02
+    },
+    {
+     "seg": 6,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 6.28
+    },
+    {
+     "seg": 7,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 20.69
+    },
+    {
+     "seg": 12,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": -0.9
+    },
+    {
+     "seg": 13,
+     "n_early": 2,
+     "n_late": 6,
+     "diff_pct": 13.93
+    },
+    {
+     "seg": 14,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 0.24
+    },
+    {
+     "seg": 15,
+     "n_early": 2,
+     "n_late": 7,
+     "diff_pct": 13.05
+    },
+    {
+     "seg": 21,
+     "n_early": 2,
+     "n_late": 2,
+     "diff_pct": 7.63
+    },
+    {
+     "seg": 24,
+     "n_early": 2,
+     "n_late": 5,
+     "diff_pct": 2.72
+    },
+    {
+     "seg": 25,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 4.99
+    },
+    {
+     "seg": 27,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 10.78
+    },
+    {
+     "seg": 30,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": 3.69
+    },
+    {
+     "seg": 34,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -2.15
+    },
+    {
+     "seg": 36,
+     "n_early": 2,
+     "n_late": 7,
+     "diff_pct": 9.14
+    },
+    {
+     "seg": 37,
+     "n_early": 2,
+     "n_late": 6,
+     "diff_pct": 3.48
+    },
+    {
+     "seg": 41,
+     "n_early": 2,
+     "n_late": 1,
+     "diff_pct": -9.28
+    },
+    {
+     "seg": 44,
+     "n_early": 2,
+     "n_late": 3,
+     "diff_pct": 6.76
+    }
+   ]
+  }
+ },
+ "D_negctrl_late_random": {
+  "20": {
+   "h": 20,
+   "n_seg": 21,
+   "real_pct": 2.12,
+   "fake_late_random_pct": -0.12,
+   "gap_pct": 2.24,
+   "gap_t": 3.51,
+   "n_seg_gap_positive": 19,
+   "note": "real=k>=3 信号（段内等权）；fake=同段后半程的非信号日、等量、重复 50 次取均值。gap 接近 0 ⇒ k 无增量信息，效应只是「买得更晚」"
+  },
+  "60": {
+   "h": 60,
+   "n_seg": 21,
+   "real_pct": -0.55,
+   "fake_late_random_pct": -1.72,
+   "gap_pct": 1.18,
+   "gap_t": 1.56,
+   "n_seg_gap_positive": 15,
+   "note": "real=k>=3 信号（段内等权）；fake=同段后半程的非信号日、等量、重复 50 次取均值。gap 接近 0 ⇒ k 无增量信息，效应只是「买得更晚」"
+  },
+  "120": {
+   "h": 120,
+   "n_seg": 20,
+   "real_pct": 0.99,
+   "fake_late_random_pct": -1.11,
+   "gap_pct": 2.1,
+   "gap_t": 4.28,
+   "n_seg_gap_positive": 18,
+   "note": "real=k>=3 信号（段内等权）；fake=同段后半程的非信号日、等量、重复 50 次取均值。gap 接近 0 ⇒ k 无增量信息，效应只是「买得更晚」"
+  },
+  "250": {
+   "h": 250,
+   "n_seg": 20,
+   "real_pct": 9.83,
+   "fake_late_random_pct": 7.18,
+   "gap_pct": 2.65,
+   "gap_t": 2.76,
+   "n_seg_gap_positive": 15,
+   "note": "real=k>=3 信号（段内等权）；fake=同段后半程的非信号日、等量、重复 50 次取均值。gap 接近 0 ⇒ k 无增量信息，效应只是「买得更晚」"
+  }
+ },
+ "E_permute": {
+  "60": {
+   "h": 60,
+   "real_diff_pct": 3.78,
+   "null_mean_pct": -0.02,
+   "null_sd_pct": 1.26,
+   "p_two_sided": 0.0005,
+   "n_iter": 2000,
+   "n_seg": 21,
+   "note": "段内等权口径（与 C 一致）；p 大 ⇒ 段内顺序与随机排序无法区分"
+  },
+  "250": {
+   "h": 250,
+   "real_diff_pct": 6.06,
+   "null_mean_pct": 0.04,
+   "null_sd_pct": 1.41,
+   "p_two_sided": 0.0,
+   "n_iter": 2000,
+   "n_seg": 21,
+   "note": "段内等权口径（与 C 一致）；p 大 ⇒ 段内顺序与随机排序无法区分"
+  }
+ },
+ "F_rounds": {
+  "60": {
+   "big_gap": 250,
+   "h": 60,
+   "n_rounds_total": 1,
+   "groups": [
+    {
+     "round": "第1轮",
+     "n_rounds": 1,
+     "note": "样本不足"
+    },
+    {
+     "round": "第2轮",
+     "n_rounds": 0,
+     "note": "样本不足"
+    },
+    {
+     "round": "第3轮",
+     "n_rounds": 0,
+     "note": "样本不足"
+    },
+    {
+     "round": "第4轮+",
+     "n_rounds": 0,
+     "note": "样本不足"
+    }
+   ],
+   "all_round_spans": [
+    "2012-06-04..2026-09-28(145)"
+   ]
+  },
+  "250": {
+   "big_gap": 250,
+   "h": 250,
+   "n_rounds_total": 1,
+   "groups": [
+    {
+     "round": "第1轮",
+     "n_rounds": 1,
+     "note": "样本不足"
+    },
+    {
+     "round": "第2轮",
+     "n_rounds": 0,
+     "note": "样本不足"
+    },
+    {
+     "round": "第3轮",
+     "n_rounds": 0,
+     "note": "样本不足"
+    },
+    {
+     "round": "第4轮+",
+     "n_rounds": 0,
+     "note": "样本不足"
+    }
+   ],
+   "all_round_spans": [
+    "2012-06-04..2026-09-28(145)"
+   ]
+  }
+ },
+ "H_relative_position": {
+  "60": {
+   "h": 60,
+   "n": 119,
+   "axes": [
+    {
+     "axis": "相对段起点跌幅",
+     "buckets": [
+      {
+       "q": "Q1",
+       "n": 30,
+       "x_mean": -13.35,
+       "fwd_mean_pct": 1.11,
+       "fwd_med_pct": 4.49,
+       "win": 0.7
+      },
+      {
+       "q": "Q2",
+       "n": 30,
+       "x_mean": -5.5,
+       "fwd_mean_pct": -1.39,
+       "fwd_med_pct": -1.69,
+       "win": 0.333
+      },
+      {
+       "q": "Q3",
+       "n": 48,
+       "x_mean": -0.81,
+       "fwd_mean_pct": -2.88,
+       "fwd_med_pct": -2.79,
+       "win": 0.417
+      },
+      {
+       "q": "Q4",
+       "n": 11,
+       "x_mean": 3.84,
+       "fwd_mean_pct": -2.1,
+       "fwd_med_pct": -0.98,
+       "win": 0.455
+      }
+     ]
+    },
+    {
+     "axis": "段内时间进度",
+     "buckets": [
+      {
+       "q": "Q1",
+       "n": 30,
+       "x_mean": 0.01,
+       "fwd_mean_pct": -2.67,
+       "fwd_med_pct": -1.44,
+       "win": 0.433
+      },
+      {
+       "q": "Q2",
+       "n": 30,
+       "x_mean": 0.3,
+       "fwd_mean_pct": -5.89,
+       "fwd_med_pct": -5.82,
+       "win": 0.233
+      },
+      {
+       "q": "Q3",
+       "n": 29,
+       "x_mean": 0.68,
+       "fwd_mean_pct": 0.14,
+       "fwd_med_pct": 2.51,
+       "win": 0.586
+      },
+      {
+       "q": "Q4",
+       "n": 30,
+       "x_mean": 1.0,
+       "fwd_mean_pct": 2.78,
+       "fwd_med_pct": 2.28,
+       "win": 0.633
+      }
+     ]
+    }
+   ],
+   "note": "若「相对段起点跌幅」桶单调且「段内时间进度」不单调，则效应来自价格而非次数"
+  },
+  "250": {
+   "h": 250,
+   "n": 113,
+   "axes": [
+    {
+     "axis": "相对段起点跌幅",
+     "buckets": [
+      {
+       "q": "Q1",
+       "n": 29,
+       "x_mean": -13.54,
+       "fwd_mean_pct": -0.6,
+       "fwd_med_pct": 0.09,
+       "win": 0.517
+      },
+      {
+       "q": "Q2",
+       "n": 28,
+       "x_mean": -5.54,
+       "fwd_mean_pct": 3.05,
+       "fwd_med_pct": -6.17,
+       "win": 0.321
+      },
+      {
+       "q": "Q3",
+       "n": 45,
+       "x_mean": -0.75,
+       "fwd_mean_pct": 5.26,
+       "fwd_med_pct": 2.41,
+       "win": 0.533
+      },
+      {
+       "q": "Q4",
+       "n": 11,
+       "x_mean": 3.84,
+       "fwd_mean_pct": 3.44,
+       "fwd_med_pct": 1.82,
+       "win": 0.636
+      }
+     ]
+    },
+    {
+     "axis": "段内时间进度",
+     "buckets": [
+      {
+       "q": "Q1",
+       "n": 29,
+       "x_mean": 0.01,
+       "fwd_mean_pct": 3.51,
+       "fwd_med_pct": -2.54,
+       "win": 0.483
+      },
+      {
+       "q": "Q2",
+       "n": 28,
+       "x_mean": 0.29,
+       "fwd_mean_pct": -5.66,
+       "fwd_med_pct": -6.7,
+       "win": 0.286
+      },
+      {
+       "q": "Q3",
+       "n": 28,
+       "x_mean": 0.66,
+       "fwd_mean_pct": 2.55,
+       "fwd_med_pct": -0.29,
+       "win": 0.464
+      },
+      {
+       "q": "Q4",
+       "n": 28,
+       "x_mean": 1.0,
+       "fwd_mean_pct": 11.71,
+       "fwd_med_pct": 9.65,
+       "win": 0.714
+      }
+     ]
+    }
+   ],
+   "note": "若「相对段起点跌幅」桶单调且「段内时间进度」不单调，则效应来自价格而非次数"
+  }
+ },
+ "I_segment_detail": {
+  "250": {
+   "h": 250,
+   "n_seg": 20,
+   "n_positive": 17,
+   "rows": [
+    {
+     "start": "2012-06-04",
+     "end": "2012-09-17",
+     "n_sig": 7,
+     "diff_pct": 10.22,
+     "first_entry_vs_seg_low_pct": 16.33,
+     "late_entry_vs_seg_low_pct": 5.96
+    },
+    {
+     "start": "2013-02-19",
+     "end": "2013-04-23",
+     "n_sig": 5,
+     "diff_pct": 6.43,
+     "first_entry_vs_seg_low_pct": 10.21,
+     "late_entry_vs_seg_low_pct": 1.93
+    },
+    {
+     "start": "2013-06-13",
+     "end": "2013-07-29",
+     "n_sig": 6,
+     "diff_pct": 9.42,
+     "first_entry_vs_seg_low_pct": 11.07,
+     "late_entry_vs_seg_low_pct": 1.66
+    },
+    {
+     "start": "2013-09-17",
+     "end": "2013-11-13",
+     "n_sig": 4,
+     "diff_pct": 4.02,
+     "first_entry_vs_seg_low_pct": 6.08,
+     "late_entry_vs_seg_low_pct": 2.91
+    },
+    {
+     "start": "2013-12-20",
+     "end": "2014-01-06",
+     "n_sig": 3,
+     "diff_pct": 6.28,
+     "first_entry_vs_seg_low_pct": 1.76,
+     "late_entry_vs_seg_low_pct": 0.0
+    },
+    {
+     "start": "2014-02-24",
+     "end": "2014-03-10",
+     "n_sig": 3,
+     "diff_pct": 20.69,
+     "first_entry_vs_seg_low_pct": 5.56,
+     "late_entry_vs_seg_low_pct": 0.0
+    },
+    {
+     "start": "2015-05-05",
+     "end": "2015-05-15",
+     "n_sig": 4,
+     "diff_pct": -0.9,
+     "first_entry_vs_seg_low_pct": 2.84,
+     "late_entry_vs_seg_low_pct": 1.65
+    },
+    {
+     "start": "2015-06-16",
+     "end": "2015-07-15",
+     "n_sig": 8,
+     "diff_pct": 13.93,
+     "first_entry_vs_seg_low_pct": 38.27,
+     "late_entry_vs_seg_low_pct": 14.64
+    },
+    {
+     "start": "2015-08-20",
+     "end": "2015-10-21",
+     "n_sig": 4,
+     "diff_pct": 0.24,
+     "first_entry_vs_seg_low_pct": 24.32,
+     "late_entry_vs_seg_low_pct": 10.89
+    },
+    {
+     "start": "2015-11-27",
+     "end": "2016-03-10",
+     "n_sig": 9,
+     "diff_pct": 13.05,
+     "first_entry_vs_seg_low_pct": 24.64,
+     "late_entry_vs_seg_low_pct": 9.28
+    },
+    {
+     "start": "2018-05-30",
+     "end": "2018-07-11",
+     "n_sig": 4,
+     "diff_pct": 7.63,
+     "first_entry_vs_seg_low_pct": 11.4,
+     "late_entry_vs_seg_low_pct": 1.95
+    },
+    {
+     "start": "2019-03-08",
+     "end": "2019-05-17",
+     "n_sig": 7,
+     "diff_pct": 2.72,
+     "first_entry_vs_seg_low_pct": 1.61,
+     "late_entry_vs_seg_low_pct": 7.22
+    },
+    {
+     "start": "2019-07-08",
+     "end": "2019-08-06",
+     "n_sig": 3,
+     "diff_pct": 4.99,
+     "first_entry_vs_seg_low_pct": 4.58,
+     "late_entry_vs_seg_low_pct": 0.0
+    },
+    {
+     "start": "2020-03-12",
+     "end": "2020-03-18",
+     "n_sig": 3,
+     "diff_pct": 10.78,
+     "first_entry_vs_seg_low_pct": 8.65,
+     "late_entry_vs_seg_low_pct": 0.0
+    },
+    {
+     "start": "2020-09-07",
+     "end": "2020-09-24",
+     "n_sig": 3,
+     "diff_pct": 3.69,
+     "first_entry_vs_seg_low_pct": 2.33,
+     "late_entry_vs_seg_low_pct": 0.0
+    },
+    {
+     "start": "2021-07-02",
+     "end": "2021-08-17",
+     "n_sig": 3,
+     "diff_pct": -2.15,
+     "first_entry_vs_seg_low_pct": 6.94,
+     "late_entry_vs_seg_low_pct": 1.81
+    },
+    {
+     "start": "2022-01-27",
+     "end": "2022-05-24",
+     "n_sig": 9,
+     "diff_pct": 9.14,
+     "first_entry_vs_seg_low_pct": 22.09,
+     "late_entry_vs_seg_low_pct": 8.21
+    },
+    {
+     "start": "2022-07-15",
+     "end": "2022-10-28",
+     "n_sig": 8,
+     "diff_pct": 3.48,
+     "first_entry_vs_seg_low_pct": 19.97,
+     "late_entry_vs_seg_low_pct": 7.02
+    },
+    {
+     "start": "2024-01-17",
+     "end": "2024-02-28",
+     "n_sig": 3,
+     "diff_pct": -9.28,
+     "first_entry_vs_seg_low_pct": 1.56,
+     "late_entry_vs_seg_low_pct": 8.51
+    },
+    {
+     "start": "2024-11-22",
+     "end": "2025-01-03",
+     "n_sig": 5,
+     "diff_pct": 6.76,
+     "first_entry_vs_seg_low_pct": 2.4,
+     "late_entry_vs_seg_low_pct": 1.81
+    }
+   ],
+   "note": "first/late_entry_vs_seg_low = 入场价高于段内最低收盘的百分比（事后口径，只用于判断机制）"
+  }
+ },
+ "J_year": {
+  "60": [
+   {
+    "year": 2012,
+    "n": 8,
+    "mean_pct": -1.47,
+    "med_pct": -4.36,
+    "win": 0.25
+   },
+   {
+    "year": 2013,
+    "n": 18,
+    "mean_pct": -1.57,
+    "med_pct": -3.48,
+    "win": 0.278
+   },
+   {
+    "year": 2014,
+    "n": 7,
+    "mean_pct": 8.26,
+    "med_pct": 1.21,
+    "win": 0.714
+   },
+   {
+    "year": 2015,
+    "n": 20,
+    "mean_pct": -10.0,
+    "med_pct": -16.1,
+    "win": 0.25
+   },
+   {
+    "year": 2016,
+    "n": 13,
+    "mean_pct": 2.83,
+    "med_pct": 3.44,
+    "win": 0.846
+   },
+   {
+    "year": 2017,
+    "n": 1,
+    "note": "样本不足"
+   },
+   {
+    "year": 2018,
+    "n": 6,
+    "mean_pct": -2.01,
+    "med_pct": -4.57,
+    "win": 0.333
+   },
+   {
+    "year": 2019,
+    "n": 11,
+    "mean_pct": 1.2,
+    "med_pct": 1.33,
+    "win": 0.636
+   },
+   {
+    "year": 2020,
+    "n": 10,
+    "mean_pct": 7.69,
+    "med_pct": 6.36,
+    "win": 0.9
+   },
+   {
+    "year": 2021,
+    "n": 7,
+    "mean_pct": 0.64,
+    "med_pct": 1.13,
+    "win": 0.571
+   },
+   {
+    "year": 2022,
+    "n": 18,
+    "mean_pct": 0.9,
+    "med_pct": 2.48,
+    "win": 0.556
+   },
+   {
+    "year": 2023,
+    "n": 2,
+    "note": "样本不足"
+   },
+   {
+    "year": 2024,
+    "n": 9,
+    "mean_pct": 6.72,
+    "med_pct": 2.91,
+    "win": 0.778
+   },
+   {
+    "year": 2025,
+    "n": 6,
+    "mean_pct": 2.11,
+    "med_pct": 1.62,
+    "win": 0.5
+   },
+   {
+    "year": 2026,
+    "n": 7,
+    "mean_pct": -5.51,
+    "med_pct": -7.83,
+    "win": 0.143
+   }
+  ],
+  "250": [
+   {
+    "year": 2012,
+    "n": 8,
+    "mean_pct": -0.68,
+    "med_pct": -3.89,
+    "win": 0.375
+   },
+   {
+    "year": 2013,
+    "n": 18,
+    "mean_pct": 0.92,
+    "med_pct": -2.84,
+    "win": 0.389
+   },
+   {
+    "year": 2014,
+    "n": 7,
+    "mean_pct": 72.96,
+    "med_pct": 62.02,
+    "win": 1.0
+   },
+   {
+    "year": 2015,
+    "n": 20,
+    "mean_pct": -18.75,
+    "med_pct": -18.54,
+    "win": 0.05
+   },
+   {
+    "year": 2016,
+    "n": 13,
+    "mean_pct": 11.58,
+    "med_pct": 14.85,
+    "win": 0.846
+   },
+   {
+    "year": 2017,
+    "n": 1,
+    "note": "样本不足"
+   },
+   {
+    "year": 2018,
+    "n": 6,
+    "mean_pct": 12.9,
+    "med_pct": 10.29,
+    "win": 0.833
+   },
+   {
+    "year": 2019,
+    "n": 11,
+    "mean_pct": 11.13,
+    "med_pct": 5.16,
+    "win": 0.727
+   },
+   {
+    "year": 2020,
+    "n": 10,
+    "mean_pct": 16.85,
+    "med_pct": 8.29,
+    "win": 0.9
+   },
+   {
+    "year": 2021,
+    "n": 7,
+    "mean_pct": -15.68,
+    "med_pct": -14.89,
+    "win": 0.0
+   },
+   {
+    "year": 2022,
+    "n": 18,
+    "mean_pct": -4.39,
+    "med_pct": -5.49,
+    "win": 0.222
+   },
+   {
+    "year": 2023,
+    "n": 2,
+    "note": "样本不足"
+   },
+   {
+    "year": 2024,
+    "n": 9,
+    "mean_pct": 18.45,
+    "med_pct": 18.87,
+    "win": 1.0
+   },
+   {
+    "year": 2025,
+    "n": 5,
+    "mean_pct": 17.92,
+    "med_pct": 25.55,
+    "win": 0.8
+   },
+   {
+    "year": 2026,
+    "n": 0,
+    "note": "样本不足"
+   }
+  ]
+ },
+ "C_by_gap": {
+  "10": {
+   "60": {
+    "h": 60,
+    "n_seg": 17,
+    "diff_pct": 4.21,
+    "t": 3.18,
+    "ci95_pct": [
+     1.61,
+     6.81
+    ],
+    "n_seg_positive": 14,
+    "detail": [
+     {
+      "seg": 1,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 1.47
+     },
+     {
+      "seg": 6,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": -7.29
+     },
+     {
+      "seg": 8,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": 7.31
+     },
+     {
+      "seg": 10,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": -3.56
+     },
+     {
+      "seg": 12,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 5.85
+     },
+     {
+      "seg": 13,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 1.61
+     },
+     {
+      "seg": 19,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 1.86
+     },
+     {
+      "seg": 20,
+      "n_early": 2,
+      "n_late": 6,
+      "diff_pct": 12.16
+     },
+     {
+      "seg": 25,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 7.64
+     },
+     {
+      "seg": 34,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": -3.07
+     },
+     {
+      "seg": 39,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": 6.64
+     },
+     {
+      "seg": 43,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 7.34
+     },
+     {
+      "seg": 56,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 9.88
+     },
+     {
+      "seg": 57,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 6.46
+     },
+     {
+      "seg": 62,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": 12.31
+     },
+     {
+      "seg": 72,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 2.49
+     },
+     {
+      "seg": 80,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 2.45
+     }
+    ]
+   },
+   "250": {
+    "h": 250,
+    "n_seg": 16,
+    "diff_pct": 5.97,
+    "t": 3.86,
+    "ci95_pct": [
+     2.94,
+     9.0
+    ],
+    "n_seg_positive": 12,
+    "detail": [
+     {
+      "seg": 1,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": -1.19
+     },
+     {
+      "seg": 6,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 7.21
+     },
+     {
+      "seg": 8,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": 7.48
+     },
+     {
+      "seg": 10,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": -2.5
+     },
+     {
+      "seg": 12,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 6.28
+     },
+     {
+      "seg": 13,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 20.69
+     },
+     {
+      "seg": 19,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": -0.9
+     },
+     {
+      "seg": 20,
+      "n_early": 2,
+      "n_late": 6,
+      "diff_pct": 13.93
+     },
+     {
+      "seg": 25,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 8.97
+     },
+     {
+      "seg": 34,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": -1.12
+     },
+     {
+      "seg": 39,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": 7.43
+     },
+     {
+      "seg": 43,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 10.78
+     },
+     {
+      "seg": 56,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 6.63
+     },
+     {
+      "seg": 57,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 7.2
+     },
+     {
+      "seg": 62,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": 4.0
+     },
+     {
+      "seg": 72,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 0.56
+     }
+    ]
+   }
+  },
+  "20": {
+   "60": {
+    "h": 60,
+    "n_seg": 21,
+    "diff_pct": 3.78,
+    "t": 2.1,
+    "ci95_pct": [
+     0.25,
+     7.31
+    ],
+    "n_seg_positive": 15,
+    "detail": [
+     {
+      "seg": 0,
+      "n_early": 2,
+      "n_late": 5,
+      "diff_pct": 8.69
+     },
+     {
+      "seg": 3,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": -7.42
+     },
+     {
+      "seg": 4,
+      "n_early": 2,
+      "n_late": 4,
+      "diff_pct": 6.97
+     },
+     {
+      "seg": 5,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 0.57
+     },
+     {
+      "seg": 6,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 5.85
+     },
+     {
+      "seg": 7,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 1.61
+     },
+     {
+      "seg": 12,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 1.86
+     },
+     {
+      "seg": 13,
+      "n_early": 2,
+      "n_late": 6,
+      "diff_pct": 12.16
+     },
+     {
+      "seg": 14,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": -7.83
+     },
+     {
+      "seg": 15,
+      "n_early": 2,
+      "n_late": 7,
+      "diff_pct": 19.35
+     },
+     {
+      "seg": 21,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 7.89
+     },
+     {
+      "seg": 24,
+      "n_early": 2,
+      "n_late": 5,
+      "diff_pct": -0.6
+     },
+     {
+      "seg": 25,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 4.78
+     },
+     {
+      "seg": 27,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 7.34
+     },
+     {
+      "seg": 30,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 4.82
+     },
+     {
+      "seg": 34,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 0.83
+     },
+     {
+      "seg": 36,
+      "n_early": 2,
+      "n_late": 7,
+      "diff_pct": 17.88
+     },
+     {
+      "seg": 37,
+      "n_early": 2,
+      "n_late": 6,
+      "diff_pct": 15.17
+     },
+     {
+      "seg": 41,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": -8.29
+     },
+     {
+      "seg": 44,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": -6.55
+     },
+     {
+      "seg": 50,
+      "n_early": 2,
+      "n_late": 4,
+      "diff_pct": -5.72
+     }
+    ]
+   },
+   "250": {
+    "h": 250,
+    "n_seg": 20,
+    "diff_pct": 6.06,
+    "t": 4.17,
+    "ci95_pct": [
+     3.21,
+     8.91
+    ],
+    "n_seg_positive": 17,
+    "detail": [
+     {
+      "seg": 0,
+      "n_early": 2,
+      "n_late": 5,
+      "diff_pct": 10.22
+     },
+     {
+      "seg": 3,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": 6.43
+     },
+     {
+      "seg": 4,
+      "n_early": 2,
+      "n_late": 4,
+      "diff_pct": 9.42
+     },
+     {
+      "seg": 5,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 4.02
+     },
+     {
+      "seg": 6,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 6.28
+     },
+     {
+      "seg": 7,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 20.69
+     },
+     {
+      "seg": 12,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": -0.9
+     },
+     {
+      "seg": 13,
+      "n_early": 2,
+      "n_late": 6,
+      "diff_pct": 13.93
+     },
+     {
+      "seg": 14,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 0.24
+     },
+     {
+      "seg": 15,
+      "n_early": 2,
+      "n_late": 7,
+      "diff_pct": 13.05
+     },
+     {
+      "seg": 21,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 7.63
+     },
+     {
+      "seg": 24,
+      "n_early": 2,
+      "n_late": 5,
+      "diff_pct": 2.72
+     },
+     {
+      "seg": 25,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 4.99
+     },
+     {
+      "seg": 27,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 10.78
+     },
+     {
+      "seg": 30,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 3.69
+     },
+     {
+      "seg": 34,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": -2.15
+     },
+     {
+      "seg": 36,
+      "n_early": 2,
+      "n_late": 7,
+      "diff_pct": 9.14
+     },
+     {
+      "seg": 37,
+      "n_early": 2,
+      "n_late": 6,
+      "diff_pct": 3.48
+     },
+     {
+      "seg": 41,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": -9.28
+     },
+     {
+      "seg": 44,
+      "n_early": 2,
+      "n_late": 3,
+      "diff_pct": 6.76
+     }
+    ]
+   }
+  },
+  "40": {
+   "60": {
+    "h": 60,
+    "n_seg": 12,
+    "diff_pct": 2.43,
+    "t": 0.92,
+    "ci95_pct": [
+     -2.75,
+     7.61
+    ],
+    "n_seg_positive": 8,
+    "detail": [
+     {
+      "seg": 0,
+      "n_early": 2,
+      "n_late": 30,
+      "diff_pct": 11.25
+     },
+     {
+      "seg": 3,
+      "n_early": 2,
+      "n_late": 26,
+      "diff_pct": 7.97
+     },
+     {
+      "seg": 7,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 7.89
+     },
+     {
+      "seg": 10,
+      "n_early": 2,
+      "n_late": 8,
+      "diff_pct": 2.61
+     },
+     {
+      "seg": 12,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 7.34
+     },
+     {
+      "seg": 13,
+      "n_early": 2,
+      "n_late": 4,
+      "diff_pct": -8.08
+     },
+     {
+      "seg": 14,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 8.89
+     },
+     {
+      "seg": 15,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 1.44
+     },
+     {
+      "seg": 16,
+      "n_early": 2,
+      "n_late": 16,
+      "diff_pct": 16.12
+     },
+     {
+      "seg": 19,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": -10.35
+     },
+     {
+      "seg": 21,
+      "n_early": 2,
+      "n_late": 5,
+      "diff_pct": -3.54
+     },
+     {
+      "seg": 23,
+      "n_early": 2,
+      "n_late": 5,
+      "diff_pct": -12.4
+     }
+    ]
+   },
+   "250": {
+    "h": 250,
+    "n_seg": 11,
+    "diff_pct": 4.95,
+    "t": 1.17,
+    "ci95_pct": [
+     -3.37,
+     13.27
+    ],
+    "n_seg_positive": 7,
+    "detail": [
+     {
+      "seg": 0,
+      "n_early": 2,
+      "n_late": 30,
+      "diff_pct": 26.11
+     },
+     {
+      "seg": 3,
+      "n_early": 2,
+      "n_late": 26,
+      "diff_pct": 24.17
+     },
+     {
+      "seg": 7,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": 7.63
+     },
+     {
+      "seg": 10,
+      "n_early": 2,
+      "n_late": 8,
+      "diff_pct": 13.22
+     },
+     {
+      "seg": 12,
+      "n_early": 2,
+      "n_late": 1,
+      "diff_pct": 10.78
+     },
+     {
+      "seg": 13,
+      "n_early": 2,
+      "n_late": 4,
+      "diff_pct": -18.22
+     },
+     {
+      "seg": 14,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": -6.79
+     },
+     {
+      "seg": 15,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": -4.35
+     },
+     {
+      "seg": 16,
+      "n_early": 2,
+      "n_late": 16,
+      "diff_pct": 7.12
+     },
+     {
+      "seg": 19,
+      "n_early": 2,
+      "n_late": 2,
+      "diff_pct": -11.97
+     },
+     {
+      "seg": 21,
+      "n_early": 2,
+      "n_late": 5,
+      "diff_pct": 6.77
+     }
+    ]
+   }
+  }
+ },
+ "G_long_sample": {
+  "60": {
+   "gap": 20,
+   "h": 60,
+   "n_segments": 51,
+   "n_signals": 213,
+   "groups": [
+    {
+     "group": "k=1",
+     "n": 51,
+     "mean_pct": 0.87,
+     "med_pct": -0.97,
+     "win": 0.49,
+     "ci95_pct": [
+      -2.62,
+      4.37
+     ]
+    },
+    {
+     "group": "k=2",
+     "n": 27,
+     "mean_pct": 5.23,
+     "med_pct": 1.4,
+     "win": 0.593,
+     "ci95_pct": [
+      -0.02,
+      10.48
+     ]
+    },
+    {
+     "group": "k=3",
+     "n": 18,
+     "mean_pct": 4.62,
+     "med_pct": 0.6,
+     "win": 0.556,
+     "ci95_pct": [
+      -3.94,
+      13.19
+     ]
+    },
+    {
+     "group": "k>=4",
+     "n": 117,
+     "mean_pct": -1.25,
+     "med_pct": -2.74,
+     "win": 0.462,
+     "ci95_pct": [
+      -5.67,
+      3.16
+     ]
+    }
+   ]
+  },
+  "250": {
+   "gap": 20,
+   "h": 250,
+   "n_segments": 51,
+   "n_signals": 213,
+   "groups": [
+    {
+     "group": "k=1",
+     "n": 49,
+     "mean_pct": 16.04,
+     "med_pct": 1.09,
+     "win": 0.51,
+     "ci95_pct": [
+      0.72,
+      31.37
+     ]
+    },
+    {
+     "group": "k=2",
+     "n": 27,
+     "mean_pct": 21.05,
+     "med_pct": 2.24,
+     "win": 0.556,
+     "ci95_pct": [
+      -5.27,
+      47.38
+     ]
+    },
+    {
+     "group": "k=3",
+     "n": 18,
+     "mean_pct": 16.67,
+     "med_pct": -0.18,
+     "win": 0.5,
+     "ci95_pct": [
+      -12.59,
+      45.93
+     ]
+    },
+    {
+     "group": "k>=4",
+     "n": 117,
+     "mean_pct": 8.91,
+     "med_pct": 1.6,
+     "win": 0.504,
+     "ci95_pct": [
+      0.13,
+      17.69
+     ]
+    }
+   ]
+  }
+ },
+ "G_signal_def": "上证日收益 <= -2.5%（无 ETF 条件，1991-2026）",
+ "H_late_signal_dates": [
+  "2012-07-09",
+  "2012-07-16",
+  "2012-08-13",
+  "2012-08-27",
+  "2012-09-17",
+  "2013-03-18",
+  "2013-03-28",
+  "2013-04-23",
+  "2013-06-24",
+  "2013-07-08",
+  "2013-07-12",
+  "2013-07-29",
+  "2013-10-16",
+  "2013-11-13",
+  "2014-01-06",
+  "2014-03-10",
+  "2015-05-07",
+  "2015-05-15",
+  "2015-06-25",
+  "2015-06-26",
+  "2015-06-29",
+  "2015-07-02",
+  "2015-07-03",
+  "2015-07-15",
+  "2015-09-17",
+  "2015-10-21",
+  "2016-01-04",
+  "2016-01-07",
+  "2016-01-13",
+  "2016-01-15",
+  "2016-02-01",
+  "2016-02-29",
+  "2016-03-10",
+  "2018-07-02",
+  "2018-07-11",
+  "2019-04-11",
+  "2019-04-22",
+  "2019-04-25",
+  "2019-05-06",
+  "2019-05-17",
+  "2019-08-06",
+  "2020-03-18",
+  "2020-09-24",
+  "2021-08-17",
+  "2022-03-07",
+  "2022-03-08",
+  "2022-03-14",
+  "2022-04-11",
+  "2022-04-21",
+  "2022-04-25",
+  "2022-05-24",
+  "2022-08-24",
+  "2022-09-16",
+  "2022-09-28",
+  "2022-10-10",
+  "2022-10-24",
+  "2022-10-28",
+  "2024-02-28",
+  "2024-12-31",
+  "2025-01-02",
+  "2025-01-03",
+  "2026-07-02",
+  "2026-07-13",
+  "2026-07-16",
+  "2026-07-17"
+ ],
+ "H_n_late": 65
+}
