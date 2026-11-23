@@ -1608,59 +1608,278 @@ export interface CaseListItem {
   playbook: string[]
 }
 
-// ===== 市场公民（多维流动性身份分级） =====
+// ===== 短线雷达（博弈角色主场分类 + 资金位次标签） =====
 
-export type CitizenshipLevel = 'core' | 'active' | 'background' | 'silent'
+/** 资金位次 —— 已降级为标签：回答「当日成交额/换手分位排第几」，不是页面主轴 */
+export type ShortlineRadarLevel = 'core' | 'active' | 'background' | 'silent'
 
-export type CitizenshipTransition = 'up' | 'down' | 'stay' | 'new'
+/** 等级迁移：up=升格（被重新关注）；down=降格（被抛弃）；new=前一交易日无此票 */
+export type ShortlineRadarTransition = 'up' | 'down' | 'stay' | 'new'
 
-export interface CitizenshipLevelSummary {
-  level: CitizenshipLevel
+/** 风险标记：high=ST/*ST；watch=市值<10亿或成交额<2000万；none=正常 */
+export type ShortlineRadarRisk = 'high' | 'watch' | 'none'
+
+/**
+ * 博弈角色主场 —— 页面主轴。
+ * 由「20 日换手率中位 × 20 日流通市值中位」的当日横截面分位切四格：
+ *   institution 大市值×低换手   quant   大市值×高换手
+ *   hotmoney    小市值×高换手   nowhere 小市值×低换手
+ */
+export type ShortlineRadarArena = 'institution' | 'quant' | 'hotmoney' | 'nowhere'
+
+/**
+ * 属性标签 —— 可叠加的**过滤条件**，不是分类。
+ * 四个词不在同一维度（蓝筹=规模+稳定 / 白马=盈利+成长 / 龙头=行业内地位 / 妖股=波动+投机），
+ * 实测 18 只同时命中 3 个 ⇒ 互斥分组会给出错误断言。
+ */
+export type ShortlineRadarTag = 'bluechip' | 'whitehorse' | 'leader' | 'yaogu'
+
+/**
+ * 阶段 —— 唯一区分「有预测价值」和「已被兑现」的字段。
+ *
+ * cold 是唯一有 lift 的一段；hot 占全市场高分票 95.9%，是追高榜的主体。
+ * 这个字段不是分类学的产物，是 4052 次「涨停 + 游资净买」样本算出来的。
+ */
+export type ShortlineRadarStage = 'cold' | 'warming' | 'hot' | 'fading'
+
+/** 席位背书：今日被高声誉游资席位净买入（与冷启动触点正交的「接力」信号） */
+export interface SeatBackingItem {
+  symbol: string
+  name: string | null
+  /** 营业部名称 */
+  seat_name: string
+  /** 该席位过去 20 次上榜买入的平均未来 3 日收益（小数，无前视） */
+  rep20: number
+  /** 当日净买入额 */
+  net: number | null
+  /** 席位数据日期（盘后，≤ as_of） */
+  date: string
+}
+
+/** 观察池：漏斗最后一层，只输出排序、不输出概率 */
+export interface ShortlineRadarPick {
+  symbol: string
+  name: string | null
+  arena: ShortlineRadarArena
+  stage: ShortlineRadarStage
+  industry: string | null
+  risk: ShortlineRadarRisk
+  /** 结构分 0~1：振幅/换手/市值/当日成交额四项分位等权。无校准，不可读成概率 */
+  heat: number
+  amp20: number
+  turn_med: number
+  amount: number
+  mcap: number
+  ret20: number | null
+  /** 60 日涨幅（下跌中继杀手用：<−10% 说明高波动来自出货） */
+  ret60: number | null
+  /** 上市天数（次新杀手用：<250 日不进触点） */
+  listing_days: number | null
+  lu_days: number
+  p_amp: number
+  p_turn_med: number
+  p_amount: number
+  /** 入选理由（人话，可复核） */
+  reasons: string[]
+  /** 席位背书；null = 今日无高声誉席位买入该票（冷启动触点通常为 null） */
+  seat_backing?: SeatBackingItem | null
+}
+
+/** 市场情绪闸门：连板晋级率在近期窗口的分位 → 三态 */
+export interface MarketEmotion {
+  available: boolean
+  reason?: string
+  /** 今日连板晋级率 = 今日连板数 / 昨日涨停数 */
+  upgrade_rate?: number
+  n_lu_today?: number
+  n_lianban_today?: number
+  /** 今日晋级率在近 120 个交易日的分位（0~1） */
+  pct?: number
+  state?: 'green' | 'amber' | 'red'
+  label?: string
+  hint?: string
+  window_days?: number
+}
+
+/** 一个登记窗口的聚合读数（按月聚簇，fwd20 重叠 20 倍 ⇒ 每月只算 1 个观测） */
+export interface SortAuditWindow {
+  months: number
+  /** 现行规则月均「选中−池」提升（bp/20日） */
+  cur_lift_bp: number | null
+  cur_t: number | null
+  /** 候选规则同口径 */
+  shadow_lift_bp: number | null
+  shadow_t: number | null
+  /** 候选 − 现行 的月度配对差 */
+  paired_delta_bp: number | null
+  paired_t: number | null
+  /** 候选「选中−全市场」月均毛超额扣双边 12bp */
+  shadow_net_bp: number | null
+}
+
+/** 排序体检：现行排序键 vs 同日随机 15 只的零分布（前向登记，预注册 heat-sort-2026-11-24）。
+ *  单一实现点 backend/app/services/shortline_audit.py；判据见 docs/structural-edge/prereg-heat-sort.md。
+ *  这里只读产出物，不计算、不裁决 —— 裁决由人在评估日按冻结判据执行。
+ *  裁决只看 `forward`；`all` 混着回填对照（样本内），只作参照。 */
+export interface SortAudit {
+  generated_at: string
+  prereg_id: string
+  rule_current: string
+  rule_shadow: string
+  note: string
+  gate: { min_months: number; lift_delta_bp: number; t: number; net_bp: number }
+  all: SortAuditWindow
+  forward: SortAuditWindow | null
+  days_registered: number
+  /** 前向登记天数（裁决只看这部分） */
+  fwd_days: number
+  /** 回填对照天数（样本内，不参与裁决） */
+  backfill_days: number
+  days_evaluated: number
+  days_pending: number
+}
+
+/** 观察漏斗：每一层删掉了什么 */
+export interface ShortlineRadarFocus {
+  budget: { market: number; struct: number; cold: number; picks: number }
+  stages: Record<ShortlineRadarStage, number>
+  picks: ShortlineRadarPick[]
+  /** 池子成员与 heat 四项分位：排序体检的登记素材（页面不展示，台账用） */
+  pool?: { symbol: string; heat: number; p_amp: number; p_turn_med: number; p_scale: number; p_amount: number; amount: number }[]
+  /** 席位接力榜：今日被高声誉席位净买入的票（独立于冷启动触点的接力信号） */
+  seat_backing: SeatBackingItem[]
+  /** 排序体检产出物；null = 尚未生成（定时任务未跑过） */
+  sort_audit?: SortAudit | null
+  /** 市场情绪闸门：今天该不该动手的总开关 */
+  emotion: MarketEmotion
+  excluded: {
+    st: number
+    bse: number
+    thin: number
+    young: number
+    falling: number
+    hot: number
+    warming: number
+    fading: number
+  }
+}
+
+export interface ShortlineRadarTagSummary {
+  tag: ShortlineRadarTag
+  label: string
+  hint: string
+  count: number
+  share: number
+  /** 历史 fwd20 跌超 20% 的概率；null = 该标签无历史背书（白马缺 PIT 财报） */
+  dd20: number | null
+  med_ret20: number | null
+  validated: boolean
+}
+
+export interface ShortlineRadarLevelSummary {
+  level: ShortlineRadarLevel
   label: string
   hint: string
   count: number
   share: number
 }
 
-export interface CitizenshipRow {
+export interface ShortlineRadarArenaSummary {
+  arena: ShortlineRadarArena
+  label: string
+  hint: string
+  count: number
+  share: number
+  /** 历史 fwd20 跌超 20% 的概率（2024-01..2026-10，34 个基期） */
+  dd20: number
+  /** 历史 fwd20 收益中位（小数） */
+  med_ret20: number
+  /** 该格内各资金位次的票数 */
+  levels: Record<ShortlineRadarLevel, number>
+}
+
+export interface ShortlineRadarRow {
   symbol: string
   name: string | null
-  level: CitizenshipLevel
+  arena: ShortlineRadarArena
+  level: ShortlineRadarLevel
+  /** 命中的属性标签（可 0~4 个） */
+  tags: ShortlineRadarTag[]
+  /** 阶段：cold 有预测价值，hot 是已被兑现 */
+  stage: ShortlineRadarStage
+  /** 同花顺一级行业；null = 未收录 */
+  industry: string | null
   mcap: number
   turnover_rate: number
   amount: number
+  /** 窗口内换手率中位（%），主场分类轴 */
+  turn_med: number
+  /** 当日换手 / 窗口换手中位：>1 表示今天比平时活跃 */
+  turn_ratio: number
+  /** 窗口内有效天数（次新不足窗口时为实际天数） */
+  n_days: number
+  /** 20 日市值中位的当日横截面分位（0~1，1=最大）——主场横轴 */
   p_scale: number
+  /** 20 日换手中位的当日横截面分位 ——主场纵轴 */
+  p_turn_med: number
+  /** 当日换手的横截面分位（等级口径） */
   p_turnover: number
+  /** 当日成交额的横截面分位（等级口径） */
   p_amount: number
-  prev_level: CitizenshipLevel | null
-  transition: CitizenshipTransition
+  /** 20 日均振幅的横截面分位 —— 结构分的第一项，实测 AUC 0.734（最高） */
+  p_amp: number
+  /** 20 日均振幅：(高−低)/收 的 20 日均值 */
+  amp20: number | null
+  /** 近 20 日涨停天数（阶段判定用；与 60 日的 lu_days 不是同一个口径） */
+  lu20: number
+  /** 结构分 0~1，四项分位等权。排序用，不是概率 */
+  heat: number
+  /** 60 日收益率标准差；样本 <20 天时为 null */
+  vol60: number | null
+  /** 20 日涨幅 */
+  ret20: number | null
+  /** 60 日内涨停天数 */
+  lu_days: number
+  /** 财务（PIT：回看早于公告日时为 null） */
+  roe: number | null
+  revenue_yoy: number | null
+  net_income_yoy: number | null
+  gross_margin: number | null
+  debt_to_asset_ratio: number | null
+  report_period: string | null
+  prev_level: ShortlineRadarLevel | null
+  transition: ShortlineRadarTransition
+  risk: ShortlineRadarRisk
+  risk_reason: string | null
 }
 
-export interface CitizenshipData {
+export interface ShortlineRadarData {
   as_of: string | null
   prev_as_of: string | null
+  /** 主场窗口（交易日），恒为 20 */
   window_days: number
+  /** 标签统计窗口（交易日），恒为 60 */
+  stats_window: number
   summary: {
-    levels: CitizenshipLevelSummary[]
+    arenas: ShortlineRadarArenaSummary[]
+    levels: ShortlineRadarLevelSummary[]
+    tags: ShortlineRadarTagSummary[]
+    /** 四段计数（cold/warming/hot/fading） */
+    stages: Record<ShortlineRadarStage, number>
+    /** 全市场基线，用来对照「这个标签有没有真的比大盘好」 */
+    market: { dd20: number; med_ret20: number }
     total: number
-    attention_top: number
-    transitions: Record<CitizenshipTransition, number>
+    transitions: Record<ShortlineRadarTransition, number>
+    risk: Record<ShortlineRadarRisk, number>
+    /** 全量 ST 名单里当日无成交（停牌/退市整理）、因而不在 rows 里的数量 */
+    risk_absent: number
+    /** 当前可用的最新财报期；null = 该日期尚无已公告财报 */
+    financial_period: string | null
   }
-  rows: CitizenshipRow[]
+  /** 观察漏斗 + 观察池 */
+  focus: ShortlineRadarFocus
+  rows: ShortlineRadarRow[]
   disclaimer: string
-}
-
-export interface CitizenshipHistoryPoint {
-  as_of: string | null
-  total: number
-  attention_top: number
-  levels: CitizenshipLevelSummary[]
-  transitions: Record<CitizenshipTransition, number>
-}
-
-export interface CitizenshipHistory {
-  series: CitizenshipHistoryPoint[]
-  days: number
 }
 
 export interface ReconcileTrace {
@@ -4132,6 +4351,105 @@ export type DecisionLuCandidates = {
   reason?: string
 }
 
+// ===== 仓位艺术 (position-art) =====
+// 与后端 app/services/position_art.py 的 payload 一一对应。
+export interface PositionArtToday {
+  date: string
+  state: 'down' | 'flat' | 'up'
+  state_age: number
+  ret60_pct: number | null
+  advice: '空仓' | '在场'
+  stance: number
+  since: string
+  days_in_stance: number
+  trigger: string
+}
+
+export interface PositionArtRule {
+  confirm_days: number
+  cagr_pct: number
+  mdd_pct: number
+  sharpe: number | null
+  exposure_pct: number
+  switches: number
+  is_default: boolean
+}
+
+export interface PositionArtCheck {
+  id: string
+  name: string
+  want: string
+  got: string
+  pass: boolean
+}
+
+export interface PositionArtHalf {
+  label: string
+  days: number
+  base_cagr_pct: number
+  rule_cagr_pct: number
+  base_mdd_pct: number
+  rule_mdd_pct: number
+}
+
+export interface PositionArtEquityPoint { date: string; base: number; rule: number }
+export interface PositionArtSwitch { date: string; to: number; state: string }
+
+export interface PositionArtCell {
+  n_overlap: number
+  n_nonoverlap: number
+  med_pct: number
+  pos_pct: number
+  med_nonoverlap_pct: number
+}
+
+export interface PositionArtPayload {
+  available: boolean
+  reason?: string
+  as_of?: string
+  definition?: { index: string; state: string; rule: string; confirm_days: number; cost_one_way_bp: number; lag: string }
+  today?: PositionArtToday
+  chosen?: { cagr_pct: number; mdd_pct: number; sharpe: number | null; exposure_pct: number; switches: number }
+  benchmark?: { cagr_pct: number; mdd_pct: number; sharpe: number | null }
+  stress?: { cost_bp: number; cagr_pct: number; mdd_pct: number }
+  rules?: PositionArtRule[]
+  halves?: PositionArtHalf[]
+  placebo?: { available: boolean; blocks?: number; flat_days?: number; p_value?: number; placebo_med_pct?: number; placebo_p90_pct?: number; reason?: string }
+  cells?: Record<string, PositionArtCell>
+  neff?: { year: string; down_overlap: number; flat_overlap: number; down_nonoverlap: number; flat_nonoverlap: number }
+  checks?: PositionArtCheck[]
+  series?: { date: string; ew_idx: number; state: string; w: number }[]
+  equity?: PositionArtEquityPoint[]
+  flat_stats?: { flat_days: number; flat_mean_bp: number | null; in_mean_bp: number | null }
+  recent_switches?: PositionArtSwitch[]
+  total_switches?: number
+  warning?: string
+}
+
+export interface PositionArtTailCell {
+  mq?: number
+  tq?: number
+  mkt_state?: string
+  n: number
+  p_tail_pct: number
+  med_pct: number
+}
+
+export interface PositionArtTail {
+  available: boolean
+  reason?: string
+  year?: number
+  cut_pct?: number
+  horizon?: number
+  cells?: PositionArtTailCell[]
+  by_turnover?: PositionArtTailCell[]
+  by_mcap?: PositionArtTailCell[]
+  by_state?: PositionArtTailCell[]
+  best?: PositionArtTailCell | null
+  worst?: PositionArtTailCell | null
+  ratio?: number | null
+}
+
 export const api = {
   // ===== 决策账本 =====
   decisionOverview: (asOf?: string) =>
@@ -4175,6 +4493,17 @@ export const api = {
     }),
 
   health: () => request<{ status: string; version: string; mode: string }>('/health'),
+
+  /** 行业 ETF 盘后扫描的最新一份读数。
+   *
+   *  只读产出物：判定口径的唯一产地在 analysis/_diag_industry_etf_asym.py（由
+   *  analysis/etf_watch.py 盘后写入 data/etf_watch/latest.json），后端不复算，
+   *  否则「跌破 35%」就会有两个答案。 */
+  etfWatch: () => request<EtfWatchPayload>('/api/etf-watch', { quiet: true }),
+  etfWatchReplay: () => request<EtfWatchReplay>('/api/etf-watch/replay', { quiet: true }),
+  etfWatchAccount: () => request<EtfWatchAccount>('/api/etf-watch/account', { quiet: true }),
+  /** 现金腿下单计划：取整只在 analysis/etf_watch_cash_leg.py::plan 发生一次，页面只渲染。 */
+  etfWatchCashLeg: () => request<EtfWatchCashLeg>('/api/etf-watch/cash-leg', { quiet: true }),
 
   // ===== Auth (访问认证) =====
   authStatus: () =>
@@ -5030,6 +5359,11 @@ export const api = {
   rpsRotation: (days: number, kind?: 'concept' | 'industry', level?: number) =>
     request<RpsRotationData>(`/api/rps/rotation?days=${days}${kind ? `&kind=${kind}` : ''}${level ? `&level=${level}` : ''}`),
 
+  // 仓位艺术
+  positionArt: (confirmDays: number) =>
+    request<PositionArtPayload>(`/api/position-art?confirm_days=${confirmDays}`),
+  positionArtTail: () => request<PositionArtTail>('/api/position-art/tail'),
+
   // 市场环境(Regime)
   regimeHistory: (start?: string, end?: string, limit?: number) => {
     const params = new URLSearchParams()
@@ -5407,6 +5741,15 @@ export const api = {
     request<{ active_id: string | null; jobs: PipelineJobSummary[] }>(
       `/api/pipeline/jobs?limit=${limit}`,
     ),
+
+  /** 数据维护：行情 + 投资手册两条链的合并状态与单飞更新。 */
+  maintenance: () => request<MaintenanceStatus>('/api/maintenance'),
+  maintenanceRun: () => request<{
+    job_id?: string
+    reused?: boolean
+    skipped?: boolean
+    status: MaintenanceStatus
+  }>('/api/maintenance/run', { method: 'POST' }),
 
   dataStatus: () => request<DataStatus>('/api/data/status'),
   dataIntegrity: () => request<{
@@ -6063,13 +6406,9 @@ export const api = {
 
   caseLabCases: () => request<{ items: CaseListItem[] }>('/api/case-lab/cases'),
 
-  // 市场公民：全市场多维流动性身份分级 + 注意力预算
-  citizenship: (asOf?: string) =>
-    request<CitizenshipData>(`/api/citizenship${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`),
-  citizenshipHistory: (days = 30, end?: string) =>
-    request<CitizenshipHistory>(`/api/citizenship/history?days=${days}${end ? `&end=${encodeURIComponent(end)}` : ''}`),
-  citizenshipLevels: () =>
-    request<{ order: CitizenshipLevel[]; labels: Record<CitizenshipLevel, string>; hints: Record<CitizenshipLevel, string>; rules: Record<string, Record<string, number>>; window_days: number; min_bars: number }>('/api/citizenship/levels'),
+  // 短线雷达：全市场博弈角色主场分类 + 资金位次标签
+  shortlineRadar: (asOf?: string) =>
+    request<ShortlineRadarData>(`/api/shortline-radar${asOf ? `?as_of=${encodeURIComponent(asOf)}` : ''}`),
 
   caseLabCase: (id: string) =>
     request<CaseDoc>(`/api/case-lab/cases/${encodeURIComponent(id)}`),
@@ -6672,6 +7011,37 @@ export const api = {
 }
 
 // ===== Pipeline =====
+/** 一个数据域的新鲜度。stale 为 true 表示「落后于最近交易日」。 */
+export interface MaintenanceDomain {
+  id: 'kline' | 'handbook'
+  label: string
+  asof: string | null
+  stale: boolean
+  detail: string
+}
+
+/** 正在跑的重任务（任意来源）。页面据此接管而不是再开一个。 */
+export interface MaintenanceJob {
+  id: string
+  status: 'pending' | 'running'
+  stage: string
+  progress: number
+  message: string
+  started_at: string | null
+}
+
+export interface MaintenanceStatus {
+  now: string | null
+  /** 按交易日历算出的「现在应该覆盖到哪一天」。 */
+  expected: string | null
+  phase: 'closed' | 'pre_close' | 'holiday' | 'unknown'
+  stale: boolean
+  domains: MaintenanceDomain[]
+  job: MaintenanceJob | null
+  /** 最近一次失败（成功时为 null）。失败原因要留在页面上，不能只剩「又变旧了」。 */
+  last?: { id: string; status: 'succeeded' | 'failed'; error: string | null; finished_at: string | null } | null
+}
+
 export interface PipelineJob {
   id: string
   status: 'pending' | 'running' | 'succeeded' | 'failed'
@@ -7048,4 +7418,284 @@ export interface AnalysisMenu {
   created_at?: string | null
   updated_at?: string | null
   builtin?: boolean
+}
+
+// ===== 行业 ETF 盘后扫描（analysis/etf_watch.py 的产出物，后端只读不改）=====
+export type EtfWatchStatus = 'CANDIDATE' | 'BLOCKED' | 'BLOCKED_F1' | 'HIGH' | 'NEUTRAL'
+
+export interface EtfWatchIndustry {
+  industry: string
+  /** 距 250 日高点的回撤（小数，<=0） */
+  dd: number
+  /** 20 日已实现波动的 500 日分位 */
+  vol_pct: number | null
+  stale_days: number | null
+  n_etf: number
+  best_symbol: string | null
+  best_name: string | null
+  /** 同行业成交额最大那只的 20 日均额（元） */
+  amt20: number
+  r1: boolean
+  r2: boolean
+  r3: boolean
+  f6: boolean
+  status: EtfWatchStatus
+  reasons: string[]
+}
+
+export interface EtfWatchEvent {
+  type: 'event'
+  id: string
+  date: string
+  industry: string
+  dd: number
+  vol_pct: number | null
+  state: string
+  /** signal = R1 且 R2（V1 的计数口径）；qualified = 四条全过 */
+  signal: boolean
+  qualified: boolean
+  /** F3（市场状态 ≠ 上行·低波）与 F6（载体成交额达标）随事件行下发，仅账本展示用；前端不消费，兼容旧账本缺字段 */
+  r3?: boolean
+  f6?: boolean
+  best_symbol?: string | null
+  best_name: string | null
+  amt20: number
+  reasons: string[]
+  /** 'live' = 扫描端记录的事件 */
+  source?: string
+}
+
+export interface EtfWatchSettle {
+  type: 'settle'
+  id: string
+  entry: string
+  exit: string
+  ret20: number
+  rel20: number
+  mae: number
+  mfe: number
+}
+
+export interface EtfWatchVerdict {
+  rule: string
+  counting: string
+  left_tail_mapping: string
+  required: number
+  state: 'WAITING' | 'PASS' | 'FAIL' | 'RETIRED'
+  progress?: string
+  signal_events?: number
+  signal_clusters?: number
+  settled?: number
+  settled_clusters?: number
+  mean_rel_bp?: number | null
+  left_tail_ok?: number
+  why?: string
+}
+
+export interface EtfWatchPayload {
+  meta: {
+    asof: string
+    generated_at: string
+    mode: string
+    note: string
+    dd_convention: string
+    vol_convention: string
+    /** 本地 ETF 日线覆盖到的最后一个交易日。由后端读分区目录给出；只用于判断页面是否落后。 */
+    store_last_session?: string | null
+    thresholds: { low: number; deep: number; vol_hi: number; min_amt20: number; cooldown: number; hold: number }
+  }
+  market: { state: string; hs300_close: number; ma60: number; vol_pct: number | null; trend_up: boolean; f3_active: boolean }
+  counts: { industries: number; in_band: number; signal: number; candidate: number; deep: number; clusters_today: number; note: string }
+  industries: EtfWatchIndustry[]
+  ledger: { events: EtfWatchEvent[]; settles: EtfWatchSettle[]; v1: EtfWatchVerdict; low_vol_band_entries: number }
+  data: {
+    etf: { base: string; base_last: string; part_days_added: string[]; last: string; rows: number }
+    index: { base: string; base_last: string; part_days_added: string[]; last: string }
+    lag_sessions: number
+  }
+  warnings?: string[]
+}
+
+// ===== 历史买点回放（analysis/etf_watch_replay.py 产出，API 只读） =====
+
+export interface EtfWatchReplayMeta {
+  generated_at: string
+  end: string
+  start: string
+  sessions: number
+  lookback: number
+  rule_version: string
+  mode: string
+  note: string
+  dd_convention: string
+  vol_convention: string
+  thresholds: EtfWatchPayload['meta']['thresholds']
+  /** 盘中极值口径说明；缺失表示旧版 replay.json，需重跑脚本 */
+  mae_convention?: string
+  mae_gap?: {
+    n: number
+    median_delta_bp: number | null
+    worst: { industry: string; mae: number; mae_close: number; delta_bp: number } | null
+  }
+  point_in_time: Record<string, string>
+}
+
+export interface EtfWatchReplaySnapshot {
+  meta: EtfWatchPayload['meta'] & {
+    asof: string
+    replay?: boolean
+    rule_version?: string
+    point_in_time?: Record<string, string>
+  }
+  market: EtfWatchPayload['market']
+  counts: EtfWatchPayload['counts']
+  industries: EtfWatchIndustry[]
+}
+
+export interface EtfWatchTrackDay {
+  date: string
+  status: EtfWatchStatus
+  dd: number
+  vol_pct: number | null
+  amt20: number
+  best_symbol: string | null
+  best_name: string | null
+  r1: boolean
+  r2: boolean
+  r3: boolean
+  f6: boolean
+  reasons: string[]
+  market_state: string
+}
+
+export interface EtfWatchTrackSegment {
+  start: string
+  end: string
+  days: number
+}
+
+export interface EtfWatchTrack {
+  industry: string
+  name: string
+  symbol: string | null
+  first_trigger: string | null
+  last_trigger: string | null
+  trigger_count: number
+  max_consecutive: number
+  left_censored: boolean
+  carrier_at_first: string | null
+  carrier_at_first_symbol: string | null
+  carrier_changed: boolean
+  segments: EtfWatchTrackSegment[]
+  days: EtfWatchTrackDay[]
+}
+
+export interface EtfWatchOutcome {
+  industry: string
+  name: string
+  /** 算收益用的载体＝首次触发日 F6 选出的那只 */
+  symbol: string | null
+  /** 最新载体；与 symbol 不同说明中途换过 */
+  symbol_now?: string | null
+  first_trigger: string | null
+  entry: string | null
+  carrier: string | null
+  to_end: number | null
+  entry_to_end: number | null
+  ret5: number | null
+  ret10: number | null
+  ret20: number | null
+  mae: number | null
+  mfe: number | null
+  /** 收盘口径，仅用于审计盘中/收盘差多少 */
+  mae_close: number | null
+  mfe_close: number | null
+  note: string
+}
+
+export interface EtfWatchAccountInstruction {
+  no: number
+  action: 'BUY' | 'SELL' | 'HOLD'
+  what: string
+  est_amount: number
+  why: string
+  when: string
+  /** 次日开盘限价（信号收盘 ×1.03）；没有则为收盘市价旧口径。 */
+  limit_price?: number
+}
+
+export interface EtfWatchAccount {
+  meta: {
+    generated_at: string
+    policy: string
+    engine: string
+    adoption: string
+    init: number
+    defensive: { symbol: string; name: string; window?: string[]; method?: string; n_div?: number | null }
+    rules: Record<string, string>
+    /** 执行叠加（2026-11-23）：次日开盘限价，页面不重复定义。 */
+    entry?: { mode: string; cap_pct: number; valid_until: string; note: string }
+  }
+  asof: string
+  state: {
+    equity: number
+    cash: number
+    defensive: { value: number; weight: number }
+    leg1: { value: number; positions: Array<{ industry: string; symbol: string; entry: string; exit: string | null; value: number }> }
+    trades_closed: number
+  }
+  instructions: EtfWatchAccountInstruction[]
+  equity_tail: Array<[string, number]>
+}
+
+/**
+ * 现金腿（短融打底 + 国债锚）的下单计划。
+ *
+ * 由 analysis/etf_watch_cash_leg.py 计算并落盘，账户脚本同一次运行顺带产出。
+ * 份数/金额/佣金都是产出物里算好的值 —— 页面不做任何取整，否则同一笔单会有两个数字。
+ */
+export interface EtfWatchCashLegOrder {
+  no: number
+  action: 'BUY' | 'SELL'
+  symbol: string
+  name: string
+  shares: number
+  price: number
+  amount: number
+  fee: number
+  why: string
+}
+
+export interface EtfWatchCashLeg {
+  meta: {
+    generated_at: string
+    asof: string
+    policy: string
+    engine: string
+    bond: { symbol: string; name: string; duration: number; weight: number }
+    short: { symbol: string; name: string }
+    rules: Record<string, string>
+    prices: Record<string, { close: number; asof: string }>
+  }
+  equity: number
+  leg1: number
+  available: number
+  bond_w: number
+  bond_target: number
+  bond_amount: number
+  short_amount: number
+  residual: number
+  deviation: number
+  need_rebalance: boolean
+  rebalance_min: number
+  duration_years: number
+  orders: EtfWatchCashLegOrder[]
+}
+
+export interface EtfWatchReplay {
+  meta: EtfWatchReplayMeta
+  sessions: string[]
+  snapshots: Record<string, EtfWatchReplaySnapshot>
+  tracks: EtfWatchTrack[]
+  outcomes: EtfWatchOutcome[]
 }

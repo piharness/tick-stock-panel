@@ -13,6 +13,7 @@ export const DAILY_DATA_QUERY_PREFIXES = new Set([
   'index-quotes', 'index-daily', 'watchlist-enriched', 'kline-batch', 'kline', 'kline-latest', 'stock-levels',
   'regime-history', 'regime-latest', 'regime-states', 'regime-coverage', 'regime-phases', 'regime-mainline',
   'regime-context',
+  'position-art', 'position-art-tail',
 ])
 
 /** 分钟落盘补拉后的体检与直接消费查询, 不影响日K/财务或独立的指数分钟数据。 */
@@ -105,6 +106,8 @@ export const QK = {
   minuteGaps:           ['minute-gaps'] as const,
   pipelineJobs:         ['pipeline-jobs'] as const,
   pipelineJob:          (id: string) => ['pipeline-job', id] as const,
+  /** 数据维护：行情 + 手册两条链的状态；任务跑动时页面按 2s 轮询。 */
+  maintenance:          ['maintenance'] as const,
   extData:              ['ext-data'] as const,
   extDataRows:          (id: string, date?: string, limit?: number, columns?: string) => ['ext-data-rows', id, date, limit, columns] as const,
   dimensionMembers:     (id: string, field: string, value: string, date?: string) => ['dimension-members', id, field, value, date] as const,
@@ -186,10 +189,8 @@ export const QK = {
   // 概念涨幅轮动矩阵
   rpsRotation:          (days: number) => ['rps-rotation', days] as const,
 
-  // 市场公民（多维流动性身份分级）—— 日级离线计算, 不进 SSE 刷新
-  citizenship:          (asOf?: string) => ['citizenship', asOf ?? 'latest'] as const,
-  citizenshipLevels:    ['citizenship-levels'] as const,
-  citizenshipHistory:   (days?: number, end?: string) => ['citizenship-history', days ?? 30, end ?? 'latest'] as const,
+  // 短线雷达（博弈角色主场分类 + 资金位次标签）—— 日级离线计算, 不进 SSE 刷新
+  shortlineRadar:       (asOf?: string) => ['shortline-radar', asOf ?? 'latest'] as const,
 
   // 市场环境(Regime) — 日级离线计算, 不进 SSE 刷新
   // 历史查询键 = 实际请求三元组 (影响结果的参数全部进键): 'all' 在 coverage
@@ -200,6 +201,9 @@ export const QK = {
   regimeHistoryPrefix:  ['regime-history'] as const,
   regimeLatest:         ['regime-latest'] as const,
   regimeContext:        ['regime-context'] as const,
+  // 仓位艺术: 确认天数进键 (不同 N 是不同规则, 不能共用缓存)
+  positionArt:          (confirmDays: number) => ['position-art', confirmDays] as const,
+  positionArtTail:      ['position-art-tail'] as const,
   regimeStates:         (days: number) => ['regime-states', days] as const,
   regimeCoverage:       ['regime-coverage'] as const,
   regimePhases:         (start?: string, end?: string) => ['regime-phases', start ?? '', end ?? ''] as const,
