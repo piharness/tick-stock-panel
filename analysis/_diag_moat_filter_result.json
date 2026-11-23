@@ -1,0 +1,157 @@
+[
+  {
+    "id": "l1_gap_reversal",
+    "name": "L1 跳空反转（20 日持有）",
+    "source": "docs/l1-gap-reversal.md · gross +96.02bp / t=20.49 / 22/22 年正",
+    "status": "部分有效",
+    "verdict": "归你，但半衰期短（公开信号）",
+    "owner": "你（需监控衰减）",
+    "layers": [
+      {
+        "layer": "速度层",
+        "mark": "O",
+        "why": "慢钱（≥1 日持有），高频拿不住"
+      },
+      {
+        "layer": "容量层",
+        "mark": "O",
+        "why": "容量受限（小盘/低流动性），大资金塞不进"
+      },
+      {
+        "layer": "舒适层",
+        "mark": "X",
+        "why": "标的干净 → 被动/公募也敢买，溢价被买贵"
+      },
+      {
+        "layer": "成本层",
+        "mark": "!",
+        "why": "量价公开信号，量化可廉价复制 → 半衰期短，靠监控退役"
+      }
+    ],
+    "regime_note": "regime 敏感：必须外挂条件门，否则 2026 式翻转会把「归你的慢钱」变成亏损"
+  },
+  {
+    "id": "silent_liquidity",
+    "name": "silent +606bp（流动性溢价承保暴露）",
+    "source": "docs/silent-excess-return-attribution.md · 归因后 = 小盘+低流动性投影，非沉默 alpha",
+    "status": "被证伪为投影 / 仍可作暴露",
+    "verdict": "归你，但半衰期短（公开信号）",
+    "owner": "你（需监控衰减）",
+    "layers": [
+      {
+        "layer": "速度层",
+        "mark": "O",
+        "why": "慢钱（≥1 日持有），高频拿不住"
+      },
+      {
+        "layer": "容量层",
+        "mark": "O",
+        "why": "容量受限（小盘/低流动性），大资金塞不进"
+      },
+      {
+        "layer": "舒适层",
+        "mark": "O",
+        "why": "标的丑/低流动性 → 追基准的公募/被动不敢碰"
+      },
+      {
+        "layer": "成本层",
+        "mark": "!",
+        "why": "量价公开信号，量化可廉价复制 → 半衰期短，靠监控退役"
+      }
+    ],
+    "regime_note": "regime 敏感：必须外挂条件门，否则 2026 式翻转会把「归你的慢钱」变成亏损"
+  },
+  {
+    "id": "t2_rebound",
+    "name": "T+2 跌后反弹（当日回合）",
+    "source": "docs/hotmoney-quant-game.md:85 · horizon_sessions=0，T+1 不可执行，已作废",
+    "status": "已作废",
+    "verdict": "归高频/量化，不是你的",
+    "owner": "更快的人",
+    "layers": [
+      {
+        "layer": "速度层",
+        "mark": "X",
+        "why": "日内/回转 → 高频与量化吃掉，轮不到你"
+      },
+      {
+        "layer": "容量层",
+        "mark": "X",
+        "why": "容量足够 → 机构吃掉"
+      },
+      {
+        "layer": "舒适层",
+        "mark": "X",
+        "why": "标的干净 → 被动/公募也敢买，溢价被买贵"
+      },
+      {
+        "layer": "成本层",
+        "mark": "!",
+        "why": "量价公开信号，量化可廉价复制 → 半衰期短，靠监控退役"
+      }
+    ],
+    "regime_note": ""
+  },
+  {
+    "id": "dragon_tiger",
+    "name": "龙虎榜上榜 → 事后均值回归",
+    "source": "docs/dragon-tiger-org-vs-hotmoney.md · 上榜股 H20 −400~−500bp，不可提前交易",
+    "status": "负向暴露读数",
+    "verdict": "归机构/被动，不是你的",
+    "owner": "更大/更便宜的人",
+    "layers": [
+      {
+        "layer": "速度层",
+        "mark": "O",
+        "why": "慢钱（≥1 日持有），高频拿不住"
+      },
+      {
+        "layer": "容量层",
+        "mark": "X",
+        "why": "容量足够 → 机构吃掉"
+      },
+      {
+        "layer": "舒适层",
+        "mark": "X",
+        "why": "标的干净 → 被动/公募也敢买，溢价被买贵"
+      },
+      {
+        "layer": "成本层",
+        "mark": "!",
+        "why": "量价公开信号，量化可廉价复制 → 半衰期短，靠监控退役"
+      }
+    ],
+    "regime_note": ""
+  },
+  {
+    "id": "limitup_ignition",
+    "name": "涨停点火 → 4 板预测",
+    "source": "docs/limitup-citizenship-ignition.md · 点火不预测 4 板，是「小盘+10%制度」投影",
+    "status": "被证伪",
+    "verdict": "归机构/被动，不是你的",
+    "owner": "更大/更便宜的人",
+    "layers": [
+      {
+        "layer": "速度层",
+        "mark": "O",
+        "why": "慢钱（≥1 日持有），高频拿不住"
+      },
+      {
+        "layer": "容量层",
+        "mark": "X",
+        "why": "容量足够 → 机构吃掉"
+      },
+      {
+        "layer": "舒适层",
+        "mark": "X",
+        "why": "标的干净 → 被动/公募也敢买，溢价被买贵"
+      },
+      {
+        "layer": "成本层",
+        "mark": "!",
+        "why": "量价公开信号，量化可廉价复制 → 半衰期短，靠监控退役"
+      }
+    ],
+    "regime_note": ""
+  }
+]

@@ -1,0 +1,100 @@
+{
+  "n_events": 268,
+  "conditionals": {
+    "ret_pre60": [
+      {
+        "bucket": "-100~-70%",
+        "n": 69,
+        "delist_pct": 84.1,
+        "fwd20_corrected_mean_bp": -8833.6,
+        "fwd20_median_bp": -2584.1
+      },
+      {
+        "bucket": "-70~-50%",
+        "n": 79,
+        "delist_pct": 48.1,
+        "fwd20_corrected_mean_bp": -5092.4,
+        "fwd20_median_bp": 612.2
+      },
+      {
+        "bucket": "-50~-30%",
+        "n": 83,
+        "delist_pct": 27.7,
+        "fwd20_corrected_mean_bp": -2871.4,
+        "fwd20_median_bp": 471.5
+      },
+      {
+        "bucket": "-30~0%",
+        "n": 35,
+        "delist_pct": 14.3,
+        "fwd20_corrected_mean_bp": -1341.0,
+        "fwd20_median_bp": -618.6
+      }
+    ],
+    "peak60": [
+      {
+        "bucket": "1.0~1.5",
+        "n": 31,
+        "delist_pct": 9.7,
+        "fwd20_corrected_mean_bp": 969.8,
+        "fwd20_median_bp": 625.0
+      },
+      {
+        "bucket": "1.5~2.0",
+        "n": 81,
+        "delist_pct": 27.2,
+        "fwd20_corrected_mean_bp": -3278.2,
+        "fwd20_median_bp": 204.1
+      },
+      {
+        "bucket": "2.0~3.0",
+        "n": 76,
+        "delist_pct": 48.7,
+        "fwd20_corrected_mean_bp": -5295.5,
+        "fwd20_median_bp": 316.9
+      },
+      {
+        "bucket": ">3.0",
+        "n": 79,
+        "delist_pct": 78.5,
+        "fwd20_corrected_mean_bp": -8308.1,
+        "fwd20_median_bp": -105.3
+      }
+    ],
+    "dd_from_peak60": [
+      {
+        "bucket": "-100~-70%",
+        "n": 81,
+        "delist_pct": 82.7,
+        "fwd20_corrected_mean_bp": -8802.5,
+        "fwd20_median_bp": -4343.4
+      },
+      {
+        "bucket": "-70~-50%",
+        "n": 81,
+        "delist_pct": 43.2,
+        "fwd20_corrected_mean_bp": -4545.4,
+        "fwd20_median_bp": 569.3
+      },
+      {
+        "bucket": "-50~-30%",
+        "n": 88,
+        "delist_pct": 22.7,
+        "fwd20_corrected_mean_bp": -2834.4,
+        "fwd20_median_bp": 208.3
+      },
+      {
+        "bucket": "-30~0%",
+        "n": 17,
+        "delist_pct": 11.8,
+        "fwd20_corrected_mean_bp": 1755.3,
+        "fwd20_median_bp": -309.3
+      }
+    ]
+  },
+  "financial_coverage": {
+    "n_events": 268,
+    "n_with_annual_fin": 65,
+    "note": "财务数据仅覆盖在市股，条件化会用幸存者偏差污染"
+  }
+}

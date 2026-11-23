@@ -1,0 +1,30 @@
+{
+  "events": 1486,
+  "matched": 1471,
+  "result": [
+    {
+      "action": "调入",
+      "n": 739,
+      "pre20_mean_bp": 196.0,
+      "ret0_mean_bp": -79.0,
+      "ret0_t": -7.64,
+      "ex_fwd20_mean_bp": 196.0,
+      "ex_fwd20_median_bp": 20.2,
+      "ex_fwd20_t": 4.76,
+      "ex_fwd60_mean_bp": 375.3,
+      "ex_fwd60_t": 4.31
+    },
+    {
+      "action": "调出",
+      "n": 732,
+      "pre20_mean_bp": -141.4,
+      "ret0_mean_bp": -74.6,
+      "ret0_t": -7.68,
+      "ex_fwd20_mean_bp": 158.9,
+      "ex_fwd20_median_bp": -10.5,
+      "ex_fwd20_t": 4.07,
+      "ex_fwd60_mean_bp": 493.8,
+      "ex_fwd60_t": 6.27
+    }
+  ]
+}

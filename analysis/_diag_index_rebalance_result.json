@@ -1,0 +1,97 @@
+{
+  "threshold_main": 3.0,
+  "threshold_strict": 5.0,
+  "window_half_days": 10,
+  "n_days": 5313,
+  "n_events": 688899,
+  "results": [
+    {
+      "group": "atr3-in-up",
+      "n": 78069,
+      "ret_fwd_mean_bp": -15.3,
+      "ret_fwd_median_bp": -136.8,
+      "t": -2.37,
+      "win_pct": 45.4,
+      "excess_fwd_mean_bp": 20.4,
+      "excess_fwd_median_bp": -213.3,
+      "excess_t": 3.57
+    },
+    {
+      "group": "atr3-in-down",
+      "n": 37757,
+      "ret_fwd_mean_bp": -74.6,
+      "ret_fwd_median_bp": -199.1,
+      "t": -8.11,
+      "win_pct": 43.1,
+      "excess_fwd_mean_bp": 33.6,
+      "excess_fwd_median_bp": -203.9,
+      "excess_t": 4.07
+    },
+    {
+      "group": "atr3-out-up",
+      "n": 388990,
+      "ret_fwd_mean_bp": 43.1,
+      "ret_fwd_median_bp": -176.7,
+      "t": 14.82,
+      "win_pct": 43.7,
+      "excess_fwd_mean_bp": 49.0,
+      "excess_fwd_median_bp": -181.2,
+      "excess_t": 18.94
+    },
+    {
+      "group": "atr3-out-down",
+      "n": 184083,
+      "ret_fwd_mean_bp": 60.7,
+      "ret_fwd_median_bp": -158.2,
+      "t": 14.24,
+      "win_pct": 44.2,
+      "excess_fwd_mean_bp": 49.5,
+      "excess_fwd_median_bp": -176.3,
+      "excess_t": 13.28
+    },
+    {
+      "group": "atr5-in-up",
+      "n": 25702,
+      "ret_fwd_mean_bp": -154.9,
+      "ret_fwd_median_bp": -307.4,
+      "t": -12.76,
+      "win_pct": 40.5,
+      "excess_fwd_mean_bp": -73.8,
+      "excess_fwd_median_bp": -344.7,
+      "excess_t": -6.72
+    },
+    {
+      "group": "atr5-in-down",
+      "n": 13788,
+      "ret_fwd_mean_bp": -156.5,
+      "ret_fwd_median_bp": -309.9,
+      "t": -9.41,
+      "win_pct": 39.9,
+      "excess_fwd_mean_bp": 4.7,
+      "excess_fwd_median_bp": -297.5,
+      "excess_t": 0.3
+    },
+    {
+      "group": "atr5-out-up",
+      "n": 123160,
+      "ret_fwd_mean_bp": -61.4,
+      "ret_fwd_median_bp": -325.4,
+      "t": -10.89,
+      "win_pct": 39.3,
+      "excess_fwd_mean_bp": -30.5,
+      "excess_fwd_median_bp": -308.1,
+      "excess_t": -5.94
+    },
+    {
+      "group": "atr5-out-down",
+      "n": 60923,
+      "ret_fwd_mean_bp": -65.8,
+      "ret_fwd_median_bp": -303.0,
+      "t": -8.68,
+      "win_pct": 39.6,
+      "excess_fwd_mean_bp": -43.7,
+      "excess_fwd_median_bp": -294.5,
+      "excess_t": -6.57
+    }
+  ]
+}
