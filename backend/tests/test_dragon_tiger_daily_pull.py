@@ -241,3 +241,6 @@ def test_start_scheduler_registers_the_jobs(data_dir, monkeypatch):
     ids = [j["id"] for j in sched.jobs]
     assert dp.DRAGON_TIGER_JOB_ID in ids
     assert dp.DRAGON_TIGER_RETRY_JOB_ID in ids
+    # 排序体检（预注册 heat-sort-2026-11-24）：只登记与重算产出物，不裁决。
+    assert dp.SHORTLINE_AUDIT_JOB_ID in ids
+    assert dp.SHORTLINE_AUDIT_RETRY_JOB_ID in ids

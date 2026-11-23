@@ -1006,6 +1006,47 @@ def _rule(state: str, **kw) -> dict:
     return base
 
 
+# 「机构 / 游资分歧」的时效上限（自然日）。三周没上榜，旧记录说明不了今天：
+# 这条数据的语义是「最近一次两类钱方向相反」，不是「这只票的属性」。
+LHB_STALE_DAYS = 21
+
+
+def _age_days(then: object, ref: object) -> int | None:
+    """两个日期相差多少自然日。解析不了就返回 None——宁可说不知道，不返回一个数。"""
+    def _as_date(v: object) -> date_cls | None:
+        if isinstance(v, date_cls):
+            return v
+        if isinstance(v, str):
+            try:
+                return date_cls.fromisoformat(v[:10])
+            except ValueError:
+                return None
+        return None
+
+    a, b = _as_date(then), _as_date(ref)
+    if a is None or b is None:
+        return None
+    return (b - a).days
+
+
+# 九条判定的 id 清单（顺序即展示顺序）。这是一份**跨语言契约**：
+#   · 本文件 _stock_rules 按此顺序产出；
+#   · 前端 frontend/src/pages/common-sense/probes.ts 按此顺序渲染；
+#   · backend/tests/test_probe_contract.py 双向比对两边，任一侧增删都会红。
+# 三处任缺一处，就会出现「页面上少了第九条而没有任何提示」——那种缺陷不会报错。
+RULE_IDS: tuple[str, ...] = (
+    "accum",       # ① 吸筹：价升量不增
+    "wash",        # ② 对敲：换手高、振幅小
+    "shakeout",    # ③ 震仓：放量下跌后 5 日收回
+    "knife",       # ④ 飞刀：连续跌停打开后的真实结果
+    "distribution",  # ⑤ 派发：高位放量长上影
+    "control",     # ⑥ 控盘成本：算术
+    "shell",       # ⑦ 壳价值
+    "reduce",      # ⑧ 减持压力：本地无表
+    "divergence",  # ⑨ 机构 / 游资分歧
+)
+
+
 def _stock_rules(series: pl.DataFrame, events: pl.DataFrame, meta: dict) -> list[dict]:
     """九条行业常识在**这一只票**上的可观测判定。
 
@@ -1045,25 +1086,42 @@ def _stock_rules(series: pl.DataFrame, events: pl.DataFrame, meta: dict) -> list
     ))
 
     # ② 对敲：量堆着、价不动
+    #
+    # 口径修正（2026-11-18）：原先比的是「近 5 日换手均值」与「近 5 日振幅均值」各自的分位。
+    # 实测 793 只票，`换手分位 ≥80 且振幅分位 ≤25` 命中 0 只（放宽到 70/30 仍是 0）——
+    # 原因是换手与振幅高度正相关（大成交量的日子几乎就是大振幅的日子），要求两周的**均值**
+    # 同时落在两个相反的极端，在联合分布上是一块空区域。判定因此从未成立过，页面上的
+    # 「不成立」被读成「没有对敲」，其实是探测器不合格。
+    #
+    # 对敲本来就是**某一天**的行为，不是一周的均值：某一天量堆上去、价格被摁住。
+    # 改成同日口径后，近 20 日至少一天满足「当日换手分位 ≥80 且当日振幅分位 ≤25」即成立，
+    # 全市场命中率约 3.8%（800 只里 30 只），符合「罕见但存在」的预期。
     if len(turns) >= 20 and len(amps) >= 20:
-        t_now = sum(turns[-5:]) / 5
-        a_now = sum(amps[-5:]) / 5
-        tr = _pct_rank(turns, t_now)
-        ar = _pct_rank(amps, a_now)
-        hit = tr is not None and ar is not None and tr >= 80 and ar <= 25
+        churn_days: list[str] = []
+        for row in series.tail(20).iter_rows(named=True):
+            tv, av = row.get("turnover_rate"), row.get("amp")
+            if tv is None or av is None:
+                continue
+            tr = _pct_rank(turns, tv)
+            ar = _pct_rank(amps, av)
+            if tr is not None and ar is not None and tr >= 80 and ar <= 25:
+                churn_days.append(str(row["date"]))
         out.append(_rule(
-            "triggered" if hit else "clear", id="wash", label="对敲 / 换手堆积",
+            "triggered" if churn_days else "clear", id="wash", label="对敲 / 换手堆积",
             claim="对敲的痕迹不是「大单」，而是「换手很高但振幅很小」——"
-                  "筹码在账户之间搬家，价格却没走。它制造的是成交量，不是价格。",
-            value=None if tr is None else int(tr),
-            unit="换手率分位",
-            detail=f"近 5 日换手第 {None if tr is None else int(tr)} 百分位 / "
-                   f"振幅第 {None if ar is None else int(ar)} 百分位；"
-                   f"触发条件：换手 ≥80 且振幅 ≤25",
+                  "筹码在账户之间搬家，价格却没走。它制造的是成交量，不是价格。"
+                  "要的是同一天同时成立，不是一周的平均：平均会把那一天稀释掉。",
+            value=len(churn_days), unit="天（近 20 日）",
+            detail=(f"近 20 日有 {len(churn_days)} 天「当日换手分位 ≥80 且当日振幅分位 ≤25」："
+                    + "、".join(churn_days[-3:]))
+            if churn_days else
+            "近 20 日没有出现「换手分位 ≥80 且振幅分位 ≤25」的单日；"
+            "这只是说没看到这种形状，不等于没有对倒。",
         ))
     else:
         out.append(_rule("no_data", id="wash", label="对敲 / 换手堆积",
-                         claim="对敲需要「高换手 + 低振幅」两条同时成立。", detail="样本不足 20 日"))
+                         claim="对敲需要「高换手 + 低振幅」在同一天同时成立。",
+                         detail="日线样本不足 20 日，无法比较分位"))
 
     # ③ 震仓：放量下跌后 5 日内收回
     shakes = 0
@@ -1110,7 +1168,7 @@ def _stock_rules(series: pl.DataFrame, events: pl.DataFrame, meta: dict) -> list
     else:
         out.append(_rule("no_data", id="knife", label="飞刀（连续跌停后接盘）",
                          claim="近 120 日没有连续跌停 ≥2 天的样本，无法给出真实接盘结果。",
-                         detail="空射程不落盘：没有样本时不显示 0%"))
+                         detail="近 120 日无「连续跌停 ≥2 天」样本；空射程不落盘，不显示 0%"))
 
     # ⑤ 派发：高位 + 放量 + 上影
     hi = _pct_rank(closes, last.get("close") or 0)
@@ -1151,19 +1209,35 @@ def _stock_rules(series: pl.DataFrame, events: pl.DataFrame, meta: dict) -> list
             detail=f"流通市值 {float_cap / 1e8:.1f} 亿；近 20 日日均成交 {amt20 / 1e8:.2f} 亿；"
                    f"需 {need / 1e8:.1f} 亿",
         ))
+    else:
+        # 缺股本或缺成交额时这条判定不成立——但**不能**把它从列表里去掉：
+        # 少一条的表现是「页面上少一格」，没有任何地方说明为什么少。
+        out.append(_rule(
+            "no_data", id="control", label="控盘 20% 流通盘需要的钱",
+            claim="「庄家控盘 20%-30%」是算术，不是观测："
+                  "拿走 20% 流通盘需要的资金 = 流通市值 × 20%，再除以日均成交额。",
+            detail="缺流通股本或近期成交额，这道除法算不出来——此处不给数字。",
+        ))
 
     # ⑦ 壳价值：小市值 + 亏损（代理）
     roe = meta.get("roe")
     cap_rank = meta.get("cap_rank")
+    shell_known = roe is not None and cap_rank is not None
     shell = (cap_rank is not None and cap_rank <= 20 and roe is not None and roe < 0)
     out.append(_rule(
-        "triggered" if shell else ("clear" if roe is not None and cap_rank is not None else "no_data"),
+        "triggered" if shell else ("clear" if shell_known else "no_data"),
         id="shell", label="壳价值",
         claim="壳价值 = 上市资格的价格，它随 IPO 节奏和退市新规变化，不随公司经营变化。"
               "判据是「小市值 + 不赚钱 + 主业无增长」，三者同时成立才有壳属性。",
-        value=None if cap_rank is None else int(cap_rank), unit="流通市值分位（低=小）",
-        detail=f"ROE={None if roe is None else round(roe, 1)}%（财务表原始单位就是百分数）；"
-               f"触发条件：市值分位 ≤20 且 ROE < 0",
+        # 两个条件缺一个就不是这个判定：此时只把已有的那个写进 detail，
+        # value 留空——否则「无数据」旁边挂着一个 41，读者一定会把它当成结论。
+        value=(int(cap_rank) if shell_known else None),
+        unit="流通市值分位（低=小）" if shell_known else None,
+        detail=(f"ROE={round(roe, 1)}%；市值分位 {int(cap_rank)}；触发条件：市值分位 ≤20 且 ROE < 0"
+                if shell_known else
+                f"ROE={'无年报数据' if roe is None else f'{round(roe, 1)}%'}；"
+                f"市值分位={'—' if cap_rank is None else int(cap_rank)}；"
+                f"缺一项就不构成判定，此处不给结论"),
     ))
 
     # ⑧ 减持压力：本地无表 → 永远 no_data，并明说缺哪四张表。
@@ -1181,7 +1255,19 @@ def _stock_rules(series: pl.DataFrame, events: pl.DataFrame, meta: dict) -> list
         latest = events.sort("date").row(-1, named=True)
         org = latest.get("org_net")
         hot = latest.get("hot_net")
-        if org is not None and hot is not None and org * hot < 0:
+        age = _age_days(latest.get("date"), series["date"][-1])
+        if age is not None and age > LHB_STALE_DAYS:
+            # 三周前的上榜记录说明不了今天的两类钱：旧分歧不是当下的分歧。
+            # 不给 triggered/clear，是因为这两种状态都会被读成「现在就是这样」。
+            out.append(_rule(
+                "no_data", id="divergence", label="机构 / 游资分歧",
+                claim="分歧比共识有信息：它说明两类钱对同一根 K 线的读法不同。"
+                      "机构卖游资买，通常是游资在接机构倒出来的货；"
+                      "机构买游资卖，常常是游资把筹码交给了长钱。前者次日更容易反复。",
+                detail=f"最近一次上榜是 {latest['date']}（{age} 天前），不是当下的分歧——"
+                       f"旧记录不回答「今天谁在买」。",
+            ))
+        elif org is not None and hot is not None and org * hot < 0:
             side = "机构卖、游资买" if org < 0 else "机构买、游资卖"
             out.append(_rule(
                 "triggered", id="divergence", label="机构 / 游资分歧",
@@ -1197,6 +1283,17 @@ def _stock_rules(series: pl.DataFrame, events: pl.DataFrame, meta: dict) -> list
                 claim="分歧比共识有信息：两类钱方向相反时，才说明有人在接别人的货。",
                 detail=f"{latest['date']} 机构与游资同向或数据缺失，无分歧可读",
             ))
+    else:
+        # 没上榜 ≠ 没有分歧。以前这里什么都不追加，前端拿到 8 条而不是 9 条，
+        # 页面上只是「少了一块」，没有任何地方说明为什么少——最难看的一种静默。
+        out.append(_rule(
+            "no_data", id="divergence", label="机构 / 游资分歧",
+            claim="分歧比共识有信息：它说明两类钱对同一根 K 线的读法不同。"
+                  "机构卖游资买，通常是游资在接机构倒出来的货；"
+                  "机构买游资卖，常常是游资把筹码交给了长钱。前者次日更容易反复。",
+            detail="该股近期没有登上龙虎榜，看不到两类钱的方向——"
+                   "这是「看不见」，不是「两类钱没分歧」。",
+        ))
     return out
 
 

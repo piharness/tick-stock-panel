@@ -54,6 +54,37 @@ def get_dragon_tiger(
     )
 
 
+@router.get("/dragon-tiger-stats")
+def get_dragon_tiger_stats(
+    request: Request,
+    days: int = Query(default=120, ge=10, le=366, description="统计回看天数"),
+):
+    """多日龙虎榜「机构 vs 全榜 / 游资」方向一致性统计。
+
+    市场常识页「信息时间差」「博弈推演」两条常识的实证佐证：把「聪明钱先于
+    散户定价、方向不完全一致」落成可证伪的同向率数字。边界（稀疏事件数据）
+    随数据返回，前端必须展示，不能放大成全市场结论。
+    """
+    return dragon_tiger.build_direction_stats(
+        request.app.state.repo.store.data_dir, lookback_days=days
+    )
+
+
+@router.get("/dragon-tiger-verdict")
+def get_dragon_tiger_verdict(
+    request: Request,
+):
+    """龙虎榜「机构/游资方向 → 后续 20 日超额收益」的判决。
+
+    市场常识页「博弈推演」的第二层证伪：机构方向是否真有预测力。结论
+    （样本内）是「机构买 vs 机构卖」20 日超额差异不显著，且所有组都
+    「上榜即均值回归」。边界（稀疏事件、约 1 年样本）随数据返回。
+    """
+    return dragon_tiger.build_forward_verdict(
+        request.app.state.repo,
+    )
+
+
 @router.get("/auction-benchmark")
 def get_auction_benchmark(
     request: Request,

@@ -27,6 +27,7 @@ from app.services.table_game import (
     _ledger,
     _load_events,
     _load_panel,
+    _stock_lhb,
     get_board,
     get_overview,
 )
@@ -259,6 +260,37 @@ def test_reduce_rule_is_always_no_data_with_explanation(store):
     assert "十大股东" in rule["detail"]
 
 
+def test_board_always_returns_exactly_nine_rules(store):
+    """九条判定必须永远九条，且顺序与 RULE_IDS 一致。
+
+    这条曾经真的漏过：没上过龙虎榜的票，⑨「机构 / 游资分歧」整条不追加，
+    接口只返回 8 条。前端不会报错，只是少画一格——读者看到的是「本来就只有 8 条」。
+    所以这里同时断言条数、顺序，和「缺的那条要解释自己为什么缺」。
+    """
+    data, days = store
+    for sym in SYMBOLS[:5]:
+        board = get_board(data, sym, as_of=days[-1])
+        ids = [r["id"] for r in board["rules"]]
+        assert ids == list(table_game.RULE_IDS), (sym, ids)
+        for r in board["rules"]:
+            assert r["state"] in {"triggered", "clear", "derived", "no_data"}
+            # no_data 必须说清为什么（否则等于什么也没说）
+            if r["state"] == "no_data":
+                assert r.get("detail"), f"{sym} 的 {r['id']} 是 no_data 却没给原因"
+
+
+def test_divergence_without_lhb_is_no_data_not_missing(store):
+    """没上榜 ≠ 两类钱没分歧：要标 no_data 并说明是「看不见」。"""
+    data, days = store
+    # 夹具里只有部分票有 LHB 事件，挑一只从未上榜的
+    quiet = next(sym for sym in SYMBOLS if _stock_lhb(data, days[-1], sym).is_empty())
+    board = get_board(data, quiet, as_of=days[-1])
+    div = next(r for r in board["rules"] if r["id"] == "divergence")
+    assert div["state"] == "no_data"
+    assert "看不见" in div["detail"]
+
+
+
 def test_roe_unit_is_percent_not_fraction(store):
     """财务表 roe 已是百分数：-5.45 必须显示成 -5.5%，不是 -545%。"""
     data, days = store
@@ -266,6 +298,61 @@ def test_roe_unit_is_percent_not_fraction(store):
     assert board["meta"]["roe"] == pytest.approx(-5.45)
     shell = next(r for r in board["rules"] if r["id"] == "shell")
     assert "-5.5%" in shell["detail"]
+
+
+# ===== 九条判定：口径与「不许消失」 =====
+
+
+def _flat_series(n: int = 60, churn_day: int = -3, churn_amp: float = 0.4) -> pl.DataFrame:
+    """一只「平时几乎不动、某一天换手暴增」的票。用来单测判据本身，不依赖夹具数据。
+
+    churn_amp 是那一天振幅分位高低的开关：0.4 表示当天振幅极低（量增价不动），
+    8.0 表示当天振幅也很大（放量拉升/砸盘）——后者就不是「对敲」的形状。
+    """
+    closes = [10.0] * n
+    turns = [1.0] * n
+    amps = [2.0] * n
+    turns[churn_day] = 6.0
+    amps[churn_day] = churn_amp
+    dates = [date(2026, 1, 5) + timedelta(days=i) for i in range(n)]
+    return pl.DataFrame({
+        "date": dates,
+        "open": closes, "high": closes, "low": closes, "close": closes,
+        "volume": [1e6] * n, "amount": [1e8] * n,
+        "turnover_rate": turns, "amp": amps, "ret_t": [0.0] * n,
+        "consecutive_limit_ups": [0] * n, "consecutive_limit_downs": [0] * n,
+    })
+
+
+def test_wash_rule_fires_on_same_day_churn():
+    """对敲判定要的是「同一天量增价不动」。
+
+    这是修过的一个真缺陷：原实现比的是「近 5 日均换手」与「近 5 日均振幅」的分位，
+    两边都是均值 ⇒ 一天的异常被四天稀释，联合条件落在分布的空区域上（793 只票命中 0）。
+    正常票（下面这种单日换手暴增）当时被判「不成立」，等于探测器永远沉默。
+    """
+    rules = {r["id"]: r for r in table_game._stock_rules(_flat_series(), pl.DataFrame(), {})}
+    assert rules["wash"]["state"] == "triggered", rules["wash"]
+    assert rules["wash"]["value"] == 1
+
+
+def test_wash_rule_not_triggered_when_volume_and_range_move_together():
+    """负控：放量的那天振幅也大 ⇒ 不是「量增价不动」，不许判成立。"""
+    rules = {
+        r["id"]: r
+        for r in table_game._stock_rules(_flat_series(churn_amp=8.0), pl.DataFrame(), {})
+    }
+    assert rules["wash"]["state"] == "clear", rules["wash"]
+
+
+def test_stock_rules_always_nine_even_with_no_meta_and_no_events():
+    """缺股本、缺龙虎榜时也必须是九条：算不出来的那条标 no_data，而不是消失。"""
+    rules = table_game._stock_rules(_flat_series(), pl.DataFrame(), {})
+    assert [r["id"] for r in rules] == list(table_game.RULE_IDS)
+    by_id = {r["id"]: r for r in rules}
+    assert by_id["control"]["state"] == "no_data"
+    assert by_id["divergence"]["state"] == "no_data"
+    assert by_id["reduce"]["state"] == "no_data"
 
 
 def test_board_events_carry_seen_at(store):

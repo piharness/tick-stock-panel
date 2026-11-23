@@ -13,9 +13,10 @@ import {
 } from 'lucide-react'
 import type {
   BoardEvent, BoardRule, EvidenceState, InfoChainItem, LedgerGap, MissingTable,
-  RuleState, ScanName, ScanSeat, SeatRow, TableGameLedger, TableGameObject, TableGameScan,
+  ScanName, ScanSeat, SeatRow, TableGameLedger, TableGameObject, TableGameScan,
 } from '@/lib/api'
 import { cn } from '@/lib/cn'
+import { RULE_STATE } from '@/lib/ruleState'
 import { bp, isSignificant, ratio, stabilityText, verdictBadge, verdictStyle, yi } from './calibers'
 
 // ===== 通用小件 =====
@@ -35,12 +36,7 @@ const EV: Record<EvidenceState, { label: string; cls: string; hint: string }> = 
   },
 }
 
-const RULE: Record<RuleState, { label: string; cls: string }> = {
-  triggered: { label: '成立', cls: 'bg-warning/15 text-warning' },
-  clear: { label: '不成立', cls: 'bg-elevated text-muted' },
-  derived: { label: '算术', cls: 'bg-accent/10 text-accent' },
-  no_data: { label: '无数据', cls: 'bg-elevated text-muted line-through decoration-border' },
-}
+// 四态标签与配色统一走 lib/ruleState（同一套状态在本页、市场常识页各渲染一次，不能两份定义）
 
 function SectionHead({ title, thesis, right }: {
   title: string
@@ -427,7 +423,7 @@ export function RuleLab({ rules }: { rules: BoardRule[] }) {
       />
       <div className="divide-y divide-border rounded-card border border-border bg-surface">
         {rules.map(r => {
-          const st = RULE[r.state]
+          const st = RULE_STATE[r.state]
           return (
             <div key={r.id} className="px-3 py-2">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">

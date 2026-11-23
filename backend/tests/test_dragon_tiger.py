@@ -266,3 +266,129 @@ def test_get_dragon_tiger_normalizes_provider_null_thscode(data_dir, monkeypatch
     payload = dt.get_dragon_tiger(data_dir, date(2026, 8, 28))
     assert payload["state"] == "ok"
     assert payload["all"]["stock_items"][0]["thscode"] == "002731.SZ"
+
+
+# ---- 方向一致性统计 build_direction_stats ----
+
+def _write_dt_cache(data_dir: Path, d: str, org_net: float, all_net: float, hm_net: float) -> None:
+    """写一个龙虎榜缓存文件：org 榜一只票，带 org_net_value / net_value / hot_money_net_value。"""
+    cache = data_dir / "dragon_tiger" / f"date={d}.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "state": "ok",
+        "trade_date": d,
+        "all": {"stock_items": [{"ticker": "600519", "name": "贵州茅台", "net_value": all_net}]},
+        "org": {"stock_items": [{"ticker": "600519", "name": "贵州茅台",
+                                  "org_net_value": org_net, "net_value": all_net,
+                                  "hot_money_net_value": hm_net}]},
+        "hot_money": {"hot_money_items": []},
+    }
+    cache.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def test_direction_stats_computes_same_direction_rate(tmp_path: Path):
+    """3 天里 2 天机构与全榜同向 → rate ≈ 0.667。"""
+    # 同向：org_net 与 all_net 同正/同负
+    _write_dt_cache(tmp_path, "2026-08-26", org_net=1e8, all_net=1e8, hm_net=-1e8)
+    _write_dt_cache(tmp_path, "2026-08-27", org_net=1e8, all_net=1e8, hm_net=-1e8)
+    # 反向：org 净买，all 净卖
+    _write_dt_cache(tmp_path, "2026-08-28", org_net=1e8, all_net=-1e8, hm_net=-1e8)
+
+    out = dt.build_direction_stats(tmp_path, lookback_days=10)
+    assert out["days"] == 3
+    assert out["org_vs_all"]["same"] == 2
+    assert out["org_vs_all"]["total"] == 3
+    assert out["org_vs_all"]["rate"] == pytest.approx(2 / 3, abs=1e-3)
+    # 机构 vs 游资：3 天全反向（org 正、hm 负）→ rate = 0
+    assert out["org_vs_hotmoney"]["same"] == 0
+    assert out["org_vs_hotmoney"]["rate"] == 0.0
+
+
+def test_direction_stats_empty_when_no_cache(tmp_path: Path):
+    out = dt.build_direction_stats(tmp_path)
+    assert out["days"] == 0
+    assert out["series"] == []
+    assert any("无龙虎榜缓存" in c for c in out["caveats"])
+
+
+# ---- 方向 → 前向超额收益判决 build_forward_verdict ----
+
+class _FakeRepo:
+    """只提供 build_forward_verdict 需要的 store.data_dir 与 enriched 日线目录。"""
+
+    def __init__(self, data_dir: Path):
+        self.store = type("S", (), {"data_dir": data_dir})()
+
+
+def _write_enriched_daily(data_dir: Path, symbol: str, closes: list[float]) -> None:
+    """按日分区写 enriched 日线，日期用 2026-08-01 起连续 N 天（含 raw_close）。"""
+    import polars as pl
+    from datetime import timedelta
+
+    base = date(2026, 8, 1)
+    root = data_dir / "kline_daily_enriched"
+    for i, c in enumerate(closes):
+        d = base + timedelta(days=i)
+        part = root / f"date={d}" / "part.parquet"
+        part.parent.mkdir(parents=True, exist_ok=True)
+        pl.DataFrame({
+            "symbol": [symbol], "date": [d],
+            "open": [c], "high": [c], "low": [c], "close": [c],
+            "raw_close": [c], "raw_high": [c], "raw_low": [c],
+            "volume": [1.0], "amount": [1.0], "turnover_rate": [1.0],
+            "consecutive_limit_ups": [0], "consecutive_limit_downs": [0],
+            "quote_ts": [0],
+        }).write_parquet(part)
+
+
+def _write_verdict_cache(data_dir: Path, d: str, org_net: float, hm_net: float) -> None:
+    """写一个龙虎榜缓存：all 榜带 thscode + hot_money_net_value，org 榜带 org_net_value。"""
+    cache = data_dir / "dragon_tiger" / f"date={d}.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "state": "ok",
+        "trade_date": d,
+        "all": {"stock_items": [{"thscode": "600519.SH", "ticker": "600519",
+                                  "name": "贵州茅台", "net_value": 1e8,
+                                  "hot_money_net_value": hm_net}]},
+        "org": {"stock_items": [{"thscode": "600519.SH", "ticker": "600519",
+                                  "name": "贵州茅台", "org_net_value": org_net}]},
+        "hot_money": {"hot_money_items": []},
+    }
+    cache.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def test_forward_verdict_empty_without_cache(tmp_path: Path):
+    repo = _FakeRepo(tmp_path)
+    out = dt.build_forward_verdict(repo)
+    assert out["days"] == 0
+    assert any("无龙虎榜缓存" in c for c in out["caveats"])
+
+
+def test_forward_verdict_empty_without_daily(tmp_path: Path):
+    _write_verdict_cache(tmp_path, "2026-08-01", org_net=1e8, hm_net=-1e8)
+    repo = _FakeRepo(tmp_path)
+    out = dt.build_forward_verdict(repo)
+    # 有龙虎榜但无日线 → days=0（日线缺列或样本不足）
+    assert out["days"] == 0
+
+
+def test_forward_verdict_reports_t_value_and_baseline(tmp_path: Path):
+    """构造可算前向 20 日收益的样本，验证判决字段齐全且方向与输入一致。"""
+    # 日线：一只票 50 天，事件日放第 5 天（前向 20 日窗口完整覆盖）
+    closes = [10.0 + i * 0.1 for i in range(50)]
+    _write_enriched_daily(tmp_path, "600519.SH", closes)
+    # 龙虎榜事件日 = 2026-08-05（日线第 5 天），前向 20 日覆盖到 08-25
+    _write_verdict_cache(tmp_path, "2026-08-05", org_net=1e8, hm_net=-1e8)  # 机构买、游资卖
+
+    repo = _FakeRepo(tmp_path)
+    out = dt.build_forward_verdict(repo)
+    assert out["days"] == 1
+    v = out["verdict"]
+    assert v is not None
+    assert v["n"] >= 1
+    # 判决字段必须存在且为数值
+    for key in ("org_buy_ex20_bp", "org_sell_ex20_bp", "diff_bp", "t", "all_ex20_median_bp"):
+        assert isinstance(v[key], (int, float))
+    # 只有机构买样本（无机构卖），n_org_buy >= 1
+    assert v["n_org_buy"] >= 1
