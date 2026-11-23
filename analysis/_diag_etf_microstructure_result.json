@@ -1,0 +1,32 @@
+{
+  "intraday_range_bp_by_rank": {
+    "同行业小": 220.4,
+    "中": 209.4,
+    "同行业最大": 187.4
+  },
+  "small_vs_largest_ratio": 1.18,
+  "session_share_pct": {
+    "open_30min": 25.7,
+    "midday_1130_1300": 1.3,
+    "tail_30min": 13.2,
+    "uniform_ref": 12.5
+  },
+  "pool": {
+    "etf_n": 1364,
+    "amt_lt_10m_share": 40.8,
+    "amt_lt_50m_share": 74.0,
+    "amt_gt_200m_share": 9.5,
+    "amt_median_yi": 0.14,
+    "daily_range_median_bp": 199.3
+  },
+  "daily_range_bp_by_amount": {
+    "<100万": 168.0,
+    "100万-1亿": 239.0,
+    "1-10亿": 248.7,
+    ">10亿": 172.4
+  },
+  "window": {
+    "5min_start": "2026-03-25",
+    "5min_end": "2026-11-20"
+  }
+}
