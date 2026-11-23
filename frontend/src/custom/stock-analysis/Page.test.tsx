@@ -32,22 +32,17 @@ type ChartProps = {
 const chartProps: { last: ChartProps | null } = { last: null }
 
 // 图表的 ref 句柄也要能测（键盘平移/缩放/复位），所以 mock 用 forwardRef 透出 spy
+// 图表的 ref 句柄已随键盘快捷键一起下线，mock 不再需要 forwardRef。
 vi.mock('@/components/stock-analysis/AnalysisKChart', async () => {
   const React = await import('react')
-  const handles = { pan: vi.fn(), zoom: vi.fn(), reset: vi.fn() }
-  const AnalysisKChart = React.forwardRef((p: ChartProps, ref: React.Ref<unknown>) => {
+  const AnalysisKChart = (p: ChartProps) => {
     chartProps.last = p
-    React.useImperativeHandle(ref, () => handles)
     return React.createElement('div', { 'data-testid': 'kchart' }, `${p.rows.length} bars`)
-  })
-  AnalysisKChart.displayName = 'AnalysisKChartMock'
-  return { AnalysisKChart, __chartHandles: handles }
+  }
+  return { AnalysisKChart }
 })
 
 const { StockAnalysis } = await import('./Page')
-const { __chartHandles } = await import('@/components/stock-analysis/AnalysisKChart') as unknown as {
-  __chartHandles: { pan: ReturnType<typeof vi.fn>; zoom: ReturnType<typeof vi.fn>; reset: ReturnType<typeof vi.fn> }
-}
 
 const SYMBOL = '600340.SH'
 
@@ -115,6 +110,19 @@ beforeEach(() => {
   })
   vi.spyOn(api, 'stockAnalysisLevels').mockResolvedValue(levels)
   vi.spyOn(api, 'stockAnalysisNameHistory').mockResolvedValue(nameHistory)
+  // 退市红线是新增的常驻 query：不 mock 会真的发请求，jsdom 里必失败并弹出
+  // 「数据不可用」—— 那会把其它用例的 DOM 断言带偏。
+  vi.spyOn(api, 'stockAnalysisRiskGuard').mockResolvedValue({
+    symbol: SYMBOL, name: '*ST华幸', board: '主板', is_st: true, st_kind: '*ST',
+    as_of: '2026-11-17',
+    gates: [{
+      id: 'par', label: '面值退市', rule: '连续 20 个交易日收盘价均低于 1.00 元',
+      status: 'counting', value: 0.92, threshold: 1, distance_pct: -8,
+      streak: 1, streak_limit: 20, detail: '已连续 1/20 个交易日低于面值',
+    }],
+    caveats: ['本面板只算规则距离，不给摘帽/退市概率'],
+    counts: { verdict: '正在累计面值退市天数' },
+  })
   vi.spyOn(api, 'dataStatus').mockResolvedValue({
     daily: { rows: 0, earliest_date: '2025-05-07', latest_date: '2026-11-13', symbols_covered: 5890, trading_days: 371 },
     enriched: { rows: 0, earliest_date: '2025-05-07', latest_date: '2026-11-13', symbols_covered: 5890, trading_days: 371 },
@@ -330,26 +338,13 @@ it('光标读数条：没 hover 时显示最后一根，hover 后跟着走', asy
   expect(text()).toContain('1.90')     // 那天的收盘
 })
 
-it('点一下图区后键盘可用：←/→ 平移、+/- 缩放、0 复位', async () => {
+it('图区不再绑定键盘快捷键（把方向键还给页面滚动与输入框）', async () => {
   await render()
-  const wrap = host.querySelector('[data-testid="chart-keyboard"]') as HTMLElement
-  expect(wrap).not.toBeNull()
-
-  const key = async (k: string) => {
-    await act(async () => {
-      wrap.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }))
-    })
-  }
-  await key('ArrowLeft')
-  expect(__chartHandles.pan).toHaveBeenLastCalledWith(-0.25)
-  await key('ArrowRight')
-  expect(__chartHandles.pan).toHaveBeenLastCalledWith(0.25)
-  await key('+')
-  expect(__chartHandles.zoom).toHaveBeenLastCalledWith(0.7)
-  await key('-')
-  expect(__chartHandles.zoom).toHaveBeenLastCalledWith(1.4)
-  await key('0')
-  expect(__chartHandles.reset).toHaveBeenCalled()
+  // 负控：曾经有一个 tabIndex 包装层吃掉 ←/→/+/−/0，它必须真的不在了；
+  // 只删提示文字而留着监听，同样会抢走方向键。
+  expect(host.querySelector('[data-testid="chart-keyboard"]')).toBeNull()
+  expect(text()).not.toContain('点一下图区后可用键盘')
+  expect(text()).toContain('十字虚线跟随光标')
 })
 
 it('拖动缩放条后，统计条改口径为「当前视窗」而不是继续叫所选区间', async () => {

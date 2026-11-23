@@ -504,32 +504,27 @@ def build_market_countdown(
     只含 par_streak>0 或 mcap_streak>0 的票。
     """
     from app.parquet import scan_enriched_parquet
-    from app.tickflow.repository import enriched_dirname
+    from app.services.daily_panel import enriched_files, enriched_partition_dates
 
-    root = repo.store.data_dir / enriched_dirname("stock")
-    # 枚举最近 lookback_trading_days 个交易日分区（分区目录名 = 交易日，
-    # 与 trading_days 同口径，不按自然日回看以免春节长假整段落空）。
-    days: list[date] = []
-    try:
-        for part in root.glob("date=*"):
-            if not part.is_dir():
-                continue
-            try:
-                d = date.fromisoformat(part.name[5:])
-            except ValueError:
-                continue
-            if d <= as_of:
-                days.append(d)
-    except OSError:
-        days = []
-    days.sort(reverse=True)
-    days = days[:lookback_trading_days]
+    data_dir = repo.store.data_dir
+    # 枚举最近 lookback_trading_days 个交易日（分区目录名 = 交易日，与 trading_days
+    # 同口径，不按自然日回看以免春节长假整段落空）。日历取自 enriched 自己：
+    # `enriched_partition_dates` 一次 scandir 读目录名（0.01s），而旧写法
+    # `root.glob("date=*")` + `Path.is_dir()` 要对 5313 个目录各 stat 一次（5.0s）。
+    all_days = [d for d in enriched_partition_dates(data_dir) if d <= as_of]
+    days = all_days[-lookback_trading_days:]
     if not days:
         return {"as_of": str(as_of), "countdown": [], "caveats": ["本地无日线分区"]}
 
     start = min(days)
 
-    lf = scan_enriched_parquet(str(root / "**" / "*.parquet"))
+    # 只扫这 25 个分区，不 glob 全树：`**/*.parquet` 会让 polars 在
+    # `collect_schema()` 阶段逐个打开 5313 个文件读 footer（实测 16.8s），
+    # 而这 25 天之外的行一行都用不上。
+    files = enriched_files(data_dir, start, as_of)
+    if not files:
+        return {"as_of": str(as_of), "countdown": [], "caveats": ["本地无日线分区"]}
+    lf = scan_enriched_parquet([str(f) for f in files])
     available = [c for c in ("symbol", "date", "raw_close", "close", "name", "total_shares")
                  if c in lf.collect_schema().names()]
     # total_shares 在维表不在日线，日线里只有行情列；维表单独 join。
@@ -554,7 +549,14 @@ def build_market_countdown(
     price_col = "raw_close" if ("raw_close" in df.columns and df["raw_close"].null_count() < df.height) else "close"
     raw_is_true = price_col == "raw_close"
 
-    # 维表 total_shares（万股 → 股）用于市值。
+    # 维表 `total_shares` 单位是**股**（平安银行 1.9406e10 = 194 亿股，
+    # 萃华退 2.56156e8 = 2.56 亿股），直接用。
+    #
+    # 这里曾乘 1e4 —— 把另一张表（`RPT_F10_EH_EQUITY` 时点股本）的「万股」
+    # 口径套了过来。后果不是报错：市值被放大 1 万倍 ⇒ `mcap < 5e8` 永不成立
+    # ⇒ 市值退市这一腿静默全灭，而列表照常出票（全部由面值那条腿贡献），
+    # 页面看起来完全正常。单股 `_mcap_gate` 一直是 `price * total_shares`，
+    # 两条路径的答案因此长期不一致 —— 同一真相的第二个定义点。
     inst = repo.get_instruments_asset("stock")
     shares_map: dict[str, float] = {}
     if inst is not None and not inst.is_empty():
@@ -563,65 +565,88 @@ def build_market_countdown(
                 break
         else:
             shares_map = {
-                r["symbol"]: float(r["total_shares"]) * 1e4
+                r["symbol"]: float(r["total_shares"])
                 for r in inst.select(["symbol", "total_shares"]).to_dicts()
                 if r.get("total_shares") is not None
             }
 
-    # 按 symbol 分组，按日期升序，数「从最新一根往回连续跌破」的天数。
-    rows: list[dict] = []
+    # 按 symbol 分组，数「从最新一根往回连续跌破」的天数。
+    #
+    # 这里曾用 `for symbol, grp in df.group_by(...)` 逐票 Python 循环：5579 只票
+    # 各建一次子 DataFrame 再 sort，实测 **4.45s**，占整个接口的 99%（同一份数据
+    # `collect()` 只要 0.03s）。现在全部走表达式，0.03s。
+    #
+    # 语义与逐票版**逐票等价**，停止条件的定义只有一条：
+    #   从末尾往前数，遇到「未破线」或「空值」就停；停止位置距末尾的天数即 streak；
+    #   整个窗口都破线时 streak = 组内行数。
+    # 空值必须停而**不计入** streak —— 尾部停牌（价格缺失）在原实现里 streak=0，
+    # 若把它当成「破线」继续往前数，会把停牌前一天的破线也算进来。
+    # `tests/test_delisting_guard.py` 里留了一份朴素逐股参考实现做对拍。
+    df = df.filter(pl.col("symbol").is_not_null() & (pl.col("symbol") != "None"))
     df = df.sort(["symbol", "date"])
-    # 板块 → 市值阈值
-    for symbol, grp in df.group_by("symbol", maintain_order=True):
-        if symbol is None:
-            continue
-        # group_by 按单列分组时 key 是 (value,) 元组，取第一个元素。
-        sym = str(symbol[0]) if isinstance(symbol, (tuple, list)) else str(symbol)
-        if not sym or sym == "None":
-            continue
-        board = classify_board(sym.split(".")[0])
-        limit = _MCAP_MAIN if board == "主板" else _MCAP_OTHER
-        shares = shares_map.get(sym)
 
-        prices = grp.sort("date")[price_col].to_list()
-        # 面值 streak：从最新往回数连续 < 1.0
-        par_streak = 0
-        for v in reversed(prices):
-            if v is None:
-                break
-            if float(v) < _PAR_VALUE:
-                par_streak += 1
-            else:
-                break
+    boards = {s: classify_board(str(s).split(".")[0]) for s in df["symbol"].unique().to_list()}
+    limits = {s: (_MCAP_MAIN if b == "主板" else _MCAP_OTHER) for s, b in boards.items()}
 
-        # 市值 streak：需要股本；股本缺失则该票市值无法判。
-        mcap_streak = 0
-        last_mcap = None
-        if shares and shares > 0:
-            last_price = prices[-1] if prices else None
-            if last_price is not None:
-                last_mcap = float(last_price) * shares
-            for v in reversed(prices):
-                if v is None:
-                    break
-                if float(v) * shares < limit:
-                    mcap_streak += 1
-                else:
-                    break
+    scored = (
+        df.with_columns([
+            pl.col(price_col).cast(pl.Float64).alias("_p"),
+            pl.int_range(pl.len()).over("symbol").alias("_i"),
+            pl.len().over("symbol").alias("_n"),
+        ])
+        .with_columns([
+            # 距末尾的天数：最后一行 _rev=0
+            (pl.col("_n") - 1 - pl.col("_i")).alias("_rev"),
+            pl.col("symbol").replace_strict(limits, default=None).alias("_lim"),
+            pl.col("symbol").replace_strict(boards, default=None).alias("_board"),
+            pl.col("symbol").replace_strict(shares_map, default=None).alias("_sh"),
+        ])
+        .with_columns(
+            # 股本缺失或为 0（退市股维表常见 0）时市值「无法判定」，必须是 null
+            # 而不是 0 —— 否则 `0 < 5 亿` 会让这些票凭空变成「市值破线」。
+            pl.when(pl.col("_sh").is_not_null() & (pl.col("_sh") > 0))
+            .then(pl.col("_p") * pl.col("_sh"))
+            .otherwise(None)
+            .alias("_mcap")
+        )
+        .with_columns([
+            (pl.col("_p").is_null() | (pl.col("_p") >= _PAR_VALUE)).alias("_par_stop"),
+            (
+                pl.col("_p").is_null()
+                | pl.col("_mcap").is_null()
+                | (pl.col("_mcap") >= pl.col("_lim"))
+            ).alias("_mcap_stop"),
+        ])
+        .group_by("symbol")
+        .agg([
+            pl.when(pl.col("_par_stop")).then(pl.col("_rev")).otherwise(None).min().alias("_ps"),
+            pl.when(pl.col("_mcap_stop")).then(pl.col("_rev")).otherwise(None).min().alias("_ms"),
+            pl.col("_n").first().alias("_n_rows"),
+            pl.col("_p").last().alias("_last_p"),
+            pl.col("_mcap").last().alias("_last_mcap"),
+            pl.col("_board").first().alias("_board"),
+        ])
+        .with_columns([
+            pl.coalesce([pl.col("_ps"), pl.col("_n_rows")]).alias("par_streak"),
+            pl.coalesce([pl.col("_ms"), pl.col("_n_rows")]).alias("mcap_streak"),
+        ])
+        .filter((pl.col("par_streak") > 0) | (pl.col("mcap_streak") > 0))
+        # 危险度排序：先触发面值、再看面值 streak 降序、再市值 streak。
+        .sort(["par_streak", "mcap_streak"], descending=[True, True])
+    )
 
-        if par_streak > 0 or mcap_streak > 0:
-            rows.append({
-                "symbol": sym,
-                "close": round(float(prices[-1]), 4) if prices and prices[-1] is not None else None,
-                "mcap": round(last_mcap, 2) if last_mcap is not None else None,
-                "board": board,
-                "par_streak": par_streak,
-                "mcap_streak": mcap_streak,
-                "streak_limit": _STREAK_LIMIT,
-            })
-
-    # 危险度排序：先触发面值、再看面值 streak 降序、再市值 streak。
-    rows.sort(key=lambda r: (-(r["par_streak"] or 0), -(r["mcap_streak"] or 0)))
+    rows = [
+        {
+            "symbol": r["symbol"],
+            "close": round(float(r["_last_p"]), 4) if r["_last_p"] is not None else None,
+            "mcap": round(float(r["_last_mcap"]), 2) if r["_last_mcap"] is not None else None,
+            "board": r["_board"],
+            "par_streak": int(r["par_streak"]),
+            "mcap_streak": int(r["mcap_streak"]),
+            "streak_limit": _STREAK_LIMIT,
+        }
+        for r in scored.to_dicts()
+    ]
 
     caveats: list[str] = []
     if not raw_is_true:

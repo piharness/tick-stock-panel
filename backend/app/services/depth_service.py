@@ -10,8 +10,13 @@
   盘中轮询线程(交易时段, 独立 sleep, 不绑行情轮询):
     读 enriched 内存缓存(线程安全) → 涨跌停名单 → tf.depth.batch
     → 算 sealed → 更新内存缓存(不落盘) → sealed_ready=True
+    （每轮同时把「此刻在板上」的股票追加进当日触板轨迹缓冲）
   盘后定版 job(可配置时间, 默认15:02):
-    最后拉一次 → 落盘 depth5 parquet(定版)
+    最后拉一次 → 落盘 depth5 parquet(定版) + depth5_touch parquet(当日触板轨迹)
+
+depth5_touch 存在的理由: depth5 定版快照只含收盘仍在板上的股票, 炸板股
+(触板后收盘不在板上)不会出现; 而打板成交率研究(_diag_board_shape §8.1)
+恰恰需要「何时首次触板 / 封单量路径 / 是否回封」——只有日内逐轮轨迹能给。
 
 三层防护节流("设过大设上限, 设过小设最小值"):
   ① 套餐范围 clamp: Pro 10~120s, Expert 3~120s
@@ -56,6 +61,9 @@ DEFAULT_RANGE = (10.0, 120.0)
 INTERVAL_HARD_MIN = 10.0
 INTERVAL_HARD_MAX = 300.0
 
+# 触板轨迹单日缓冲上限(极端涨停日保护: 超过即停止追加并告警一次)
+MAX_TOUCH_ROWS = 400_000
+
 
 class DepthService:
     """五档盘口 sealed 服务 — 单例。"""
@@ -83,6 +91,15 @@ class DepthService:
         # 系统接管状态(防通知刷屏)
         self._last_taken_over: bool | None = None
         self._last_user_interval: float | None = None
+
+        # 盘中触板轨迹缓冲(研究用): 每轮把「此刻在板上」的股票追加, 定版时落盘。
+        # 行 = (fetched_at, symbol, sealed_up, sealed_down, ask1_vol, bid1_vol, status)
+        # _touch_saw_trading_round: 当日是否出现过交易时段内的轮次 — 周末/盘后
+        # boot_check 补跑定版也会产生一轮, 那不是盘中轨迹, 不得落盘污染首触时间。
+        self._touch_rows: list[tuple] = []
+        self._touch_date: date | None = None
+        self._touch_truncated = False
+        self._touch_saw_trading_round = False
 
     # ================================================================
     # 注入
@@ -283,6 +300,24 @@ class DepthService:
             }
             new_cache[sym] = entry
 
+        # 触板轨迹: 交易日切换时重置缓冲; 每轮追加全部拉到的股票(含封住与将炸)。
+        if enriched_date != self._touch_date:
+            self._touch_rows = []
+            self._touch_date = enriched_date
+            self._touch_truncated = False
+            self._touch_saw_trading_round = False
+        if self._is_trading_hours():
+            self._touch_saw_trading_round = True
+        if len(self._touch_rows) < MAX_TOUCH_ROWS:
+            for sym, e in new_cache.items():
+                self._touch_rows.append((
+                    e["fetched_ts"], sym, e["sealed_up"], e["sealed_down"],
+                    e["ask1_vol"], e["bid1_vol"], e["status"],
+                ))
+        elif not self._touch_truncated:
+            self._touch_truncated = True
+            logger.warning("depth5_touch: 当日缓冲超过 %d 行, 停止追加(极端涨停日)", MAX_TOUCH_ROWS)
+
         with self._lock:
             self._sealed_cache = new_cache
             self._sealed_ready = True
@@ -299,6 +334,7 @@ class DepthService:
 
         if persist and enriched_date:
             self._persist(enriched_date)
+            self._persist_touch_log(enriched_date)
 
     def _call_depth_batch(self, symbols: list[str]) -> dict:
         """按独立五档路由取数; 所有 provider 共用分片限速且失败不跨源回退。"""
@@ -403,6 +439,36 @@ class DepthService:
         os.replace(tmp, out)
         self._persisted_date = today
         logger.info("depth sealed 落盘: %d 行 → %s", df.height, out)
+
+    def _persist_touch_log(self, d: date) -> None:
+        """把当日盘中触板轨迹写 depth5_touch/date=今天/part.parquet(原子写)。
+
+        与 _persist 同一触发点(定版/手动修正): 中途 run_once 会先写一次当日已有
+        轨迹, 15:02 定版用完整缓冲原子覆盖, 幂等。重启丢当日缓冲(日志可见),
+        不回补 —— 轨迹只服务成交率研究, 丢一天可接受, 不为它加状态恢复。
+        守门: 仅当当日出现过交易时段内的轮次才落盘 —— 周末/盘后 boot_check
+        补跑产生的单一轮次不是盘中轨迹, 写进去会把「首触时间」污染成补跑时刻。
+        """
+        if not self._touch_saw_trading_round:
+            return
+        rows = list(self._touch_rows)
+        if not rows:
+            return
+        df = pl.DataFrame(rows, schema={
+            "fetched_at": pl.Float64,
+            "symbol": pl.Utf8,
+            "sealed_up": pl.Boolean,
+            "sealed_down": pl.Boolean,
+            "ask1_vol": pl.Int64,
+            "bid1_vol": pl.Int64,
+            "status": pl.Utf8,
+        }, orient="row")
+        out = self._repo.store.data_dir / "depth5_touch" / f"date={d.isoformat()}" / "part.parquet"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        tmp = out.with_name(out.name + ".tmp")
+        df.write_parquet(tmp)
+        os.replace(tmp, out)
+        logger.info("depth5_touch 落盘: %d 行 → %s", df.height, out)
 
     def _persisted_for_date(self, d: date) -> bool:
         """检查某日 depth5 文件是否已存在。"""

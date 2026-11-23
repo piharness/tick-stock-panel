@@ -61,9 +61,9 @@ export function RangeBar({
   const hasFill = !!upstream && upstream.n > 0
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <CalendarRange className="h-3.5 w-3.5 shrink-0 text-muted" />
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <CalendarRange className="h-4 w-4 shrink-0 text-muted" />
         <div className="flex items-center rounded-btn border border-border/60 bg-base/40 p-0.5">
           {RANGE_PRESETS.map(p => (
             <button
@@ -73,7 +73,7 @@ export function RangeBar({
                 ? `从北京今天往前推 ${p.months} 个自然月（右端=今天，不含未收盘的今日K）`
                 : '本地已入库的全部区间（不向上游另取）；要看更早的请用 2 年或自定义起止'}
               className={cn(
-                'h-6 rounded px-2 text-[10px] transition-colors',
+                'h-6 rounded px-2 text-[11px] transition-colors',
                 value.preset === p.key
                   ? 'bg-sky-500/20 font-medium text-sky-300'
                   : 'text-secondary hover:bg-elevated hover:text-foreground',
@@ -84,14 +84,14 @@ export function RangeBar({
           ))}
         </div>
 
-        <div className="flex items-center gap-1 font-mono text-[10px] text-secondary">
+        <div className="flex items-center gap-1 font-mono text-[11px] text-secondary">
           <DateInput
             value={requested.start}
             max={requested.end}
             onChange={setStart}
             ariaLabel="区间起点"
             allowEmpty={false}
-            className="h-6 w-[104px] rounded border border-border/60 bg-base/40 px-1 text-[10px] text-foreground"
+            className="h-6 w-[108px] rounded border border-border/60 bg-base/40 px-1.5 text-[11px] text-foreground"
             focusClassName="focus-within:border-sky-400/50"
           />
           <span className="text-muted">→</span>
@@ -101,29 +101,29 @@ export function RangeBar({
             onChange={setEnd}
             ariaLabel="区间终点"
             allowEmpty={false}
-            className="h-6 w-[104px] rounded border border-border/60 bg-base/40 px-1 text-[10px] text-foreground"
+            className="h-6 w-[108px] rounded border border-border/60 bg-base/40 px-1.5 text-[11px] text-foreground"
             focusClassName="focus-within:border-sky-400/50"
           />
         </div>
 
-        <span className="font-mono text-[10px] text-muted">
+        <span className="font-mono text-[11px] text-muted">
           {loading
-            ? <Loader2 className="inline h-3 w-3 animate-spin" />
+            ? <Loader2 className="inline h-3.5 w-3.5 animate-spin" />
             : <>{tradeDays} 个交易日{spanDays != null ? ` · ${spanDays} 自然日` : ''}</>}
         </span>
 
         {value.preset === 'ALL' && (
-          <span className="text-[9px] text-muted">
+          <span className="text-[10px] text-muted">
             「全区间」= 本地已入库的全部（不向上游另取）；要看更早的用 2 年或自定义起止
           </span>
         )}
         {value.preset !== 'CUSTOM' && value.preset !== 'ALL' && (
-          <span className="text-[9px] text-muted">预设从北京今天往前推，右端不含未收盘的今日 K</span>
+          <span className="text-[10px] text-muted">预设从北京今天往前推，右端不含未收盘的今日 K</span>
         )}
       </div>
 
       {gap.kind === 'table' && hasFill && (
-        <div className="flex flex-wrap items-center gap-2 rounded-btn border border-sky-400/30 bg-sky-400/[0.07] px-2 py-1 text-[10px] leading-relaxed text-sky-200/90">
+        <div className="flex flex-wrap items-center gap-2 rounded-btn border border-sky-400/30 bg-sky-400/[0.07] px-2.5 py-1.5 text-[11px] leading-relaxed text-sky-200/90">
           <span>
             本地日K起于 <b className="font-mono">{fmtDay(tableEarliest)}</b>；
             更早的 <b className="font-mono">{upstream.start} ~ {upstream.end}</b>
@@ -142,7 +142,7 @@ export function RangeBar({
       )}
 
       {gap.kind === 'table' && !hasFill && (
-        <div className="flex flex-wrap items-center gap-2 rounded-btn border border-warning/30 bg-warning/[0.07] px-2 py-1 text-[10px] leading-relaxed text-warning">
+        <div className="flex flex-wrap items-center gap-2 rounded-btn border border-warning/30 bg-warning/[0.07] px-2.5 py-1.5 text-[11px] leading-relaxed text-warning">
           <span>
             本地日K起于 <b className="font-mono">{fmtDay(tableEarliest)}</b>，比你要的
             <b className="font-mono"> {requested.start} </b>晚了 {gap.days} 天 ——
@@ -162,14 +162,14 @@ export function RangeBar({
       )}
 
       {gap.kind === 'table' && upstream?.error && (
-        <div className="rounded-btn border border-danger/30 bg-danger/5 px-2 py-1 text-[10px] leading-relaxed text-danger">
+        <div className="rounded-btn border border-danger/30 bg-danger/5 px-2.5 py-1.5 text-[11px] leading-relaxed text-danger">
           上游补齐失败（{upstream.error}）—— 只显示本地段。这通常是上游超时：一次要两年会被拒，
           缩小到 6 个月再试，或直接「改为入库」。
         </div>
       )}
 
       {gap.kind === 'symbol' && (
-        <div className="rounded-btn border border-border/60 bg-base/40 px-2 py-1 text-[10px] leading-relaxed text-muted">
+        <div className="rounded-btn border border-border/60 bg-base/40 px-2.5 py-1.5 text-[11px] leading-relaxed text-muted">
           这只票在 <b className="font-mono text-secondary">{requested.start}</b> ~
           <b className="font-mono text-secondary"> {fmtDay(rowsFirst)} </b>
           之间没有K线（停牌 / 上市晚 / 已退市）。这不是数据缺口，补历史也补不出来。
@@ -177,7 +177,7 @@ export function RangeBar({
       )}
 
       {rowsFirst && rowsLast && (
-        <div className="text-[9px] text-muted">
+        <div className="text-[10px] text-muted">
           实际返回 <b className="font-mono text-secondary">{rowsFirst}</b> ~
           <b className="font-mono text-secondary"> {rowsLast}</b>
         </div>
@@ -199,16 +199,16 @@ export function RangeStatsStrip({ stats, scope = 'selected' }: { stats: RangeSta
   const fmtPct = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`)
   const yi = stats.amount != null ? stats.amount / 1e8 : null
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border/40 bg-base/20 px-3 py-1.5 text-[10px]">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-border/40 bg-base/30 px-4 py-2.5 text-[11px]">
       {/* 明确"这是所选区间"：拖动缩放条之后图上的可见窗口会变窄，
           而这几个数是按整个所选区间算的 —— 不写清楚就会有人拿它解释缩放后的形态 */}
-      <span className="text-muted/70" title={scope === 'visible'
+      <span className="text-muted/80 font-medium" title={scope === 'visible'
         ? '拖动缩放条后，这里统计的是当前看得见的那一段（不是上面选的区间）'
         : '上面选的区间（拖动缩放条不影响这里的数字）'}>
         {scope === 'visible' ? '当前视窗' : '所选区间'}
       </span>
       <Cell label="区间涨跌（收盘→收盘）">
-        <span className={cn('font-mono font-medium', pctCls)}>{fmtPct(stats.pct)}</span>
+        <span className={cn('font-mono font-semibold', pctCls)}>{fmtPct(stats.pct)}</span>
       </Cell>
       <Cell label="最大回撤">
         <span className="font-mono text-secondary">
@@ -220,11 +220,11 @@ export function RangeStatsStrip({ stats, scope = 'selected' }: { stats: RangeSta
       </Cell>
       <Cell label="区间最高">
         <span className="font-mono text-secondary">{stats.high?.toFixed(2) ?? '—'}</span>
-        <span className="ml-1 font-mono text-[9px] text-muted">{stats.highDate}</span>
+        <span className="ml-1 font-mono text-[10px] text-muted">{stats.highDate}</span>
       </Cell>
       <Cell label="区间最低">
         <span className="font-mono text-secondary">{stats.low?.toFixed(2) ?? '—'}</span>
-        <span className="ml-1 font-mono text-[9px] text-muted">{stats.lowDate}</span>
+        <span className="ml-1 font-mono text-[10px] text-muted">{stats.lowDate}</span>
       </Cell>
       {yi != null && (
         <Cell label="成交额合计">
@@ -237,7 +237,7 @@ export function RangeStatsStrip({ stats, scope = 'selected' }: { stats: RangeSta
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-baseline gap-1">
+    <span className="inline-flex items-baseline gap-1.5">
       <span className="text-muted">{label}</span>
       {children}
     </span>
@@ -253,22 +253,22 @@ function Cell({ label, children }: { label: string; children: React.ReactNode })
 export function NameTrace({ data }: { data: StockNameHistory | undefined }) {
   if (!data || !data.renamed) return null
   return (
-    <div className="rounded-lg border border-border/40 bg-base/20 px-3 py-1.5 text-[10px] leading-relaxed">
-      <span className="text-muted">简称轨迹</span>
-      <span className="ml-1 text-muted/60">（依据本地 {data.snapshots} 份龙虎榜快照里的历史简称）</span>
-      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+    <div className="rounded-lg border border-border/40 bg-base/30 px-4 py-2.5 text-[11px] leading-relaxed">
+      <span className="font-medium text-foreground">简称轨迹</span>
+      <span className="ml-1.5 text-muted/70">（依据本地 {data.snapshots} 份龙虎榜快照里的历史简称）</span>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
         {data.bands.map((b, i) => (
-          <span key={`${b.name}-${b.first_seen}`} className="inline-flex items-baseline gap-1">
+          <span key={`${b.name}-${b.first_seen}`} className="inline-flex items-baseline gap-1.5">
             {i > 0 && <span className="text-muted/50">→</span>}
             <span className="font-medium text-foreground">{b.name}</span>
-            <span className="font-mono text-[9px] text-muted">
+            <span className="font-mono text-[10px] text-muted">
               {b.first_seen} ~ {b.last_seen}（见到 {b.n} 次）
             </span>
           </span>
         ))}
       </div>
       {data.changes.map(c => (
-        <div key={`${c.from}-${c.to}`} className="mt-0.5 text-muted">
+        <div key={`${c.from}-${c.to}`} className="mt-1 text-muted">
           改名发生在 <b className="font-mono text-secondary">{c.after}</b> 之后、
           <b className="font-mono text-secondary"> {c.before}</b> 之前
           {c.gap_days != null ? `（${c.gap_days} 天窗口）` : ''}
@@ -313,17 +313,17 @@ export function BarReadout({
   const price = (v: number) => v.toFixed(2)
   return (
     <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-x-1 rounded-lg border border-border/40 bg-base/20 px-3 py-1 font-mono text-[10px] tabular-nums"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-border/40 bg-base/30 px-4 py-2 font-mono text-[11px] tabular-nums"
       title={`十字光标所在的那根 K${rowsUnitHint ? `　${rowsUnitHint}` : ''}`}
     >
-      <span className={hovered ? 'text-foreground' : 'text-muted'}>
+      <span className={`font-medium ${hovered ? 'text-foreground' : 'text-muted'}`}>
         {row.date}{hovered ? '' : '（最新）'}
       </span>
       <span className="text-muted">开 <span className="text-secondary">{price(row.open)}</span></span>
       <span className="text-muted">高 <span className="text-secondary">{price(row.high)}</span></span>
       <span className="text-muted">低 <span className="text-secondary">{price(row.low)}</span></span>
-      <span className="text-muted">收 <span className={`font-medium ${cls}`}>{price(row.close)}</span></span>
-      <span className={`${cls} font-medium`}>{pct == null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`}</span>
+      <span className="text-muted">收 <span className={`font-semibold ${cls}`}>{price(row.close)}</span></span>
+      <span className={`${cls} font-semibold`}>{pct == null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`}</span>
       <span className="text-muted">量 <span className="text-secondary">{fmtVol(row.volume)}</span></span>
       <span className="text-muted">额 <span className="text-secondary">{fmtAmt(row.amount)}</span></span>
     </div>

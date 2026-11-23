@@ -224,6 +224,43 @@ def _paper_position_part(positions: list[dict], close: float | None, raw_close: 
     )
 
 
+def _risk_guard_part(guard) -> str:
+    """退市红线上下文 —— 让 AI 知道「价位」成立在一个可能明天不成立的前提上。
+
+    为什么不交给模型自己从财务表推：财务表只给 2 期、且没有「连续 20 个交易日
+    低于面值」这种逐日计数；模型看到 0.92 元只会说「低价股弹性大」。反过来，
+    一旦把规则距离摊在它面前，它就不会再写「下方支撑坚实」这种与退市事实
+    冲突的句子 —— 这不是靠提示语约束，而是靠把判据喂进去。
+
+    只在真的有红线时注入：普通票注入一段「无红线」既浪费 token，也会让模型
+    把注意力从量价上挪开。
+    """
+    if guard is None:
+        return ""
+    risky = guard.is_st or any(g.status in ("triggered", "counting", "near") for g in guard.gates)
+    if not risky:
+        return ""
+    lines = [
+        "",
+        f"以下是交易所对该标的的强制退市红线判定（本地按规则逐日计算，不是预测，"
+        f"数据截至 {guard.as_of or '未知'}）：",
+    ]
+    for g in guard.gates:
+        lines.append(f"- {g.label}（{g.rule}）：{g.detail}")
+    if guard.counts.get("equity_trend"):
+        lines.append(f"- 净资产趋势：{guard.counts['equity_trend']}")
+    lines.extend([
+        "",
+        "**硬约束（必须遵守）**：",
+        "1. 上文所有价位（支撑/压力）与形态结论，都成立在「该标的仍在挂牌交易」这一前提下。"
+        "若面值或财务红线已触发 / 正在累计，必须在报告开头用一句话点明具体规则与剩余交易日，不得省略。",
+        "2. 不得输出与该前提矛盾的表述（如「下方支撑坚实」「估值修复空间」「超跌反弹可期」），"
+        "也不得用技术形态对冲退市风险。",
+        "3. 不得给出摘帽 / 不退市的概率判断 —— 本地不含已退市样本，任何概率都是编的。",
+    ])
+    return "\n".join(lines)
+
+
 def _build_user_prompt(
     kline_tail: list[dict],
     fins: dict[str, list[dict]],
@@ -234,6 +271,7 @@ def _build_user_prompt(
     asset_type: str = "stock",
     paper_positions: list[dict] | None = None,
     raw_close: float | None = None,
+    risk_guard=None,
 ) -> str:
     """构建用户消息:标的 + 价位摘要 + 技术指标 JSON + 财务摘要 + 关注点 (+ 虚拟持仓)。
 
@@ -288,6 +326,9 @@ def _build_user_prompt(
     paper_part = _paper_position_part(paper_positions or [], close, raw_close)
     if paper_part:
         parts.extend(["", paper_part])
+    risk_part = _risk_guard_part(risk_guard)
+    if risk_part:
+        parts.append(risk_part)
     return "\n".join(parts)
 
 
@@ -374,9 +415,16 @@ async def analyze_stock_stream(
         raw_close = float(df.tail(1)["raw_close"][0]) if "raw_close" in df.columns else None
 
         kline_tail = _clean_rows(df, _KLINE_KEEP_COLS)
+        # 退市红线：复用上面已加载的日线，不再落一次盘。失败静默（补充信息）。
+        risk_guard = None
+        try:
+            from app.services.delisting_guard import build_risk_guard
+            risk_guard = build_risk_guard(repo, symbol, prices=df)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("退市红线计算失败 (跳过注入): %s", e)
         user_prompt = _build_user_prompt(kline_tail, fins, levels, close, symbol, focus,
                                          asset_type=asset_type, paper_positions=paper_positions,
-                                         raw_close=raw_close)
+                                         raw_close=raw_close, risk_guard=risk_guard)
         got_content = False
         async for delta in stream_ai_text(
             [

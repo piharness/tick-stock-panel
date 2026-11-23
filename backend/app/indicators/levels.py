@@ -59,6 +59,145 @@ LEVEL_TYPES = {
 # 1. 压力位 / 支撑位 —— 成交量分布 (Volume Profile)
 # ================================================================
 
+def _chip_weights(df: pl.DataFrame, bins: int = 40):
+    """筹码分布内核 —— 换手率衰减模型的**唯一**实现点。
+
+    它被两处消费，两处必须看到同一组桶边界与同一组权重，否则
+    「POC 线」与「分布图的最高柱」会指向不同价位（同一真相被写两遍）：
+
+      - `_support_resistance`：只取 POC + 前 2 个密集区 → 图上 3 条水平线
+      - `compute_chip_distribution`：取全部 40 桶 → 横向分布图 + 获利盘/套牢盘
+
+    ## 分摊方式：按价格区间**重叠长度**，不是全给中心桶
+
+    早先的实现把一根 K 线的成交量整份摊到它覆盖的每个桶（`v / n_buckets`），
+    等于假设这根 K 线的成交在 [low, high] 上均匀分布，但桶内位置又被当成矩形。
+    当窗口内价格跨度大（除权边界 / 次新 / 仙股）时桶宽被撑到 0.5 元以上，
+    现行价附近的几十根 K 线全挤进一两个桶，获利盘比例可以偏 50 个百分点
+    （实测 688496.SH：分桶 63.7% vs 精确积分 13.3%，而全样本**均值无偏**
+    0.494 vs 0.498 —— 无偏的噪声型错误，只看汇总永远发现不了）。
+
+    现在按每根 K 线与每个桶的价格**重叠长度**加权分摊，桶内不再有位置假设，
+    与 `_profit_split` 的精确积分口径一致（差异只剩离散化，< 半个桶宽）。
+
+    返回 (edges, chips)；edges 长度 bins+1，chips 长度 bins。数据不足返回 (None, None)。
+    """
+    if df.is_empty() or "volume" not in df.columns or df.height < 20:
+        return None, None
+
+    hi = float(df["high"].max())
+    lo = float(df["low"].min())
+    if not (hi > lo > 0):
+        return None, None
+
+    n = df.height
+    step = (hi - lo) / bins
+    edges = [lo + i * step for i in range(bins + 1)]
+
+    highs = df["high"].to_numpy().astype(float)
+    lows = df["low"].to_numpy().astype(float)
+    vols = df["volume"].to_numpy().astype(float)
+    if "turnover_rate" in df.columns:
+        turnovers = df["turnover_rate"].to_numpy().astype(float)
+        turnovers = [0.0 if (t is None or t != t) else float(t) for t in turnovers]
+    else:
+        turnovers = [0.0] * n
+
+    # 第 i 根 K 线在"今天"的存活权重 = vol_i × Π_{k=i+1..n-1}(1 - t_k)
+    # 反序遍历一次即可；与逐日递推 `chips *= (1-t); chips += vol` 严格等价。
+    decay_after = [1.0] * n
+    acc = 1.0
+    for i in range(n - 1, -1, -1):
+        decay_after[i] = acc
+        t = max(0.0, min(float(turnovers[i] or 0.0), 100.0)) / 100.0
+        acc *= (1.0 - t)
+
+    chips = [0.0] * bins
+    for i in range(n):
+        w = float(vols[i] or 0.0) * decay_after[i]
+        if w <= 0:
+            continue
+        lo_i, hi_i = float(lows[i]), float(highs[i])
+        span = hi_i - lo_i
+        if span <= 0:
+            continue
+        b0 = max(0, min(bins - 1, int((lo_i - lo) / step)))
+        b1 = max(0, min(bins - 1, int((hi_i - lo) / step)))
+        if b1 < b0:
+            b0, b1 = b1, b0
+        covered = 0.0
+        for b in range(b0, b1 + 1):
+            seg = min(hi_i, edges[b + 1]) - max(lo_i, edges[b])
+            if seg > 0:
+                chips[b] += w * seg / span
+                covered += seg
+        # 浮点边界残差（< 1e-9 量级）归到中心桶，避免总额对不上权重和
+        if covered < span * 0.999:
+            chips[min(max(b0, 0), bins - 1)] += w * max(0.0, 1.0 - covered / span)
+
+    return edges, chips
+
+
+def _profit_split(df: pl.DataFrame, close: float) -> dict | None:
+    """获利盘 / 套牢盘 / 近处套牢盘的**精确积分**（不分桶）。
+
+    每根 K 线的成交在 [low, high] 上均匀，落在现价以下的比例就是区间重叠长度占比。
+    与 `_chip_weights` 用同一组换手衰减权重，但不经过任何离散化 —— 三个标量
+    不受桶宽影响，价格跨度大的票也不会失真。
+
+    分布图（`compute_chip_distribution` 的 prices/weights）仍走 40 桶，那是**画图**
+    必须的离散化；标量走这里。两者差异只来自离散化，不会出现"图上数柱子与标称值
+    差 30 个百分点"。
+    """
+    if df.is_empty() or "volume" not in df.columns or df.height < 20:
+        return None
+    n = df.height
+    highs = df["high"].to_numpy().astype(float)
+    lows = df["low"].to_numpy().astype(float)
+    vols = df["volume"].to_numpy().astype(float)
+    if "turnover_rate" in df.columns:
+        tr = df["turnover_rate"].to_numpy().astype(float)
+        tr = [0.0 if (t is None or t != t) else float(t) for t in tr]
+    else:
+        tr = [0.0] * n
+
+    decay_after = [1.0] * n
+    acc = 1.0
+    for i in range(n - 1, -1, -1):
+        decay_after[i] = acc
+        t = max(0.0, min(float(tr[i] or 0.0), 100.0)) / 100.0
+        acc *= (1.0 - t)
+
+    total = below = 0.0
+    cost_sum = 0.0
+    caps = {0.05: close * 1.05, 0.10: close * 1.10, 0.20: close * 1.20}
+    over = {k: 0.0 for k in caps}
+    for i in range(n):
+        w = float(vols[i] or 0.0) * decay_after[i]
+        if w <= 0:
+            continue
+        lo_i, hi_i = float(lows[i]), float(highs[i])
+        span = hi_i - lo_i
+        if span <= 0:
+            continue
+        total += w
+        cost_sum += w * (lo_i + hi_i) / 2.0
+        below += w * min(1.0, max(0.0, (min(hi_i, close) - lo_i) / span))
+        for k, cap in caps.items():
+            seg = min(hi_i, cap) - max(lo_i, close)
+            if seg > 0:
+                over[k] += w * seg / span
+
+    if total <= 0:
+        return None
+    return {
+        "profit_ratio": below / total,
+        "trapped_ratio": 1.0 - below / total,
+        "overhead": {f"p{int(k * 100)}": over[k] / total for k in sorted(caps)},
+        "avg_cost": cost_sum / total,
+    }
+
+
 def _support_resistance(df: pl.DataFrame, bins: int = 40) -> list[dict]:
     """筹码分布(换手率衰减模型) —— 国内主流 A 股支撑/压力位算法。
 
@@ -86,55 +225,9 @@ def _support_resistance(df: pl.DataFrame, bins: int = 40) -> list[dict]:
       - POC(控制点):当前筹码量最大的桶(=最多人持仓的成本区), strong
       - 其他高筹码区:高于均值, medium, 最多 2 个
     """
-    if df.is_empty() or "volume" not in df.columns or df.height < 20:
+    edges, chips = _chip_weights(df, bins)
+    if edges is None:
         return []
-
-    hi = float(df["high"].max())
-    lo = float(df["low"].min())
-    if not (hi > lo > 0):
-        return []
-
-    n = df.height
-
-    # 桶边界:bins 个桶需要 bins-1 个内部 break
-    step = (hi - lo) / bins
-    edges = [lo + i * step for i in range(bins + 1)]
-
-    # 取换手率序列(百分数, 如 1.23 表示 1.23%)。无该字段则退化为纯累加(无衰减)。
-    has_turnover = "turnover_rate" in df.columns
-    turnovers = df["turnover_rate"].to_list() if has_turnover else [0.0] * n
-
-    highs = df["high"].to_list()
-    lows = df["low"].to_list()
-    vols = df["volume"].to_list()
-
-    # 逐日迭代: 保留各桶的"当前筹码量"。
-    # 顺序: 从老(i=0)到新(i=n-1)。每日先把存量按 (1 - turnover) 衰减, 再叠加当日新增。
-    chips = [0.0] * bins
-    for i in range(n):
-        t = float(turnovers[i] or 0)
-        # 换手率正常 0~100, 异常值(负/超大)钳制到 [0, 1] 区间比例
-        decay_ratio = 1.0 - max(0.0, min(t, 100.0)) / 100.0
-
-        # 1) 存量筹码按今日换手率衰减(被卖掉的部分移除)
-        if decay_ratio < 1.0:
-            for k in range(bins):
-                chips[k] *= decay_ratio
-
-        # 2) 当日新增成交按 high~low 区间分摊到对应价位桶
-        v = vols[i] or 0
-        if v > 0:
-            k_low = min(int((lows[i] - lo) / step), bins - 1)
-            k_high = min(int((highs[i] - lo) / step), bins - 1)
-            if k_low > k_high:
-                k_low, k_high = k_high, k_low
-            if k_high < 0 or k_low >= bins:
-                continue
-            k_low = max(k_low, 0)
-            k_high = min(k_high, bins - 1)
-            share = v / (k_high - k_low + 1)
-            for k in range(k_low, k_high + 1):
-                chips[k] += share
 
     # 只保留有筹码的桶
     bin_ids = [k for k in range(bins) if chips[k] > 0]
@@ -163,6 +256,85 @@ def _support_resistance(df: pl.DataFrame, bins: int = 40) -> list[dict]:
         out.append({"value": round(mid, 2), "label": "成交密集区",
                     "type": "sr", "side": _side(mid, close), "strength": "medium"})
     return out
+
+
+# ================================================================
+# 1b. 筹码分布明细 —— 横向分布图 + 获利盘 / 套牢盘 / 集中度
+# ================================================================
+
+def compute_chip_distribution(df: pl.DataFrame, bins: int = 40) -> dict | None:
+    """完整筹码分布(供个股分析页的横向分布图)。
+
+    这里**不产生新算法**，只是把 `_chip_weights` 的中间结果摊开，并算出
+    几个可解释的派生量。全部是价格与成交量的确定性函数 —— 它们描述"成本
+    在哪里"，不预测"会涨到哪"。页面上任何"抛压低→超额"的说法都必须来自
+    独立回测，不能从这张图读出来。
+
+    **不截断样本**：`_support_resistance` 吃的是同一份 df，如果这里再 tail(N)
+    截一刀，两个消费者会在同一张图上给出两个 POC（实测差 0.11 元）。样本长度
+    由调用方决定（`/levels` 传多少天就算多少天），这里只如实报告 df.height。
+    换手率衰减本身就会让高换手票的老筹码自然消失，不需要额外的窗口裁剪。
+
+    返回:
+      prices     桶中心价(升序)
+      weights    该桶筹码量(与 prices 等长，已归一化到合计 1)
+      poc        筹码最重的价位
+      avg_cost   筹码加权平均成本
+      profit_ratio  现价及以下的筹码占比 —— "获利盘"
+      trapped_ratio 现价以上的筹码占比 —— "套牢盘"(即上方供给)
+      concentration 90% 筹码所在价格带的宽度 / 中位价(越小越集中)
+      overhead     现价 +5% / +10% / +20% 以内的套牢盘占比(近处阻力密度)
+    """
+    edges, chips = _chip_weights(df, bins)
+    if edges is None:
+        return None
+    total = sum(chips)
+    if total <= 0:
+        return None
+
+    close = float(df.tail(1)["close"][0])
+    mids = [(edges[k] + edges[k + 1]) / 2 for k in range(bins)]
+
+    # 三个标量走精确积分（不分桶）：价格跨度大的票分桶误差可达 50pp。
+    # 分布图的 prices/weights 仍是 40 桶 —— 那是画图必须的离散化。
+    split = _profit_split(df, close)
+    if split is None:
+        return None
+    below = split["profit_ratio"] * total
+    above = total - below
+    avg_cost = split["avg_cost"]
+
+    # 90% 筹码带：按筹码量升序累加，找到 5% 与 95% 分位所在价位
+    order = sorted(range(bins), key=lambda k: mids[k])
+    acc = 0.0
+    lo_p = hi_p = mids[order[0]]
+    for k in order:
+        acc += chips[k]
+        if acc <= total * 0.05:
+            lo_p = mids[k]
+        if acc <= total * 0.95:
+            hi_p = mids[k]
+    mid_med = (lo_p + hi_p) / 2
+    concentration = (hi_p - lo_p) / mid_med if mid_med > 0 else None
+
+    poc_mid = mids[max(range(bins), key=lambda k: chips[k])]
+    return {
+        "prices": [round(p, 2) for p in mids],
+        "weights": [round(w / total, 6) for w in chips],
+        "poc": round(poc_mid, 2),
+        "avg_cost": round(avg_cost, 2),
+        "close": round(close, 2),
+        "profit_ratio": round(below / total, 4),
+        "trapped_ratio": round(above / total, 4),
+        "concentration": round(concentration, 4) if concentration is not None else None,
+        "overhead": {
+            "p5": round(split["overhead"]["p5"], 4),
+            "p10": round(split["overhead"]["p10"], 4),
+            "p20": round(split["overhead"]["p20"], 4),
+        },
+        "span": {"low": round(mids[0], 2), "high": round(mids[-1], 2)},
+        "lookback": int(df.height),
+    }
 
 
 # ================================================================

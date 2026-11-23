@@ -1,9 +1,9 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useMemo, useState } from 'react'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import { chartTheme, getTheme, useTheme } from '@/lib/theme'
 import * as echarts from 'echarts'
 import type { ECharts, EChartsOption } from 'echarts'
 import type { KlineRow, LevelSeries } from '@/lib/api'
-import { clampToDates, panWindow, zoomWindow } from '@/lib/chartRange'
+import { clampToDates } from '@/lib/chartRange'
 
 /**
  * 个股分析专用日 K 图表。
@@ -50,19 +50,33 @@ export interface PriceLevel {
  * hint 的措辞全部来自后端 `app/indicators/levels.py` 的算法注释 —— 页面上每个
  * 能打开的开关都要能回答"这条线是什么、怎么算的"。之前只有数量没有含义，
  * 看不懂的人只能全开，图上 20 条线互相压着，等于没有价位。
+ *
+ * `kind` 决定这条线在时间轴上的画法，是本节最重要的一列：
+ *   - `snapshot`：后端用**截至最新交易日**的数据算出一个数（筹码密集区、
+ *     枢轴档位、60/250 日极值、未回补缺口、近期回撤位、当前价附近的整数位）。
+ *     它只描述"今天"的位置；画到 2024 年那一段等于把未来的结论贴到过去。
+ *     所以这类线只在视窗包含最新一根 K 时出现，且只画最后两根的短横线。
+ *   - `series`：逐日递推的带（MA±kσ / MA±k·ATR），第 t 根只用到 t 及之前，
+ *     可以整段画，也不存在"提前知道"。
  */
-export const LEVEL_GROUPS: { key: LevelType; label: string; color: string; hint: string }[] = [
-  { key: 'sr',        label: '压力支撑',     color: '#F97316', hint: '筹码分布（按换手率衰减）：每个价位还剩多少持仓成本。现价上方最密集的是压力，下方最密集的是支撑。' },
-  { key: 'pivot',     label: '枢轴点',       color: '#8B5CF6', hint: '经典枢轴：P=(H+L+C)/3，再由上一根 K 推出 R1/R2/R3 与 S1/S2/S3。档位按钮控制画到第几档。' },
-  { key: 'extreme',   label: '前高前低',     color: '#EAB308', hint: '60 日与 250 日极值，以及近期摆动高低点。' },
-  { key: 'boll',      label: '布林带',       color: '#F97316', hint: 'MA20 ± 2σ。它是一条波动带，不等于真实的支撑压力。' },
-  { key: 'keltner_s', label: 'Keltner短期',  color: '#06B6D4', hint: 'MA20 ± 2×ATR，约一个月级别的波动带。' },
-  { key: 'keltner_m', label: 'Keltner中期',  color: '#22D3EE', hint: 'MA60 ± 2.5×ATR，约一个季度。' },
-  { key: 'keltner_l', label: 'Keltner长期',  color: '#67E8F9', hint: 'MA120 ± 3×ATR，用来划趋势边界。' },
-  { key: 'atr_stop',  label: 'ATR波动通道',  color: '#EF4444', hint: '收盘 ±2×ATR 的动态带。中性命名，不是买卖指令。' },
-  { key: 'gap',       label: '缺口位',       color: '#EC4899', hint: '未回补的跳空缺口：向上缺口=当日最低>前日最高，向下相反。缺口常被当作支撑/阻力。' },
-  { key: 'fib',       label: '斐波那契',     color: '#F59E0B', hint: '近期高低点之间的回撤位（0.236 ~ 0.786）。' },
-  { key: 'round',     label: '整数关口',     color: '#71717A', hint: '心理整数位（如 5.00 / 10.00），只作弱参考。' },
+export const LEVEL_GROUPS: {
+  key: LevelType
+  label: string
+  color: string
+  hint: string
+  kind: 'snapshot' | 'series'
+}[] = [
+  { key: 'sr',        kind: 'snapshot', label: '压力支撑',     color: '#F97316', hint: '筹码分布（按换手率衰减）：每个价位还剩多少持仓成本。现价上方最密集的是压力，下方最密集的是支撑。按最新交易日计算，只画在今天。' },
+  { key: 'pivot',     kind: 'snapshot', label: '枢轴点',       color: '#8B5CF6', hint: '经典枢轴：P=(H+L+C)/3，再由上一根 K 推出 R1/R2/R3 与 S1/S2/S3。档位按钮控制画到第几档。' },
+  { key: 'extreme',   kind: 'snapshot', label: '前高前低',     color: '#EAB308', hint: '60 日与 250 日极值，以及近期摆动高低点。极值截至最新交易日。' },
+  { key: 'boll',      kind: 'series',   label: '布林带',       color: '#F97316', hint: 'MA20 ± 2σ。它是一条波动带，不等于真实的支撑压力。逐日计算，可整段回溯。' },
+  { key: 'keltner_s', kind: 'series',   label: 'Keltner短期',  color: '#06B6D4', hint: 'MA20 ± 2×ATR，约一个月级别的波动带。' },
+  { key: 'keltner_m', kind: 'series',   label: 'Keltner中期',  color: '#22D3EE', hint: 'MA60 ± 2.5×ATR，约一个季度。' },
+  { key: 'keltner_l', kind: 'series',   label: 'Keltner长期',  color: '#67E8F9', hint: 'MA120 ± 3×ATR，用来划趋势边界。' },
+  { key: 'atr_stop',  kind: 'series',   label: 'ATR波动通道',  color: '#EF4444', hint: '收盘 ±2×ATR 的动态带。中性命名，不是买卖指令。' },
+  { key: 'gap',       kind: 'snapshot', label: '缺口位',       color: '#EC4899', hint: '未回补的跳空缺口：向上缺口=当日最低>前日最高，向下相反。「未回补」是截至最新交易日的判断。' },
+  { key: 'fib',       kind: 'snapshot', label: '斐波那契',     color: '#F59E0B', hint: '最近 120 日高低点之间的回撤位（0.236 ~ 0.786）。区间端点截至最新交易日。' },
+  { key: 'round',     kind: 'snapshot', label: '整数关口',     color: '#71717A', hint: '当前价 ±10% 范围内的心理整数位（如 5.00 / 10.00），只作弱参考。' },
 ]
 
 // 通道曲线元数据(单一数据源):供 buildOption 画线 + 右侧面板取最新值共用。
@@ -70,17 +84,17 @@ export const LEVEL_GROUPS: { key: LevelType; label: string; color: string; hint:
 //   group:      属于哪个价位开关组(开关该组即开关这条曲线)
 //   endLabel:   右侧端点标签(显示最新值的文字)
 const CURVE_DEFS: { alignedKey: string; group: LevelType; endLabel: string; color: string; dashed?: boolean }[] = [
-  { alignedKey: 'boll_upper',     group: 'boll',      endLabel: '布林上轨', color: '#F97316', dashed: true },
-  { alignedKey: 'boll_lower',     group: 'boll',      endLabel: '布林下轨', color: '#F97316', dashed: true },
-  { alignedKey: 'boll_mid',       group: 'boll',      endLabel: '布林中轨', color: '#FB923C', dashed: false },
-  { alignedKey: 'keltner_s_upper',group: 'keltner_s', endLabel: 'Keltner短上', color: '#06B6D4', dashed: true },
-  { alignedKey: 'keltner_s_lower',group: 'keltner_s', endLabel: 'Keltner短下', color: '#06B6D4', dashed: true },
-  { alignedKey: 'keltner_m_upper',group: 'keltner_m', endLabel: 'Keltner中上', color: '#22D3EE', dashed: true },
-  { alignedKey: 'keltner_m_lower',group: 'keltner_m', endLabel: 'Keltner中下', color: '#22D3EE', dashed: true },
-  { alignedKey: 'keltner_l_upper',group: 'keltner_l', endLabel: 'Keltner长上', color: '#67E8F9', dashed: true },
-  { alignedKey: 'keltner_l_lower',group: 'keltner_l', endLabel: 'Keltner长下', color: '#67E8F9', dashed: true },
-  { alignedKey: 'atr_stop',       group: 'atr_stop',  endLabel: 'ATR下轨', color: '#EF4444', dashed: true },
-  { alignedKey: 'atr_tp',         group: 'atr_stop',  endLabel: 'ATR上轨', color: '#F87171', dashed: true },
+  { alignedKey: 'boll_upper',     group: 'boll',      endLabel: '上轨', color: '#F97316', dashed: true },
+  { alignedKey: 'boll_lower',     group: 'boll',      endLabel: '下轨', color: '#F97316', dashed: true },
+  { alignedKey: 'boll_mid',       group: 'boll',      endLabel: '中轨', color: '#FB923C', dashed: false },
+  { alignedKey: 'keltner_s_upper',group: 'keltner_s', endLabel: 'K短上', color: '#06B6D4', dashed: true },
+  { alignedKey: 'keltner_s_lower',group: 'keltner_s', endLabel: 'K短下', color: '#06B6D4', dashed: true },
+  { alignedKey: 'keltner_m_upper',group: 'keltner_m', endLabel: 'K中上', color: '#22D3EE', dashed: true },
+  { alignedKey: 'keltner_m_lower',group: 'keltner_m', endLabel: 'K中下', color: '#22D3EE', dashed: true },
+  { alignedKey: 'keltner_l_upper',group: 'keltner_l', endLabel: 'K长上', color: '#67E8F9', dashed: true },
+  { alignedKey: 'keltner_l_lower',group: 'keltner_l', endLabel: 'K长下', color: '#67E8F9', dashed: true },
+  { alignedKey: 'atr_stop',       group: 'atr_stop',  endLabel: 'ATR下', color: '#EF4444', dashed: true },
+  { alignedKey: 'atr_tp',         group: 'atr_stop',  endLabel: 'ATR上', color: '#F87171', dashed: true },
 ]
 
 // ===== 预留:标记 / 区间(后续新闻面、事件区间用) =====
@@ -131,6 +145,14 @@ interface Props {
   onHoverDate?: (date: string | null) => void
   /** 视窗变化（百分比）。页面据此算"当前可视区间"的统计 */
   onViewportChange?: (v: { start: number; end: number }) => void
+  /**
+   * 最新交易日收盘价（来自关键价位接口，与 levels 同源）。
+   *
+   * 不能用 `rows` 的最后一根代替：用户可以把区间拖到 2024 年，那时 rows 的末根
+   * 是 2024 年的价，而下方价位是"今天"算的 —— 两者相除会得出一个既不是当期
+   * 涨幅、也不是当前距压力的数。缺这个值时退回 rows 末根，并由文案说明口径。
+   */
+  lastClose?: number
 
   /** 预留:点击某根 K 线 */
   onDateClick?: (date: string) => void
@@ -138,24 +160,27 @@ interface Props {
   className?: string
 }
 
-const VOL_PANE_H = 90
+// 成交量副图高度。主图 ≈ 4.4 倍于此：K 线是主角，量柱只需要看得出放缩。
+// 原来是 90（主图 328），和弹窗图（纯 K 区约 490）比显得局促 —— 高度是"好看"
+// 里最容易被忽略的一项，同样的蜡烛数，纵向空间翻倍看起来就是另一种质感。
+const VOL_PANE_H = 80
 
-/** 给页面用的命令式句柄：键盘平移/缩放、重置视图（复位到页面选的区间）。 */
-export interface AnalysisKChartHandle {
-  /** 按视窗宽度的百分比平移（正=向后看），自动夹在 [0,100] 内 */
-  pan: (deltaPct: number) => void
-  /** 以当前视窗中心缩放：factor<1 放大（看得更少），>1 缩小 */
-  zoom: (factor: number) => void
-  /** 丢掉用户缩放，回到页面给的 initialRange */
-  reset: () => void
-}
-
-export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function AnalysisKChart({
+/**
+ * 图表本身不暴露命令式句柄。
+ *
+ * 曾经有一个 `pan / zoom / reset` 的 ref，专为页面上的 ←/→/+/−/0 键盘快捷键服务。
+ * 快捷键下线后它没有调用方了 —— 留着一个只有死代码在用的 ref，会让下一个人
+ * 以为某处还在靠它工作。视图复位仍由工具条上的「重置视图」按钮提供。
+ */
+export function AnalysisKChart({
   rows,
   levels,
   series,
   seriesDates,
-  defaultLevelTypes = ['sr', 'pivot', 'keltner_s'],
+  // 默认只开布林带：它是逐日递推的带，整段回溯都成立。
+  // 「今日价位」那六组（筹码密集区/枢轴/极值/缺口/斐波/整数）默认全关 ——
+  // 一次开六组会把图压成一张横线网，而它们只描述今天这一个时点。
+  defaultLevelTypes = ['boll'],
   initialRange,
   markers,
   ranges,
@@ -163,9 +188,10 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
   onDateClick,
   onHoverDate,
   onViewportChange,
+  lastClose,
   height = 460,
   className,
-}, ref) {
+}: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const chartInstRef = useRef<ECharts | null>(null)
   /** seriesIndex → levelKey 映射, buildOption 填充, ECharts hover 事件反查 */
@@ -186,6 +212,16 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
   /** 上一次上报的 hover 日期 / 视窗，用来去重（每帧都 setState 会卡） */
   const lastHoverRef = useRef<string | null>(null)
   const viewportRafRef = useRef<number | null>(null)
+  /**
+   * 视窗是否包含最新一根 K —— 决定「今日价位」画不画（见 buildOption 的说明）。
+   *
+   * 必须是 state，不能每次在 buildOption 里现算：buildOption 只在 effect 依赖
+   * 变化时执行，而拖动缩放条只改 zoomRef（不触发重渲染）。现算的结果就是
+   * 「拖到 2024 年，图上仍躺着今天的筹码密集区」—— 正是这次要修的那个未来信息。
+   * state 只在跨越 99.5 这条界线时翻转一次，不会每帧重绘。
+   */
+  const [showToday, setShowToday] = useState(true)
+  const showTodayRef = useRef(true)
   // 主题: buildOption 内部用 CT() 动态取色, 这里只负责切换时触发重建
   const theme = useTheme()
   const [activeTypes, setActiveTypes] = useState<Set<LevelType>>(new Set(defaultLevelTypes))
@@ -272,15 +308,25 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
     }
   }, [dates, initialRange, zoomStart])
 
+  // 换股票 / 换区间时，视窗回到 presetZoom，showToday 也要跟着回到它的值
+  useEffect(() => {
+    const v = presetZoom.end >= 99.5
+    if (v !== showTodayRef.current) {
+      showTodayRef.current = v
+      setShowToday(v)
+    }
+  }, [presetZoom])
+
   // 构建 option
   const buildOption = (): EChartsOption => {
     const priceLines = collectPriceLines(levels, activeTypes, pivotRank)
     // 视窗：用户拖过的优先，其次页面给的区间，最后默认最近 120 根
     const zoom = zoomRef.current ?? presetZoom
+    /** 视窗是否包含最新一根 K（由 datazoom 事件维护，见组件级 showToday 的说明） */
 
     // 三段布局:主图 / 成交量 / 缩放条,从上到下累加,各段之间留间距,互不遮挡
     //   [16 顶部] [mainH 主图] [8 间距] [volH 成交量] [12 间距] [SLIDER_H 缩放条] [8 底部]
-    const SLIDER_H = 22
+    const SLIDER_H = 18
     const PAD_TOP = 16
     const GAP_MAIN_VOL = 8        // 主图 ↔ 成交量
     const GAP_VOL_SLIDER = 12     // 成交量 ↔ 缩放条(留足,避免遮挡)
@@ -339,6 +385,7 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
         itemStyle: {
           color: THEME.bull, color0: THEME.bear,
           borderColor: THEME.bull, borderColor0: THEME.bear,
+          cursor: 'pointer',
         },
         markPoint: markPointData.length ? { data: markPointData, animation: false } : undefined,
         markArea: markAreaData.length ? { silent: true, data: markAreaData } : undefined,
@@ -349,6 +396,8 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
       {
         name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
         data: vols, animation: false,
+        // 量柱留 40% 空隙：满格宽会让密集区间糊成一片色块（弹窗图也是 60%）
+        barWidth: '60%',
       },
     ]
 
@@ -357,30 +406,35 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
     // hoveredKey 非空时:命中线加粗高亮,其它线淡化(opacity 0.15),形成聚焦效果。
     const dimming = hoveredKey != null
     for (const p of priceLines) {
+      // 视窗停在历史段时，今日价位整组不出现（见 showToday 的说明）
+      if (!showToday) continue
       const k = levelKey(p.type, p.value)
       const hit = hoveredKey === k
-      const opacity = dimming ? (hit ? 1 : 0.12) : 0.7
-      const width = hit ? 2 : 1
+      const opacity = dimming ? (hit ? 1 : 0.12) : 0.85
+      const width = hit ? 2 : 1.4
       series.push({
         name: p.label, type: 'line', silent: false, animation: false,
         symbol: 'none',
-        data: dates.map(() => p.value),
+        data: snapshotLineData(dates, p.value, showToday),
         // 默认 z=1 在蜡烛(z=2)之下; 命中时 zlevel=10 提到独立顶层, 标签不再被遮挡
         z: 1,
         zlevel: hit ? 10 : 0,
         lineStyle: { width, color: p.color, type: 'dashed', opacity },
         itemStyle: { color: p.color },
-        endLabel: {
+        // 端点数值只在 hover 命中时出现。
+        // 常驻标签要求 grid 右侧留 144px（主图被压窄 1/9，是"不如弹窗好看"的主因）；
+        // 而价位名称+数值已经在下方 LevelOverview 里逐条列着，图上再挂一遍是冗余。
+        // hover 时才需要的那个数，就只给 hover 那一根线 —— 两边的 hover 是联动的。
+        endLabel: hit ? {
           show: true,
-          formatter: () => `${p.label} ${p.value.toFixed(2)}`,
-          color: p.color, fontSize: hit ? 10 : 9, fontFamily: 'JetBrains Mono, monospace',
-          fontWeight: hit ? 'bold' : 'normal',
-          backgroundColor: hit ? CT().tooltipBg : CT().infoBarBg,
-          borderColor: hit ? p.color : 'transparent',
-          borderWidth: hit ? 1 : 0,
-          padding: [2, 5], borderRadius: 2,
-          distance: 6,
-        },
+          formatter: () => p.value.toFixed(2),
+          color: p.color, fontSize: 10, fontFamily: 'JetBrains Mono, monospace',
+          fontWeight: 'bold',
+          backgroundColor: CT().tooltipBg,
+          borderColor: p.color, borderWidth: 1,
+          padding: [1, 4], borderRadius: 2,
+          distance: 4,
+        } : undefined,
       })
     }
 
@@ -406,9 +460,10 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
         zlevel: hit ? 10 : 0,
         lineStyle: { width, color: def.color, type: def.dashed === false ? 'solid' : 'dashed', opacity },
         itemStyle: { color: def.color },
-        // 右侧端点标签:显示该通道的最新数值,距绘图区右缘留 6px 间距
+        // 右侧端点标签:显示该通道的最新数值,距绘图区右缘留 6px 间距。
+        // 视窗停在历史段时不显示 —— 那个"最新值"在所选区间里还没发生。
         endLabel: lastVal != null ? {
-          show: true,
+          show: showToday,
           formatter: () => `${lastVal!.toFixed(2)}`,
           color: def.color, fontSize: hit ? 10 : 9, fontFamily: 'JetBrains Mono, monospace',
           fontWeight: hit ? 'bold' : 'normal',
@@ -421,12 +476,14 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
       })
     }
 
-    // 填充 seriesIndex → levelKey 映射(K/成交量索引 0/1 不参与联动)
+    // seriesIndex → levelKey 映射(K/成交量索引 0/1 不参与联动)。
+    // 必须与上面 push 的条件完全一致，否则 hover 高亮会错位到另一条线。
     const keyMap = new Map<number, string>()
-    // series[0]=K线, series[1]=成交量, 之后是按 priceLines + CURVE_DEFS 顺序 push 的
     let si = 2
-    for (const p of priceLines) {
-      keyMap.set(si++, levelKey(p.type, p.value))
+    if (showToday) {
+      for (const p of priceLines) {
+        keyMap.set(si++, levelKey(p.type, p.value))
+      }
     }
     for (const def of CURVE_DEFS) {
       if (!activeTypes.has(def.group)) continue
@@ -439,24 +496,31 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
     return {
       animation: false,
       backgroundColor: 'transparent',
-      // grid.right 留出足够宽度给价位标签文字区:蜡烛只占左侧主区域,
-      // 价位线右端的标签文字显示在这条预留带里,不压在蜡烛上。
-      // 预留 ~144px:最长标签(如「成交密集区(POC) 12.34」)约 13 字符,fontSize 9 等宽。
+      // grid.right 只留一条窄标签带（67px 够放「K短上」这种 3–4 字 + padding）。
+      //
+      // 原来是 144px：所有价位线都挂 endLabel 在 grid 外，需要一条 144px 的标签带。
+      // 代价是主图被压窄 1/9，右侧一大片空白 —— 这正是「不如弹窗图表好看」的主因。
+      // 现在价位文字由下方 LevelOverview 承担（hover 双向高亮还在），图上只留
+      // 曲线的端点值（布林上下轨这类必须贴着线看的东西）。
       grid: [
-        { left: 56, right: 144, top: 16, height: mainH },
-        { left: 56, right: 144, top: volTop, height: volH },
+        { left: 56, right: 67, top: 16, height: mainH },
+        { left: 56, right: 67, top: volTop, height: volH },
       ],
       xAxis: [
         {
           type: 'category', data: dates, boundaryGap: true,
-          axisLine: { lineStyle: { color: CT().grid } },
-          axisLabel: { color: CT().text, fontSize: 10 },
+          // 轴线用 border 而不是 grid：grid 是 6% 透明度的分割线，当年轴线太淡，
+          // 图底部像被裁掉一截；弹窗图表一直用 border，这里对齐。
+          axisLine: { lineStyle: { color: CT().border } },
+          axisLabel: { color: CT().text, fontSize: 11, fontFamily: 'JetBrains Mono, monospace' },
+          axisTick: { show: false },
           splitLine: { show: false },
-          axisPointer: { show: true, label: { show: false } },
         },
         {
           type: 'category', gridIndex: 1, data: dates, boundaryGap: true,
           axisLabel: { show: false }, axisLine: { show: false }, axisTick: { show: false },
+          // 成交量区只要竖线（与主图联动），不要日期标签 —— 日期由主图 x 轴出
+          axisPointer: { label: { show: false } },
         },
       ],
       yAxis: [
@@ -464,24 +528,59 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
           type: logScale ? 'log' : 'value',
           // log 轴不能同时给 scale（会与 type 冲突），交给 ECharts 自适应
           scale: !logScale,
+          // 上下各留 4%：最高/最低那根蜡烛不贴边，十字线也压不到轴线上。
+          // log 轴没有"数据范围外扩"的语义（ECharts 会忽略/告警），只在数值轴上给。
+          boundaryGap: logScale ? undefined : [0.04, 0.04],
+          // 轴线和刻度都不画：数值已经在 splitLine 与轴端标签里，多两条线只是噪声
+          axisLine: { show: false }, axisTick: { show: false },
           splitLine: { lineStyle: { color: CT().grid } },
-          axisLabel: { color: CT().text, fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
+          axisLabel: { color: CT().text, fontSize: 11, fontFamily: 'JetBrains Mono, monospace' },
         },
         { scale: true, gridIndex: 1, splitNumber: 2,
-          // 成交量区不画背景横线
+          // 成交量区不画背景横线，也不要横线指示器
           splitLine: { show: false },
-          axisLabel: { color: CT().text, fontSize: 9, fontFamily: 'JetBrains Mono, monospace',
+          axisLine: { show: false }, axisTick: { show: false },
+          axisPointer: { show: false },
+          axisLabel: { color: CT().text, fontSize: 10, fontFamily: 'JetBrains Mono, monospace',
                        formatter: (v: number) => fmtVol(v) } },
       ],
       dataZoom: [
-        { type: 'inside', xAxisIndex: [0, 1], start: zoom.start, end: zoom.end },
+        // 与弹窗图表同一套鼠标语义：直接拖动=平移，滚轮=缩放，不必按 shift
+        { type: 'inside', xAxisIndex: [0, 1], start: zoom.start, end: zoom.end,
+          moveOnMouseMove: true, zoomOnMouseWheel: true },
         { type: 'slider', xAxisIndex: [0, 1], bottom: sliderBottom, height: SLIDER_H, start: zoom.start, end: zoom.end,
           borderColor: 'transparent', fillerColor: CT().zoomFill,
+          // 拖动时不弹「2024-09-02 ~ 2024-11-15」气泡：它会盖住最下面那几根 K，
+          // 而拖动的目的本来就是看那一段。区间边界看上方区间条即可。
+          showDetail: false,
           handleStyle: { color: '#52525B' }, textStyle: { color: CT().text, fontSize: 10 } },
       ],
-      // 不弹 hover tooltip(用户要求);但保留十字线 axisPointer 作为缩放/定位参照
-      tooltip: { show: false },
-      axisPointer: { link: [{ xAxisIndex: 'all' }] },
+      // 十字虚线 + 轴端数值标签 —— 与个股弹窗的 K 线图同一套做法。
+      //
+      // tooltip 本身是透明的（formatter 返回空串、字号 0），只为激活
+      // `tooltip.axisPointer.type='cross'`；真正的视觉是两条虚线 + 轴端的
+      // crosshairLabel。ECharts 把 cross 只开放给 tooltip 层，所以"不弹 tooltip
+      // 又要 cross"必须走这条透明壳子，而不是关掉 tooltip。
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'cross',
+          crossStyle: { color: CT().crosshair, width: 1, type: 'dashed' },
+        },
+        backgroundColor: 'transparent',
+        borderWidth: 0,
+        textStyle: { fontSize: 0 },
+        formatter: () => '',
+      },
+      axisPointer: {
+        link: [{ xAxisIndex: 'all' }],
+        lineStyle: { color: CT().crosshair, width: 1, type: 'dashed' },
+        label: {
+          backgroundColor: CT().crosshairLabelBg,
+          fontFamily: 'JetBrains Mono, monospace',
+          fontSize: 10,
+        },
+      },
       series,
     }
   }
@@ -532,6 +631,13 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
         const first = Array.isArray(dz) ? dz[0] : null
         if (first && typeof first.start === 'number' && typeof first.end === 'number') {
           zoomRef.current = { start: first.start, end: first.end }
+          // 视窗是否还包着最新一根 —— 只在跨越界线时 setState，
+          // 否则每帧拖动都会重绘整幅图（这条判断是「今日价位」的唯一开关）
+          const nextShowToday = first.end >= 99.5
+          if (nextShowToday !== showTodayRef.current) {
+            showTodayRef.current = nextShowToday
+            setShowToday(nextShowToday)
+          }
           // 拖动时每帧都会触发；rAF 合并成一帧一次上报，页面重算统计不会拖慢拖动
           if (viewportRafRef.current == null) {
             viewportRafRef.current = window.requestAnimationFrame(() => {
@@ -551,43 +657,15 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
     }
     chartInstRef.current.setOption(buildOption(), true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, levels, series, seriesDates, activeTypes, pivotRank, markers, ranges, vlines, height, theme, hoveredKey, initialRange, logScale])
+  }, [rows, levels, series, seriesDates, activeTypes, pivotRank, markers, ranges, vlines, height, theme, hoveredKey, initialRange, logScale, showToday])
 
-  /** 当前视窗（没有用户缩放时就是页面给的默认视窗） */
-  const currentZoom = () => zoomRef.current ?? presetZoom
-
-  /** 把视窗写回图表并上报（键盘平移/缩放、重置都走这一条） */
-  const applyZoom = (start: number, end: number) => {
-    const inst = chartInstRef.current
-    const s = Math.max(0, Math.min(100, start))
-    const e = Math.max(0, Math.min(100, end))
-    if (e - s < 0.5) return              // 太窄没有信息量，直接忽略这次操作
-    zoomRef.current = { start: s, end: e }
-    if (inst) inst.dispatchAction({ type: 'dataZoom', start: s, end: e })
-    onViewportRef.current?.({ start: s, end: e })
-  }
-
-  /** 丢掉用户缩放，回到页面选的区间（按钮与键盘都调它） */
+  /** 丢掉用户缩放，回到页面选的区间（工具条「重置视图」按钮调它） */
   const resetView = () => {
     zoomRef.current = null
     const inst = chartInstRef.current
     if (inst) inst.setOption(buildOption(), true)
     onViewportRef.current?.({ start: presetZoom.start, end: presetZoom.end })
   }
-
-  useImperativeHandle(ref, () => ({
-    // 边界夹取只在 chartRange 的纯函数里做一次（平移/缩放/下标换算同一套）
-    pan: (deltaPct: number) => {
-      const w = panWindow(currentZoom(), deltaPct)
-      applyZoom(w.start, w.end)
-    },
-    zoom: (factor: number) => {
-      const w = zoomWindow(currentZoom(), factor)
-      applyZoom(w.start, w.end)
-    },
-    reset: resetView,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [presetZoom, rows, levels, series, seriesDates, activeTypes, pivotRank, hoveredKey, logScale])
 
   // resize
   useEffect(() => {
@@ -607,50 +685,61 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
     })
   }
 
+  /** 一个价位组开关。两组共用同一套视觉，靠 <span>今日</span> 标签区分语义。 */
+  const groupBtn = (g: typeof LEVEL_GROUPS[number]) => {
+    const active = activeTypes.has(g.key)
+    // 枢轴点数量按当前档位过滤显示;其他组显示原始数量
+    const raw = levels?.[g.key] ?? []
+    const count = g.key === 'pivot'
+      ? raw.filter(p => p.rank === undefined || p.rank <= pivotRank).length
+      : raw.length
+    return (
+      <button
+        key={g.key}
+        onClick={() => toggleType(g.key)}
+        disabled={raw.length === 0}
+        title={`${g.label}（${count} 个）\n${g.hint}`}
+        className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-medium border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+          active
+            ? 'text-foreground'
+            : 'text-muted bg-base/40 border-border/30 hover:border-border/60'
+        }`}
+        style={active ? { borderColor: g.color + '66', backgroundColor: g.color + '1a' } : undefined}
+      >
+        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: active ? g.color : '#52525B' }} />
+        {g.label}
+        <span className="opacity-50">{count}</span>
+      </button>
+    )
+  }
+
   return (
     <div className={className}>
       {/* 图表工具条：左边是价位开关（没有价位数据时不占位），右边是坐标/视窗控制 */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-2">
+      <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
         {levels && (
           <>
-          <span className="text-[10px] text-muted mr-1">关键价位</span>
-          {LEVEL_GROUPS.map(g => {
-            const active = activeTypes.has(g.key)
-            // 枢轴点数量按当前档位过滤显示;其他组显示原始数量
-            const raw = levels[g.key] ?? []
-            const count = g.key === 'pivot'
-              ? raw.filter(p => p.rank === undefined || p.rank <= pivotRank).length
-              : raw.length
-            return (
-              <button
-                key={g.key}
-                onClick={() => toggleType(g.key)}
-                disabled={raw.length === 0}
-                title={`${g.label}（${count} 个）\n${g.hint}`}
-                className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[10px] font-medium border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-                  active
-                    ? 'text-foreground'
-                    : 'text-muted bg-base/40 border-border/30 hover:border-border/60'
-                }`}
-                style={active ? { borderColor: g.color + '66', backgroundColor: g.color + '1a' } : undefined}
-              >
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: active ? g.color : '#52525B' }} />
-                {g.label}
-                <span className="opacity-50">{count}</span>
-              </button>
-            )
-          })}
+          <span className="text-[11px] text-muted mr-0.5">价位</span>
+          {/* 逐日递推的带：整段回溯都成立，可以一直画 */}
+          <span className="text-[10px] text-muted/50" title="逐日递推的波动带：第 t 根只用到 t 及之前的数据，整段回溯都成立">带</span>
+          {LEVEL_GROUPS.filter(g => g.kind === 'series').map(groupBtn)}
+          {/* 快照价位：只描述最新交易日，视窗回到历史段时图上不出现 */}
+          <span
+            className="text-[10px] text-muted/50 ml-1 pl-2 border-l border-border/40"
+            title="按最新交易日算出的单点价位。视窗停在历史段时这些线不会出现 —— 它们不属于那一段。"
+          >今日</span>
+          {LEVEL_GROUPS.filter(g => g.kind === 'snapshot').map(groupBtn)}
 
           {/* 枢轴点档位选择器 —— 仅当枢轴点开启时显示 */}
           {activeTypes.has('pivot') && (levels.pivot?.length ?? 0) > 0 && (
             <div className="inline-flex items-center gap-0.5 ml-1 pl-2 border-l border-border/40">
-              <span className="text-[10px] text-muted mr-1">档位</span>
+              <span className="text-[11px] text-muted mr-1">档位</span>
               {([1, 2, 3] as const).map(r => (
                 <button
                   key={r}
                   onClick={() => setPivotRank(r)}
                   title={r === 1 ? 'P + R1/S1(3 个)' : r === 2 ? '到 R2/S2(5 个)' : '全档 R3/S3(7 个)'}
-                  className={`h-6 px-2 rounded-md text-[10px] font-mono border transition-all ${
+                  className={`h-6 px-2 rounded-md text-[11px] font-mono border transition-all ${
                     pivotRank === r
                       ? 'bg-[#8B5CF6]/15 border-[#8B5CF6]/40 text-[#c4b5fd]'
                       : 'text-muted bg-base/40 border-border/30 hover:border-border/60'
@@ -669,7 +758,7 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
             onClick={() => setLogScale(v => !v)}
             title={'对数坐标：长周期看腰斩/翻倍时，线性轴会把早期波动压成一条直线；' +
               '对数轴把"涨一倍 / 跌一半"画成等距。开关只影响纵轴，不影响任何数字。'}
-            className={`h-6 rounded-md border px-2 text-[10px] transition-all ${
+            className={`h-6 rounded-md border px-2 text-[11px] transition-all ${
               logScale
                 ? 'border-sky-400/40 bg-sky-400/10 text-sky-300'
                 : 'border-border/30 bg-base/40 text-muted hover:border-border/60'
@@ -680,7 +769,7 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
           <button
             onClick={resetView}
             title="把视图复位到上面选的区间（拖动缩放条或按 ←/→ 之后用它回来）"
-            className="h-6 rounded-md border border-border/30 bg-base/40 px-2 text-[10px] text-muted transition-all hover:border-border/60"
+            className="h-6 rounded-md border border-border/30 bg-base/40 px-2 text-[11px] text-muted transition-all hover:border-border/60"
           >
             重置视图
           </button>
@@ -695,23 +784,26 @@ export const AnalysisKChart = forwardRef<AnalysisKChartHandle, Props>(function A
           levels={levels}
           activeTypes={activeTypes}
           pivotRank={pivotRank}
-          close={rows.length ? rows[rows.length - 1].close : undefined}
+          close={lastClose ?? (rows.length ? rows[rows.length - 1].close : undefined)}
+          closeIsLatest={lastClose != null}
           hoveredKey={hoveredKey}
           onHover={setHoveredKey}
         />
       )}
     </div>
   )
-})
+}
 
 // ===== 价位统计面板(图表下方,结构化文本展示) =====
 function LevelOverview({
-  levels, activeTypes, pivotRank, close, hoveredKey, onHover,
+  levels, activeTypes, pivotRank, close, closeIsLatest, hoveredKey, onHover,
 }: {
   levels: Record<LevelType, PriceLevel[]>
   activeTypes: Set<LevelType>
   pivotRank: 1 | 2 | 3
   close?: number
+  /** close 是"最新交易日"还是"所选区间末根" —— 决定标签怎么写 */
+  closeIsLatest?: boolean
   hoveredKey: string | null
   onHover: (k: string | null) => void
 }) {
@@ -752,30 +844,33 @@ function LevelOverview({
       <div
         onMouseEnter={() => onHover(k)}
         onMouseLeave={() => onHover(null)}
-        className={`flex items-center gap-2 py-0.5 px-1.5 -mx-1.5 rounded transition-colors cursor-default ${
+        className={`flex items-center gap-2 py-1 px-1.5 -mx-1.5 rounded transition-colors cursor-default ${
           hit ? 'bg-elevated/60' : ''
         }`}
         style={dim ? { opacity: 0.35 } : undefined}
       >
         <span className="h-1.5 w-1.5 rounded-full shrink-0 transition-transform" style={{ backgroundColor: color, transform: hit ? 'scale(1.5)' : 'scale(1)' }} />
-        <span className={`text-[11px] w-24 shrink-0 truncate ${hit ? 'text-foreground font-medium' : 'text-secondary'}`}>{p.label}</span>
-        <span className={`text-[11px] font-mono ${hit ? 'text-foreground font-bold' : 'text-foreground'}`}>{p.value.toFixed(2)}</span>
-        <span className="text-[9px] font-mono text-muted">{fmtPct(p.value)}</span>
+        <span className={`text-[12px] w-24 shrink-0 truncate ${hit ? 'text-foreground font-medium' : 'text-secondary'}`}>{p.label}</span>
+        <span className={`text-[12px] font-mono ${hit ? 'text-foreground font-bold' : 'text-foreground'}`}>{p.value.toFixed(2)}</span>
+        <span className="text-[10px] font-mono text-muted">{fmtPct(p.value)}</span>
       </div>
     )
   }
 
   return (
-    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 rounded-lg border border-border/40 bg-base/20 px-3 py-2">
+    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 rounded-lg border border-border/40 bg-base/30 px-4 py-2.5">
       {/* 当前价 */}
-      <div className="sm:col-span-2 flex items-center gap-2 pb-1 border-b border-border/30 mb-0.5">
-        <span className="text-[10px] text-muted">当前价</span>
-        <span className="text-xs font-mono font-medium text-foreground">{cur.toFixed(2)}</span>
+      <div className="sm:col-span-2 flex items-baseline gap-2 pb-1.5 border-b border-border/30 mb-1">
+        <span className="text-[11px] text-muted">{closeIsLatest ? '最新收盘' : '区间末收盘'}</span>
+        <span className="text-[13px] font-mono font-medium text-foreground">{cur.toFixed(2)}</span>
+        <span className="ml-auto text-[10px] text-muted/60">
+          价位按最新交易日计算 · 视窗回到历史段时图上不画这些线
+        </span>
       </div>
       {/* 压力位(从近到远,即从低到高)倒序展示:最高的在最上 */}
       {resistances.length > 0 && (
         <div>
-          <div className="text-[10px] font-medium text-bear mb-0.5">压力位 ↑</div>
+          <div className="text-[11px] font-medium text-bear mb-0.5">压力位 ↑</div>
           {[...resistances].reverse().map((p, i) => <Row key={`r-${i}`} p={p} />)}
         </div>
       )}
@@ -783,13 +878,13 @@ function LevelOverview({
       <div>
         {supports.length > 0 && (
           <>
-            <div className="text-[10px] font-medium text-bull mb-0.5">支撑位 ↓</div>
+            <div className="text-[11px] font-medium text-bull mb-0.5">支撑位 ↓</div>
             {supports.map((p, i) => <Row key={`s-${i}`} p={p} />)}
           </>
         )}
         {neutrals.length > 0 && (
           <div className={supports.length > 0 ? 'mt-2' : ''}>
-            {supports.length === 0 && <div className="text-[10px] font-medium text-muted mb-0.5">枢轴位</div>}
+            {supports.length === 0 && <div className="text-[11px] font-medium text-muted mb-0.5">枢轴位</div>}
             {neutrals.map((p, i) => <Row key={`n-${i}`} p={p} />)}
           </div>
         )}
@@ -832,6 +927,28 @@ function strengthColor(strength: string | undefined, base: string): string {
 /** 价位唯一标识: 同类型同价格视为同一点位(用于联动高亮)。 */
 function levelKey(type: string, value: number): string {
   return `${type}-${value.toFixed(2)}`
+}
+
+/**
+ * 快照型价位（筹码密集区 / 枢轴 / 极值 / 未回补缺口 / 斐波 / 整数关口）的折线数据。
+ *
+ * 这些数是后端用**截至最新交易日**的数据算出来的单点结论。画成贯穿全图的横线，
+ * 等于在 2024 年那段 K 上标 2026 年才成立的支撑位 —— 图上没有一句话说明
+ * 「这是今天说的」，但结论已经被贴到了过去。
+ *
+ * 所以：视窗不含最新一根（showToday=false）→ 整条不画（全 null）；
+ * 包住最新一根 → 只给最后两根赋值，画出来是贴右边缘的一小段 + 右侧标签。
+ *
+ * 抽成纯函数是为了能被测试直接钉住：这段逻辑没有 DOM、没有 canvas，
+ * 靠 jsdom 断言"图长什么样"是测不到的。
+ */
+export function snapshotLineData(
+  dates: string[], value: number, showToday: boolean,
+): (number | null)[] {
+  if (!showToday) return dates.map(() => null)
+  // 只有一根 K 时，单点画不出线段，但也只有这一根，给它值
+  const from = Math.max(0, dates.length - 2)
+  return dates.map((_, i) => (i >= from ? value : null))
 }
 
 /**

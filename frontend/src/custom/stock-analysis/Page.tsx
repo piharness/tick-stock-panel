@@ -10,10 +10,14 @@ import { StockFinancialSearch } from '@/components/financials/StockFinancialSear
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
 import { LastStockChip } from '@/components/LastStockChip'
 import {
-  AnalysisKChart, type AnalysisKChartHandle,
+  AnalysisKChart,
   type PriceLevel, type LevelType, type ChartRange, type ChartVLine,
 } from '@/components/stock-analysis/AnalysisKChart'
 import { PriceAlertDialog } from '@/components/stock-analysis/PriceAlertDialog'
+import { DelistingGuardPanel } from '@/components/stock-analysis/DelistingGuardPanel'
+import { ChipDistributionPanel } from '@/components/stock-analysis/ChipDistributionPanel'
+import { ShareholderPanel } from '@/components/stock-analysis/ShareholderPanel'
+import { EntryPointPanel } from '@/components/stock-analysis/EntryPointPanel'
 import { BarReadout, RangeBar, RangeStatsStrip, NameTrace } from '@/components/stock-analysis/RangeControls'
 import { api, type ChartSegment, type ChartSeries } from '@/lib/api'
 import { useLastStock } from '@/lib/useLastStock'
@@ -137,7 +141,7 @@ export function StockAnalysis() {
     <>
       <PageHeader
         title="个股分析"
-        subtitle="日 K · 任意区间 · 关键价位 · AI 四维分析(技术 / 基本面 / 财务 / 消息面)"
+        subtitle="日 K · 任意区间 · 关键价位 · 筹码分布 · 股东结构 · AI 四维分析(技术 / 基本面 / 财务 / 消息面)"
         right={
           <div className="flex items-center gap-2">
             <LastStockChip stock={lastStock} onSelect={onSelect} />
@@ -245,7 +249,6 @@ function StockAnalysisBoard({ symbol, name, onName }: {
 
   // 区间按标的记忆:换股票回到默认 1 年,切走再回来还是上次那一段
   const [range, setRange] = useState<StoredRange>(() => rangeFor(symbol))
-  const chartRef = useRef<AnalysisKChartHandle>(null)
   /** 光标所在那根 K 的日期（null=鼠标不在图上，读数条回落到最后一根） */
   const [hoverDate, setHoverDate] = useState<string | null>(null)
   /** 当前可视窗口（百分比）。null = 还没拖过，等于整个所选区间 */
@@ -324,6 +327,38 @@ function StockAnalysisBoard({ symbol, name, onName }: {
   const nameHistory = useQuery({
     queryKey: ['stock-analysis', 'name-history', symbol],
     queryFn: () => api.stockAnalysisNameHistory(symbol),
+    enabled: !!symbol,
+    staleTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
+  // 退市红线：面值/市值按原始价逐日数天数，财务类只认年报。
+  // 失败不重试 —— 它是补充信息，重试三次只会让页面多转 6 秒。
+  const riskGuard = useQuery({
+    queryKey: QK.stockRiskGuard(symbol),
+    queryFn: () => api.stockAnalysisRiskGuard(symbol),
+    enabled: !!symbol,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
+  // 买点体检：档位依赖当日横截面分位，5 分钟足够（分位一天只变一次）
+  const entryQ = useQuery({
+    queryKey: QK.stockEntryPoint(symbol),
+    queryFn: () => api.stockAnalysisEntryPoint(symbol),
+    enabled: !!symbol,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
+  // 股东结构：季度数据，一天最多变一次 —— 缓存 30 分钟，失败不重试。
+  // 它不参与 K 线渲染，取不到只影响这一个面板。
+  const shareholderQ = useQuery({
+    queryKey: QK.stockShareholder(symbol),
+    queryFn: () => api.stockAnalysisShareholder(symbol),
     enabled: !!symbol,
     staleTime: 30 * 60_000,
     refetchOnWindowFocus: false,
@@ -423,40 +458,47 @@ function StockAnalysisBoard({ symbol, name, onName }: {
   }
 
   return (
-    <div className="rounded-card border border-border/60 bg-surface/40 overflow-hidden">
-      <div className="px-4 py-3 border-b border-border/40">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <LineChart className="h-4 w-4 text-sky-400 shrink-0" />
-            <span className="text-sm font-medium text-foreground">关键价位分析</span>
-            {kline.data?.source === 'live' && (
-              <span
-                className="rounded bg-warning/10 px-1 py-0.5 text-[9px] text-warning"
-                title={kline.data?.degraded_reason || '本地没有这只票的日K，已改用上游实时拉取'}
-              >
-                非本地
-              </span>
-            )}
-            {upstreamSeg && (
-              <span
-                className="rounded bg-sky-400/10 px-1 py-0.5 text-[9px] text-sky-300"
-                title={`${upstreamSeg.start} ~ ${upstreamSeg.end} 来自上游前复权（未入库）`}
-              >
-                含上游段
-              </span>
-            )}
+    <div className="rounded-card border border-border/60 bg-surface/60 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-border/40">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <LineChart className="h-[18px] w-[18px] text-sky-400 shrink-0" />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] font-semibold leading-6 text-foreground">关键价位分析</span>
+                {kline.data?.source === 'live' && (
+                  <span
+                    className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] text-warning"
+                    title={kline.data?.degraded_reason || '本地没有这只票的日K，已改用上游实时拉取'}
+                  >
+                    非本地
+                  </span>
+                )}
+                {upstreamSeg && (
+                  <span
+                    className="rounded bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-300"
+                    title={`${upstreamSeg.start} ~ ${upstreamSeg.end} 来自上游前复权（未入库）`}
+                  >
+                    含上游段
+                  </span>
+                )}
+              </div>
+              {name && (
+                <div className="mt-0.5 text-[11px] text-muted">{name}</div>
+              )}
+            </div>
           </div>
-          <div className="flex items-baseline gap-2 shrink-0">
-            <span className="text-[10px] text-muted">{stats.n} 个交易日</span>
-            <span className="text-[10px] text-muted/60">·</span>
-            <span className="text-[10px] text-muted">当前价</span>
-            <span className={`text-[16px] leading-6 font-mono font-bold ${isUp ? 'text-bull' : 'text-bear'}`}>
+          <div className="flex items-baseline gap-2.5 shrink-0">
+            <span className="text-[11px] text-muted">{stats.n} 个交易日</span>
+            <span className="text-[11px] text-muted/40">·</span>
+            <span className="text-[11px] text-muted">当前价</span>
+            <span className={`text-[20px] leading-7 font-mono font-semibold tabular-nums ${isUp ? 'text-bull' : 'text-bear'}`}>
               {curClose?.toFixed(2) ?? '—'}
             </span>
           </div>
         </div>
 
-        <div className="mt-2.5">
+        <div className="mt-3">
           <RangeBar
             value={range}
             onChange={changeRange}
@@ -483,7 +525,14 @@ function StockAnalysisBoard({ symbol, name, onName }: {
         </div>
       </div>
 
-      <div className="p-3 space-y-2">
+      <div className="p-4 space-y-3">
+        {/* 生死线放在最上面：支撑位成立的前提是明天还挂牌 */}
+        <DelistingGuardPanel
+          data={riskGuard.data}
+          loading={riskGuard.isLoading}
+          error={riskGuard.isError}
+        />
+
         <RangeStatsStrip
           stats={visibleStats}
           scope={viewSlice ? 'visible' : 'selected'}
@@ -512,50 +561,50 @@ function StockAnalysisBoard({ symbol, name, onName }: {
               prevClose={readPrev?.close}
               hovered={!!hoverDate}
             />
-            {/* 点一下图区（获得焦点）之后：←/→ 平移、+/- 缩放、0 复位。
-                不做全局监听 —— 那会把页面滚动和输入框里的方向键一起吃掉。 */}
-            <div
-              tabIndex={0}
-              data-testid="chart-keyboard"
-              onKeyDown={e => {
-                const h = chartRef.current
-                if (!h) return
-                if (e.key === 'ArrowLeft') { e.preventDefault(); h.pan(-0.25) }
-                else if (e.key === 'ArrowRight') { e.preventDefault(); h.pan(0.25) }
-                else if (e.key === '+' || e.key === '=') { e.preventDefault(); h.zoom(0.7) }
-                else if (e.key === '-' || e.key === '_') { e.preventDefault(); h.zoom(1.4) }
-                else if (e.key === '0') { e.preventDefault(); h.reset() }
-              }}
-              className="rounded-md outline-none focus-visible:ring-1 focus-visible:ring-sky-400/40"
-              title="点一下图区后可用键盘：←/→ 平移、+/- 缩放、0 复位"
-            >
-              <AnalysisKChart
-                ref={chartRef}
-                rows={rows}
-                levels={levels}
-                series={levelsQ.data?.series}
-                seriesDates={levelsQ.data?.dates}
-                defaultLevelTypes={['sr', 'pivot', 'keltner_s']}
-                initialRange={requested}
-                ranges={nameRanges}
-                vlines={vlines}
-                onHoverDate={setHoverDate}
-                onViewportChange={setViewport}
-                height={480}
-              />
-            </div>
-            <p className="text-[9px] leading-relaxed text-muted">
-              点一下图区后可用键盘：←/→ 平移 · <kbd className="font-mono">+</kbd>/<kbd className="font-mono">-</kbd> 缩放 ·
-              <kbd className="font-mono"> 0 </kbd> 复位。纵轴可切「对数」——两年看腰斩/翻倍时，
+            <AnalysisKChart
+              rows={rows}
+              levels={levels}
+              series={levelsQ.data?.series}
+              seriesDates={levelsQ.data?.dates}
+              lastClose={levelsQ.data?.close ?? undefined}
+              initialRange={requested}
+              ranges={nameRanges}
+              vlines={vlines}
+              onHoverDate={setHoverDate}
+              onViewportChange={setViewport}
+              height={560}
+            />
+            <p className="text-[10px] leading-relaxed text-muted">
+              十字虚线跟随光标读出日期与价位。纵轴可切「对数」——两年看腰斩/翻倍时，
               线性轴会把低价段压成一条直线。
             </p>
+
+            {/* 买点体检放在筹码/股东**之前**：它是结论，那两块是依据。
+                读图顺序 = 先看"现在该不该下注"，再看"凭什么"。 */}
+            <EntryPointPanel
+              data={entryQ.data}
+              loading={entryQ.isLoading}
+              error={entryQ.isError}
+            />
+
+            {/* 筹码与股东：与 K 线同屏，因为它们都在回答「价格周围有什么」。
+                筹码分布服务「成本在哪里」，股东结构服务「谁在拿、在集中还是在扩散」。
+                两者的可信度不同（后者只有户数变化率经回测有效），各自面板内已分别声明。 */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
+              <ChipDistributionPanel chip={levelsQ.data?.chip} />
+              <ShareholderPanel
+                data={shareholderQ.data}
+                loading={shareholderQ.isLoading}
+                error={shareholderQ.isError}
+              />
+            </div>
           </>
         )}
 
         <NameTrace data={nh} />
 
         {levelSpan && (
-          <p className="text-[9px] leading-relaxed text-muted">
+          <p className="text-[10px] leading-relaxed text-muted">
             关键价位（压力支撑 / 枢轴 / 通道）按最近 {levelDates.length} 个交易日重算，
             样本 {levelSpan}，与上面选的区间无关 —— 它们是"今天的位置"，不是那一段的历史水位。
           </p>
@@ -571,10 +620,10 @@ function HistorySidebar() {
 
   return (
     <aside className="self-start sticky top-0">
-      <div className="rounded-card border border-border/60 bg-surface/40 overflow-hidden">
-        <div className="px-3 py-2.5 border-b border-border/40 flex items-center gap-2">
-          <HistoryIcon className="h-3.5 w-3.5 text-sky-400 shrink-0" />
-          <span className="text-xs font-medium text-foreground">历史报告</span>
+      <div className="rounded-card border border-border/60 bg-surface/60 shadow-sm overflow-hidden">
+        <div className="px-3 py-3 border-b border-border/40 flex items-center gap-2">
+          <HistoryIcon className="h-4 w-4 text-sky-400 shrink-0" />
+          <span className="text-[13px] font-medium text-foreground">历史报告</span>
           {loaded && reports.length > 0 && (
             <span className="ml-auto text-[10px] text-muted">{reports.length}</span>
           )}
@@ -594,7 +643,7 @@ function HistorySidebar() {
             {reports.map(r => (
               <div
                 key={r.id}
-                className="group rounded-lg border border-border/40 bg-elevated/20 p-2.5 hover:border-border hover:bg-elevated/40 transition-colors"
+                className="group rounded-lg border border-border/40 bg-elevated/30 p-3 hover:border-border hover:bg-elevated/50 transition-colors"
               >
                 <div className="flex items-center justify-between gap-2">
                   <button
@@ -602,16 +651,16 @@ function HistorySidebar() {
                     className="flex-1 text-left min-w-0"
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-xs font-medium text-foreground truncate">{r.name || r.symbol}</span>
+                      <span className="text-[13px] font-medium text-foreground truncate">{r.name || r.symbol}</span>
                       <span className="text-[10px] font-mono text-muted shrink-0">{r.symbol}</span>
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted">
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
                       <span>{fmtRelative(r.created_at)}</span>
                       {r.close != null && <span className="font-mono">价 {r.close.toFixed(2)}</span>}
                       {r.focus && <span className="text-sky-300/70 truncate">关注: {r.focus}</span>}
                     </div>
                     {r.summary && (
-                      <div className="mt-1 text-[11px] text-muted truncate">{r.summary}</div>
+                      <div className="mt-1.5 text-[11px] leading-relaxed text-muted truncate">{r.summary}</div>
                     )}
                   </button>
                   <button
