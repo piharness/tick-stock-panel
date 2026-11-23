@@ -1402,6 +1402,10 @@ class DecisionAutoConfigIn(BaseModel):
     decision_auto_execute: bool | None = None
     #: 撮合口径 `limit` / `open_only`。L1 分支忽略它并强制 `open_only`。
     decision_auto_fill_mode: str | None = None
+    #: 第二条生产腿（涨停次日砸盘反转）的开关。**与上面每一项都无关**：它的
+    #: `horizon_sessions=0` / `fill_mode=open_only` / `top_n` 是策略定义，
+    #: `run_decision_stage` 不接受配置覆盖。传 true 只是让它开始发卡。
+    decision_lu_rebound_enabled: bool | None = None
 
 
 @router.put("/preferences/decision-auto-config")
