@@ -92,6 +92,10 @@ RUN if [ "$USE_CN_MIRROR" = "1" ]; then \
 # (<root>/backend/app/) 推导的, 容器内会错算到 /。这里用环境变量显式指定
 # 三个关键路径, 确保 static / tiers / data 都指向容器内正确位置。
 COPY backend/app ./app
+# 投资手册链（扫描 → 账户/现金腿 → 回放 → 体检）。这些脚本原本只在宿主机跑，
+# 于是「数据页一个按钮更新全部」在容器里没有执行体；手册因此每天要靠外部定时任务。
+# 脚本只读 data/ 并写 data/etf_watch/，与挂载卷同一路径；依赖里已有 pandas/polars。
+COPY analysis ./analysis
 COPY tiers.yaml /app/tiers.yaml
 # 版本号运行时兜底 (issue #513): 非冻结路径 _load_version() 读
 # /app/frontend/package.json, 缺文件会静默回退 _FALLBACK_VERSION 显示旧版本。
