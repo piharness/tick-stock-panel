@@ -1,0 +1,1932 @@
+{
+  "anchor": "2026-11-20",
+  "universe": 5558,
+  "price_pct": {
+    "1": 1.55,
+    "5": 2.8,
+    "10": 3.69,
+    "25": 6.1,
+    "50": 11.34,
+    "75": 21.55,
+    "90": 39.75,
+    "95": 58.63,
+    "99": 167.51
+  },
+  "unit_pct": {
+    "1": 155.0,
+    "5": 280.0,
+    "10": 373.0,
+    "25": 618.0,
+    "50": 1164.0,
+    "75": 2384.0,
+    "90": 5000.0,
+    "95": 8080.0,
+    "99": 24519.0
+  },
+  "unit_mean": 2576.0,
+  "unit_sum": 14319695.0,
+  "sigma_pct": {
+    "1": 1.06,
+    "5": 1.36,
+    "10": 1.63,
+    "25": 2.12,
+    "50": 2.82,
+    "75": 3.77,
+    "90": 4.73,
+    "95": 5.33,
+    "99": 6.64
+  },
+  "adv_pct": {
+    "1": 5265283.0,
+    "5": 16203115.0,
+    "10": 26423037.0,
+    "25": 45989772.0,
+    "50": 106092746.0,
+    "75": 260969491.0,
+    "90": 624999358.0,
+    "95": 1149832221.0,
+    "99": 2931290690.0
+  },
+  "t1_one_lot_cost_bp": [
+    {
+      "tier": "实际_万0.691_五元",
+      "stock": 139.8,
+      "stock_med": 101.1,
+      "etf": 134.6,
+      "etf_med": 95.9,
+      "cb": 134.6,
+      "cb_med": 95.9
+    },
+    {
+      "tier": "万3_五元",
+      "stock": 139.8,
+      "stock_med": 101.1,
+      "etf": 134.6,
+      "etf_med": 95.9,
+      "cb": 134.6,
+      "cb_med": 95.9
+    },
+    {
+      "tier": "万2.5_五元",
+      "stock": 139.8,
+      "stock_med": 101.1,
+      "etf": 134.6,
+      "etf_med": 95.9,
+      "cb": 134.6,
+      "cb_med": 95.9
+    },
+    {
+      "tier": "万1.5_五元",
+      "stock": 139.8,
+      "stock_med": 101.1,
+      "etf": 134.6,
+      "etf_med": 95.9,
+      "cb": 134.6,
+      "cb_med": 95.9
+    },
+    {
+      "tier": "万1_五元",
+      "stock": 139.8,
+      "stock_med": 101.1,
+      "etf": 134.6,
+      "etf_med": 95.9,
+      "cb": 134.6,
+      "cb_med": 95.9
+    },
+    {
+      "tier": "万1_免五",
+      "stock": 17.2,
+      "stock_med": 17.2,
+      "etf": 12.0,
+      "etf_med": 12.0,
+      "cb": 12.0,
+      "cb_med": 12.0
+    },
+    {
+      "tier": "万0.854_免五",
+      "stock": 16.9,
+      "stock_med": 16.9,
+      "etf": 11.7,
+      "etf_med": 11.7,
+      "cb": 11.7,
+      "cb_med": 11.7
+    },
+    {
+      "tier": "万0.5_免五",
+      "stock": 16.2,
+      "stock_med": 16.2,
+      "etf": 11.0,
+      "etf_med": 11.0,
+      "cb": 11.0,
+      "cb_med": 11.0
+    }
+  ],
+  "t1_note": "mean/med 均为逐票成本再聚合；stock 列含印花 5bp+过户 0.2bp+滑点 10bp",
+  "t2_v_star": {
+    "实际_万0.691_五元": 72359.0,
+    "万3_五元": 16667.0,
+    "万2.5_五元": 20000.0,
+    "万1.5_五元": 33333.0,
+    "万1_五元": 50000.0,
+    "万1_免五": 0.0,
+    "万0.854_免五": 0.0,
+    "万0.5_免五": 0.0
+  },
+  "t3_prop_floor_bp": {
+    "实际_万0.691_五元": {
+      "stock": 16.6,
+      "etf": 11.4,
+      "cb": 11.4
+    },
+    "万3_五元": {
+      "stock": 21.2,
+      "etf": 16.0,
+      "cb": 16.0
+    },
+    "万2.5_五元": {
+      "stock": 20.2,
+      "etf": 15.0,
+      "cb": 15.0
+    },
+    "万1.5_五元": {
+      "stock": 18.2,
+      "etf": 13.0,
+      "cb": 13.0
+    },
+    "万1_五元": {
+      "stock": 17.2,
+      "etf": 12.0,
+      "cb": 12.0
+    },
+    "万1_免五": {
+      "stock": 17.2,
+      "etf": 12.0,
+      "cb": 12.0
+    },
+    "万0.854_免五": {
+      "stock": 16.9,
+      "etf": 11.7,
+      "cb": 11.7
+    },
+    "万0.5_免五": {
+      "stock": 16.2,
+      "etf": 11.0,
+      "cb": 11.0
+    }
+  },
+  "t4_v_min_stock": [
+    {
+      "g_bp": 0.0,
+      "实际_万0.691_五元": null,
+      "万3_五元": null,
+      "万2.5_五元": null,
+      "万1.5_五元": null,
+      "万1_五元": null,
+      "万1_免五": null,
+      "万0.854_免五": null,
+      "万0.5_免五": null
+    },
+    {
+      "g_bp": 10.0,
+      "实际_万0.691_五元": null,
+      "万3_五元": null,
+      "万2.5_五元": null,
+      "万1.5_五元": null,
+      "万1_五元": null,
+      "万1_免五": null,
+      "万0.854_免五": null,
+      "万0.5_免五": null
+    },
+    {
+      "g_bp": 20.0,
+      "实际_万0.691_五元": 29257.0,
+      "万3_五元": null,
+      "万2.5_五元": null,
+      "万1.5_五元": 55556.0,
+      "万1_五元": 35714.0,
+      "万1_免五": "lot_bound",
+      "万0.854_免五": "lot_bound",
+      "万0.5_免五": "lot_bound"
+    },
+    {
+      "g_bp": 40.0,
+      "实际_万0.691_五元": 4270.0,
+      "万3_五元": 5319.0,
+      "万2.5_五元": 5051.0,
+      "万1.5_五元": 4587.0,
+      "万1_五元": 4386.0,
+      "万1_免五": "lot_bound",
+      "万0.854_免五": "lot_bound",
+      "万0.5_免五": "lot_bound"
+    },
+    {
+      "g_bp": 96.0,
+      "实际_万0.691_五元": 1259.0,
+      "万3_五元": 1337.0,
+      "万2.5_五元": 1319.0,
+      "万1.5_五元": 1285.0,
+      "万1_五元": 1269.0,
+      "万1_免五": "lot_bound",
+      "万0.854_免五": "lot_bound",
+      "万0.5_免五": "lot_bound"
+    }
+  ],
+  "t5_one_lot_net": [
+    {
+      "g_bp": 0.0,
+      "实际_万0.691_五元": {
+        "ew_net_bp": -139.8,
+        "med_net_bp": -101.1,
+        "frac_positive": 0.0
+      },
+      "万3_五元": {
+        "ew_net_bp": -139.8,
+        "med_net_bp": -101.1,
+        "frac_positive": 0.0
+      },
+      "万2.5_五元": {
+        "ew_net_bp": -139.8,
+        "med_net_bp": -101.1,
+        "frac_positive": 0.0
+      },
+      "万1.5_五元": {
+        "ew_net_bp": -139.8,
+        "med_net_bp": -101.1,
+        "frac_positive": 0.0
+      },
+      "万1_五元": {
+        "ew_net_bp": -139.8,
+        "med_net_bp": -101.1,
+        "frac_positive": 0.0
+      },
+      "万1_免五": {
+        "ew_net_bp": -17.2,
+        "med_net_bp": -17.2,
+        "frac_positive": 0.0
+      },
+      "万0.854_免五": {
+        "ew_net_bp": -16.9,
+        "med_net_bp": -16.9,
+        "frac_positive": 0.0
+      },
+      "万0.5_免五": {
+        "ew_net_bp": -16.2,
+        "med_net_bp": -16.2,
+        "frac_positive": 0.0
+      }
+    },
+    {
+      "g_bp": 10.0,
+      "实际_万0.691_五元": {
+        "ew_net_bp": -129.8,
+        "med_net_bp": -91.1,
+        "frac_positive": 0.0
+      },
+      "万3_五元": {
+        "ew_net_bp": -129.8,
+        "med_net_bp": -91.1,
+        "frac_positive": 0.0
+      },
+      "万2.5_五元": {
+        "ew_net_bp": -129.8,
+        "med_net_bp": -91.1,
+        "frac_positive": 0.0
+      },
+      "万1.5_五元": {
+        "ew_net_bp": -129.8,
+        "med_net_bp": -91.1,
+        "frac_positive": 0.0
+      },
+      "万1_五元": {
+        "ew_net_bp": -129.8,
+        "med_net_bp": -91.1,
+        "frac_positive": 0.0
+      },
+      "万1_免五": {
+        "ew_net_bp": -7.2,
+        "med_net_bp": -7.2,
+        "frac_positive": 0.0
+      },
+      "万0.854_免五": {
+        "ew_net_bp": -6.9,
+        "med_net_bp": -6.9,
+        "frac_positive": 0.0
+      },
+      "万0.5_免五": {
+        "ew_net_bp": -6.2,
+        "med_net_bp": -6.2,
+        "frac_positive": 0.0
+      }
+    },
+    {
+      "g_bp": 20.0,
+      "实际_万0.691_五元": {
+        "ew_net_bp": -119.8,
+        "med_net_bp": -81.1,
+        "frac_positive": 0.0119
+      },
+      "万3_五元": {
+        "ew_net_bp": -119.8,
+        "med_net_bp": -81.1,
+        "frac_positive": 0.0
+      },
+      "万2.5_五元": {
+        "ew_net_bp": -119.8,
+        "med_net_bp": -81.1,
+        "frac_positive": 0.0
+      },
+      "万1.5_五元": {
+        "ew_net_bp": -119.8,
+        "med_net_bp": -81.1,
+        "frac_positive": 0.0119
+      },
+      "万1_五元": {
+        "ew_net_bp": -119.8,
+        "med_net_bp": -81.1,
+        "frac_positive": 0.0119
+      },
+      "万1_免五": {
+        "ew_net_bp": 2.8,
+        "med_net_bp": 2.8,
+        "frac_positive": 1.0
+      },
+      "万0.854_免五": {
+        "ew_net_bp": 3.1,
+        "med_net_bp": 3.1,
+        "frac_positive": 1.0
+      },
+      "万0.5_免五": {
+        "ew_net_bp": 3.8,
+        "med_net_bp": 3.8,
+        "frac_positive": 1.0
+      }
+    },
+    {
+      "g_bp": 40.0,
+      "实际_万0.691_五元": {
+        "ew_net_bp": -99.8,
+        "med_net_bp": -61.1,
+        "frac_positive": 0.1322
+      },
+      "万3_五元": {
+        "ew_net_bp": -99.8,
+        "med_net_bp": -61.1,
+        "frac_positive": 0.1322
+      },
+      "万2.5_五元": {
+        "ew_net_bp": -99.8,
+        "med_net_bp": -61.1,
+        "frac_positive": 0.1322
+      },
+      "万1.5_五元": {
+        "ew_net_bp": -99.8,
+        "med_net_bp": -61.1,
+        "frac_positive": 0.1322
+      },
+      "万1_五元": {
+        "ew_net_bp": -99.8,
+        "med_net_bp": -61.1,
+        "frac_positive": 0.1322
+      },
+      "万1_免五": {
+        "ew_net_bp": 22.8,
+        "med_net_bp": 22.8,
+        "frac_positive": 1.0
+      },
+      "万0.854_免五": {
+        "ew_net_bp": 23.1,
+        "med_net_bp": 23.1,
+        "frac_positive": 1.0
+      },
+      "万0.5_免五": {
+        "ew_net_bp": 23.8,
+        "med_net_bp": 23.8,
+        "frac_positive": 1.0
+      }
+    },
+    {
+      "g_bp": 96.0,
+      "实际_万0.691_五元": {
+        "ew_net_bp": -43.8,
+        "med_net_bp": -5.1,
+        "frac_positive": 0.4736
+      },
+      "万3_五元": {
+        "ew_net_bp": -43.8,
+        "med_net_bp": -5.1,
+        "frac_positive": 0.4736
+      },
+      "万2.5_五元": {
+        "ew_net_bp": -43.8,
+        "med_net_bp": -5.1,
+        "frac_positive": 0.4736
+      },
+      "万1.5_五元": {
+        "ew_net_bp": -43.8,
+        "med_net_bp": -5.1,
+        "frac_positive": 0.4736
+      },
+      "万1_五元": {
+        "ew_net_bp": -43.8,
+        "med_net_bp": -5.1,
+        "frac_positive": 0.4736
+      },
+      "万1_免五": {
+        "ew_net_bp": 78.8,
+        "med_net_bp": 78.8,
+        "frac_positive": 1.0
+      },
+      "万0.854_免五": {
+        "ew_net_bp": 79.1,
+        "med_net_bp": 79.1,
+        "frac_positive": 1.0
+      },
+      "万0.5_免五": {
+        "ew_net_bp": 79.8,
+        "med_net_bp": 79.8,
+        "frac_positive": 1.0
+      }
+    }
+  ],
+  "t5b_cost_vs_V_bp": [
+    {
+      "V_yuan": 1000,
+      "实际_万0.691_五元": 115.2,
+      "万3_五元": 115.2,
+      "万2.5_五元": 115.2,
+      "万1.5_五元": 115.2,
+      "万1_五元": 115.2,
+      "万1_免五": 17.2,
+      "万0.854_免五": 16.9,
+      "万0.5_免五": 16.2
+    },
+    {
+      "V_yuan": 5000,
+      "实际_万0.691_五元": 35.2,
+      "万3_五元": 35.2,
+      "万2.5_五元": 35.2,
+      "万1.5_五元": 35.2,
+      "万1_五元": 35.2,
+      "万1_免五": 17.2,
+      "万0.854_免五": 16.9,
+      "万0.5_免五": 16.2
+    },
+    {
+      "V_yuan": 20000,
+      "实际_万0.691_五元": 20.2,
+      "万3_五元": 21.2,
+      "万2.5_五元": 20.2,
+      "万1.5_五元": 20.2,
+      "万1_五元": 20.2,
+      "万1_免五": 17.2,
+      "万0.854_免五": 16.9,
+      "万0.5_免五": 16.2
+    },
+    {
+      "V_yuan": 50000,
+      "实际_万0.691_五元": 17.2,
+      "万3_五元": 21.2,
+      "万2.5_五元": 20.2,
+      "万1.5_五元": 18.2,
+      "万1_五元": 17.2,
+      "万1_免五": 17.2,
+      "万0.854_免五": 16.9,
+      "万0.5_免五": 16.2
+    },
+    {
+      "V_yuan": 100000,
+      "实际_万0.691_五元": 16.6,
+      "万3_五元": 21.2,
+      "万2.5_五元": 20.2,
+      "万1.5_五元": 18.2,
+      "万1_五元": 17.2,
+      "万1_免五": 17.2,
+      "万0.854_免五": 16.9,
+      "万0.5_免五": 16.2
+    },
+    {
+      "V_yuan": 1000000,
+      "实际_万0.691_五元": 16.6,
+      "万3_五元": 21.2,
+      "万2.5_五元": 20.2,
+      "万1.5_五元": 18.2,
+      "万1_五元": 17.2,
+      "万1_免五": 17.2,
+      "万0.854_免五": 16.9,
+      "万0.5_免五": 16.2
+    }
+  ],
+  "t6_frac_universe_ok": [
+    {
+      "g_bp": 10.0,
+      "tier": "实际_万0.691_五元",
+      "frac_ok": 0.0,
+      "median_net_bp": -91.1
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万3_五元",
+      "frac_ok": 0.0,
+      "median_net_bp": -91.1
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万2.5_五元",
+      "frac_ok": 0.0,
+      "median_net_bp": -91.1
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万1.5_五元",
+      "frac_ok": 0.0,
+      "median_net_bp": -91.1
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万1_五元",
+      "frac_ok": 0.0,
+      "median_net_bp": -91.1
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万1_免五",
+      "frac_ok": 0.0,
+      "median_net_bp": -7.2
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万0.854_免五",
+      "frac_ok": 0.0,
+      "median_net_bp": -6.9
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万0.5_免五",
+      "frac_ok": 0.0,
+      "median_net_bp": -6.2
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "实际_万0.691_五元",
+      "frac_ok": 0.0119,
+      "median_net_bp": -81.1
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万3_五元",
+      "frac_ok": 0.0,
+      "median_net_bp": -81.1
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万2.5_五元",
+      "frac_ok": 0.0,
+      "median_net_bp": -81.1
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1.5_五元",
+      "frac_ok": 0.0119,
+      "median_net_bp": -81.1
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1_五元",
+      "frac_ok": 0.0119,
+      "median_net_bp": -81.1
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 2.8
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万0.854_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 3.1
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万0.5_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 3.8
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "实际_万0.691_五元",
+      "frac_ok": 0.1322,
+      "median_net_bp": -61.1
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万3_五元",
+      "frac_ok": 0.1322,
+      "median_net_bp": -61.1
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万2.5_五元",
+      "frac_ok": 0.1322,
+      "median_net_bp": -61.1
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1.5_五元",
+      "frac_ok": 0.1322,
+      "median_net_bp": -61.1
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1_五元",
+      "frac_ok": 0.1322,
+      "median_net_bp": -61.1
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 22.8
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万0.854_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 23.1
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万0.5_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 23.8
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "实际_万0.691_五元",
+      "frac_ok": 0.4736,
+      "median_net_bp": -5.1
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万3_五元",
+      "frac_ok": 0.4736,
+      "median_net_bp": -5.1
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万2.5_五元",
+      "frac_ok": 0.4736,
+      "median_net_bp": -5.1
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1.5_五元",
+      "frac_ok": 0.4736,
+      "median_net_bp": -5.1
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1_五元",
+      "frac_ok": 0.4736,
+      "median_net_bp": -5.1
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 78.8
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万0.854_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 79.1
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万0.5_免五",
+      "frac_ok": 1.0,
+      "median_net_bp": 79.8
+    }
+  ],
+  "t7_aum_floor_full_universe": [
+    {
+      "g_bp": 20.0,
+      "tier": "实际_万0.691_五元",
+      "aum_min_yi": 1.6976,
+      "ew_net_bp": 1.5,
+      "n_lots_med": 26.0
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万3_五元",
+      "aum_min_yi": null,
+      "note": "E1 结构性空"
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万2.5_五元",
+      "aum_min_yi": null,
+      "note": "E1 结构性空"
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1.5_五元",
+      "aum_min_yi": 3.1609,
+      "ew_net_bp": 1.8,
+      "n_lots_med": 48.0
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1_五元",
+      "aum_min_yi": 2.0575,
+      "ew_net_bp": 2.1,
+      "n_lots_med": 31.0
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 2.8,
+      "n_lots_med": 1.0
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万0.854_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 3.1,
+      "n_lots_med": 1.0
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万0.5_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 3.8,
+      "n_lots_med": 1.0
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "实际_万0.691_五元",
+      "aum_min_yi": 0.3226,
+      "ew_net_bp": 5.1,
+      "n_lots_med": 4.0
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万3_五元",
+      "aum_min_yi": 0.3798,
+      "ew_net_bp": 8.6,
+      "n_lots_med": 5.0
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万2.5_五元",
+      "aum_min_yi": 0.3654,
+      "ew_net_bp": 7.8,
+      "n_lots_med": 5.0
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1.5_五元",
+      "aum_min_yi": 0.3393,
+      "ew_net_bp": 6.3,
+      "n_lots_med": 4.0
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1_五元",
+      "aum_min_yi": 0.3286,
+      "ew_net_bp": 5.6,
+      "n_lots_med": 4.0
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 22.8,
+      "n_lots_med": 1.0
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万0.854_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 23.1,
+      "n_lots_med": 1.0
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万0.5_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 23.8,
+      "n_lots_med": 1.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "实际_万0.691_五元",
+      "aum_min_yi": 0.1729,
+      "ew_net_bp": 29.0,
+      "n_lots_med": 2.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万3_五元",
+      "aum_min_yi": 0.1761,
+      "ew_net_bp": 31.1,
+      "n_lots_med": 2.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万2.5_五元",
+      "aum_min_yi": 0.1753,
+      "ew_net_bp": 30.6,
+      "n_lots_med": 2.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1.5_五元",
+      "aum_min_yi": 0.1739,
+      "ew_net_bp": 29.7,
+      "n_lots_med": 2.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1_五元",
+      "aum_min_yi": 0.1733,
+      "ew_net_bp": 29.3,
+      "n_lots_med": 2.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 78.8,
+      "n_lots_med": 1.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万0.854_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 79.1,
+      "n_lots_med": 1.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万0.5_免五",
+      "aum_min_yi": 0.1432,
+      "ew_net_bp": 79.8,
+      "n_lots_med": 1.0
+    }
+  ],
+  "t7_notes": {
+    "universe_n": 5558,
+    "sum_one_lot_yi": 0.1432,
+    "说明": "全市场等权建仓所需最小资金；N 只组合的 AUM 下限 ≈ (N/n)*该值，非线性"
+  },
+  "t10_annulus": [
+    {
+      "g_bp": 20.0,
+      "adv_band": "p10",
+      "tier": "实际_万0.691_五元",
+      "V_min": 29257.0,
+      "V_max": 972.0,
+      "width_x": 0.03,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p10",
+      "tier": "万3_五元",
+      "V_min": null,
+      "V_max": 0.0,
+      "width_x": null,
+      "verdict": "E1_structural"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p10",
+      "tier": "万2.5_五元",
+      "V_min": null,
+      "V_max": 0.0,
+      "width_x": null,
+      "verdict": "E1_structural"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p10",
+      "tier": "万1.5_五元",
+      "V_min": 55556.0,
+      "V_max": 270.0,
+      "width_x": 0.0,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p10",
+      "tier": "万1_五元",
+      "V_min": 35714.0,
+      "V_max": 653.0,
+      "width_x": 0.02,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p10",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 653.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p10",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 796.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p10",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 1202.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p50",
+      "tier": "实际_万0.691_五元",
+      "V_min": 29257.0,
+      "V_max": 3904.0,
+      "width_x": 0.13,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p50",
+      "tier": "万3_五元",
+      "V_min": null,
+      "V_max": 0.0,
+      "width_x": null,
+      "verdict": "E1_structural"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p50",
+      "tier": "万2.5_五元",
+      "V_min": null,
+      "V_max": 0.0,
+      "width_x": null,
+      "verdict": "E1_structural"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p50",
+      "tier": "万1.5_五元",
+      "V_min": 55556.0,
+      "V_max": 1083.0,
+      "width_x": 0.02,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p50",
+      "tier": "万1_五元",
+      "V_min": 35714.0,
+      "V_max": 2620.0,
+      "width_x": 0.07,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p50",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 2620.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p50",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 3195.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p50",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 4826.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p90",
+      "tier": "实际_万0.691_五元",
+      "V_min": 29257.0,
+      "V_max": 23001.0,
+      "width_x": 0.79,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p90",
+      "tier": "万3_五元",
+      "V_min": null,
+      "V_max": 0.0,
+      "width_x": null,
+      "verdict": "E1_structural"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p90",
+      "tier": "万2.5_五元",
+      "V_min": null,
+      "V_max": 0.0,
+      "width_x": null,
+      "verdict": "E1_structural"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p90",
+      "tier": "万1.5_五元",
+      "V_min": 55556.0,
+      "V_max": 6379.0,
+      "width_x": 0.11,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p90",
+      "tier": "万1_五元",
+      "V_min": 35714.0,
+      "V_max": 15435.0,
+      "width_x": 0.43,
+      "verdict": "E2_no_window"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p90",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 15435.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p90",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 18823.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 20.0,
+      "adv_band": "p90",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 28429.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p10",
+      "tier": "实际_万0.691_五元",
+      "V_min": 4270.0,
+      "V_max": 45646.0,
+      "width_x": 10.69,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p10",
+      "tier": "万3_五元",
+      "V_min": 5319.0,
+      "V_max": 29419.0,
+      "width_x": 5.53,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p10",
+      "tier": "万2.5_五元",
+      "V_min": 5051.0,
+      "V_max": 32631.0,
+      "width_x": 6.46,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p10",
+      "tier": "万1.5_五元",
+      "V_min": 4587.0,
+      "V_max": 39557.0,
+      "width_x": 8.62,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p10",
+      "tier": "万1_五元",
+      "V_min": 4386.0,
+      "V_max": 43269.0,
+      "width_x": 9.87,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p10",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 43269.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p10",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 44384.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p10",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 47148.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p50",
+      "tier": "实际_万0.691_五元",
+      "V_min": 4270.0,
+      "V_max": 183277.0,
+      "width_x": 42.92,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p50",
+      "tier": "万3_五元",
+      "V_min": 5319.0,
+      "V_max": 118120.0,
+      "width_x": 22.21,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p50",
+      "tier": "万2.5_五元",
+      "V_min": 5051.0,
+      "V_max": 131020.0,
+      "width_x": 25.94,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p50",
+      "tier": "万1.5_五元",
+      "V_min": 4587.0,
+      "V_max": 158826.0,
+      "width_x": 34.62,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p50",
+      "tier": "万1_五元",
+      "V_min": 4386.0,
+      "V_max": 173731.0,
+      "width_x": 39.61,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p50",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 173731.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p50",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 178210.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p50",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 189305.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p90",
+      "tier": "实际_万0.691_五元",
+      "V_min": 4270.0,
+      "V_max": 1079696.0,
+      "width_x": 252.84,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p90",
+      "tier": "万3_五元",
+      "V_min": 5319.0,
+      "V_max": 695853.0,
+      "width_x": 130.82,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p90",
+      "tier": "万2.5_五元",
+      "V_min": 5051.0,
+      "V_max": 771849.0,
+      "width_x": 152.83,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p90",
+      "tier": "万1.5_五元",
+      "V_min": 4587.0,
+      "V_max": 935653.0,
+      "width_x": 203.97,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p90",
+      "tier": "万1_五元",
+      "V_min": 4386.0,
+      "V_max": 1023462.0,
+      "width_x": 233.35,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p90",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 1023462.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p90",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 1049845.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 40.0,
+      "adv_band": "p90",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 1115208.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p10",
+      "tier": "实际_万0.691_五元",
+      "V_min": 1259.0,
+      "V_max": 524980.0,
+      "width_x": 416.93,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p10",
+      "tier": "万3_五元",
+      "V_min": 1337.0,
+      "V_max": 465702.0,
+      "width_x": 348.35,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p10",
+      "tier": "万2.5_五元",
+      "V_min": 1319.0,
+      "V_max": 478237.0,
+      "width_x": 362.5,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p10",
+      "tier": "万1.5_五元",
+      "V_min": 1285.0,
+      "V_max": 503807.0,
+      "width_x": 391.96,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p10",
+      "tier": "万1_五元",
+      "V_min": 1269.0,
+      "V_max": 516842.0,
+      "width_x": 407.27,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p10",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 516842.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p10",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 520679.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p10",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 530043.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p50",
+      "tier": "实际_万0.691_五元",
+      "V_min": 1259.0,
+      "V_max": 2107880.0,
+      "width_x": 1674.04,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p50",
+      "tier": "万3_五元",
+      "V_min": 1337.0,
+      "V_max": 1869869.0,
+      "width_x": 1398.66,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p50",
+      "tier": "万2.5_五元",
+      "V_min": 1319.0,
+      "V_max": 1920200.0,
+      "width_x": 1455.51,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p50",
+      "tier": "万1.5_五元",
+      "V_min": 1285.0,
+      "V_max": 2022866.0,
+      "width_x": 1573.79,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p50",
+      "tier": "万1_五元",
+      "V_min": 1269.0,
+      "V_max": 2075202.0,
+      "width_x": 1635.26,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p50",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 2075202.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p50",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 2090611.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p50",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 2128207.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p90",
+      "tier": "实际_万0.691_五元",
+      "V_min": 1259.0,
+      "V_max": 12417661.0,
+      "width_x": 9861.86,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p90",
+      "tier": "万3_五元",
+      "V_min": 1337.0,
+      "V_max": 11015522.0,
+      "width_x": 8239.61,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p90",
+      "tier": "万2.5_五元",
+      "V_min": 1319.0,
+      "V_max": 11312024.0,
+      "width_x": 8574.51,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p90",
+      "tier": "万1.5_五元",
+      "V_min": 1285.0,
+      "V_max": 11916840.0,
+      "width_x": 9271.3,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p90",
+      "tier": "万1_五元",
+      "V_min": 1269.0,
+      "V_max": 12225154.0,
+      "width_x": 9633.42,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p90",
+      "tier": "万1_免五",
+      "V_min": 0.0,
+      "V_max": 12225154.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p90",
+      "tier": "万0.854_免五",
+      "V_min": 0.0,
+      "V_max": 12315924.0,
+      "width_x": null,
+      "verdict": "feasible"
+    },
+    {
+      "g_bp": 96.0,
+      "adv_band": "p90",
+      "tier": "万0.5_免五",
+      "V_min": 0.0,
+      "V_max": 12537406.0,
+      "width_x": null,
+      "verdict": "feasible"
+    }
+  ],
+  "t8_v_max": [
+    {
+      "adv_band": "ADV_p10",
+      "adv_yi": 0.264,
+      "sigma_d_pct": 2.82,
+      "vmax_g20_wan": 0.1,
+      "vmax_g40_wan": 4.3,
+      "vmax_g96_wan": 51.7
+    },
+    {
+      "adv_band": "ADV_p25",
+      "adv_yi": 0.46,
+      "sigma_d_pct": 2.82,
+      "vmax_g20_wan": 0.1,
+      "vmax_g40_wan": 7.5,
+      "vmax_g96_wan": 90.0
+    },
+    {
+      "adv_band": "ADV_p50",
+      "adv_yi": 1.061,
+      "sigma_d_pct": 2.82,
+      "vmax_g20_wan": 0.3,
+      "vmax_g40_wan": 17.4,
+      "vmax_g96_wan": 207.5
+    },
+    {
+      "adv_band": "ADV_p75",
+      "adv_yi": 2.61,
+      "sigma_d_pct": 2.82,
+      "vmax_g20_wan": 0.6,
+      "vmax_g40_wan": 42.7,
+      "vmax_g96_wan": 510.5
+    },
+    {
+      "adv_band": "ADV_p90",
+      "adv_yi": 6.25,
+      "sigma_d_pct": 2.82,
+      "vmax_g20_wan": 1.5,
+      "vmax_g40_wan": 102.3,
+      "vmax_g96_wan": 1222.5
+    }
+  ],
+  "t11_joint_frac": [
+    {
+      "g_bp": 0.0,
+      "tier": "实际_万0.691_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 0.0,
+      "tier": "万3_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 0.0,
+      "tier": "万2.5_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 0.0,
+      "tier": "万1.5_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 0.0,
+      "tier": "万1_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 0.0,
+      "tier": "万1_免五",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 0.0,
+      "tier": "万0.854_免五",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 0.0,
+      "tier": "万0.5_免五",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "实际_万0.691_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万3_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万2.5_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万1.5_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万1_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万1_免五",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万0.854_免五",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 10.0,
+      "tier": "万0.5_免五",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "实际_万0.691_五元",
+      "frac_names_feasible": 0.0029
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万3_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万2.5_五元",
+      "frac_names_feasible": 0.0
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1.5_五元",
+      "frac_names_feasible": 0.0011
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1_五元",
+      "frac_names_feasible": 0.002
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1_免五",
+      "frac_names_feasible": 0.6905
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万0.854_免五",
+      "frac_names_feasible": 0.731
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万0.5_免五",
+      "frac_names_feasible": 0.8073
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "实际_万0.691_五元",
+      "frac_names_feasible": 0.1321
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万3_五元",
+      "frac_names_feasible": 0.1321
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万2.5_五元",
+      "frac_names_feasible": 0.1321
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1.5_五元",
+      "frac_names_feasible": 0.1321
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1_五元",
+      "frac_names_feasible": 0.1321
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1_免五",
+      "frac_names_feasible": 0.9998
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万0.854_免五",
+      "frac_names_feasible": 0.9998
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万0.5_免五",
+      "frac_names_feasible": 0.9998
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "实际_万0.691_五元",
+      "frac_names_feasible": 0.4736
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万3_五元",
+      "frac_names_feasible": 0.4736
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万2.5_五元",
+      "frac_names_feasible": 0.4736
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1.5_五元",
+      "frac_names_feasible": 0.4736
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1_五元",
+      "frac_names_feasible": 0.4736
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1_免五",
+      "frac_names_feasible": 1.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万0.854_免五",
+      "frac_names_feasible": 1.0
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万0.5_免五",
+      "frac_names_feasible": 1.0
+    }
+  ],
+  "t9_class": [
+    {
+      "g_bp": 20.0,
+      "tier": "实际_万0.691_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 1.6976
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万3_五元",
+      "kind": "E1_structural",
+      "aum_min_yi": null
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万2.5_五元",
+      "kind": "E1_structural",
+      "aum_min_yi": null
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1.5_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 3.1609
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 2.0575
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万1_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万0.854_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    },
+    {
+      "g_bp": 20.0,
+      "tier": "万0.5_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "实际_万0.691_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.3226
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万3_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.3798
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万2.5_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.3654
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1.5_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.3393
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.3286
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万1_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万0.854_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    },
+    {
+      "g_bp": 40.0,
+      "tier": "万0.5_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "实际_万0.691_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.1729
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万3_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.1761
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万2.5_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.1753
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1.5_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.1739
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1_五元",
+      "kind": "E3_capacity",
+      "aum_min_yi": 0.1733
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万1_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万0.854_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    },
+    {
+      "g_bp": 96.0,
+      "tier": "万0.5_免五",
+      "kind": "feasible_at_one_lot",
+      "aum_min_yi": 0.1432
+    }
+  ],
+  "_sources": {
+    "cross_section": "data/kline_daily_enriched/date=2026-11-20 + 近60日",
+    "etf": "data/kline_etf_daily/date=2026-11-20",
+    "cb": "data/cb_5min_sina/cb_5min.parquet（100只，近22日）",
+    "fee_params": "印花税 0.05% 卖出（2023-08-28起）；过户费 0.001%/边；佣金率作轴"
+  }
+}
