@@ -153,6 +153,19 @@ backend/_verify*.py
 backend/_desktop_run.log
 reports/tickflow_pro_probe/
 .cursor/debug-*.log
+# 本地施工残留：pytest 的临时构建落点（等价 dist-build* / cdp2 / 截图，198 MB）与
+# vite 配置重载留下的旧 dist 副本（7 MB/份，含绝对路径）。两者都不是产物，是
+# 「跑完即弃」的中间物；不挡的话 `git status` 永远拿几百条噪声盖住真正的改动。
+.pytest_tmp/
+frontend/dist.bak.*/
+# 研究报告目录：HTML 图表页由 `analysis/_gen_*_report.py` 生成、随时可重出；
+# 手写的 .md 仍随仓库走 —— 那是文档，不是生成物。
+reports/*.html
+# 一次性研究的中间缓存（研究面板 / 可转债清单）：脚本可重拉，结论已落在
+# `_*_result.json`。只挡这三个具名路径，不用 `analysis/*.parquet` 通配。
+analysis/_cache_*.parquet
+analysis/_etf_asym_tmp/
+analysis/_cb_list.json
 
 # ===== 打包产物 (本地构建的安装包,不入库) =====
 backend/TickFlowStockPanel-win-x64.zip
