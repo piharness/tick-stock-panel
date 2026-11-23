@@ -1444,6 +1444,110 @@ DRAGON_TIGER_SLOTS = ((DRAGON_TIGER_JOB_ID, 19, 10), (DRAGON_TIGER_RETRY_JOB_ID,
 
 
 # ================================================================
+# 短线雷达排序体检 (data/shortline/sort_ledger.jsonl + sort_audit.json)
+# ================================================================
+
+SHORTLINE_AUDIT_JOB_ID = "shortline_audit_daily"
+SHORTLINE_AUDIT_RETRY_JOB_ID = "shortline_audit_daily_retry"
+# enriched 管道默认 15:35，体检只读已落盘的 enriched（不自己拉数）；
+# 17:10 主跑 + 20:10 幂等补跑（record_day 同日期跳过，rebuild 每次重算）。
+SHORTLINE_AUDIT_SLOTS = ((SHORTLINE_AUDIT_JOB_ID, 17, 10), (SHORTLINE_AUDIT_RETRY_JOB_ID, 20, 10))
+
+
+def _run_shortline_audit(repo) -> None:
+    """登记当日雷达池 + 重算排序体检产出物。失败只记日志，不阻断调度主循环。
+
+    幂等性靠 record_day 的「同日期跳过」；rebuild 每次全量重算（台账只有几百行，
+    评估只读 ~3 个分区/登记日，秒级）。 enriched 尚未更新到今天时，record_day
+    会按最新可得交易日登记 —— 若该日已在台账则跳过，等补跑时点拿到新数据。
+    """
+    try:
+        from app.services import shortline_audit as svc
+
+        data_dir = repo.store.data_dir
+        row = svc.record_day(data_dir)
+        art = svc.rebuild(data_dir)
+        if row:
+            logger.info("shortline_audit %s 登记: 池 %s 只 / 现行 %s / 候选 %s",
+                        row["date"], row["budget"].get("cold"),
+                        len(row["picks"]), len(row["shadow"]))
+        logger.info("shortline_audit 产出物已更新: 登记日 %s / 可评估月 %s",
+                    art.get("days_registered"), art.get("months"))
+    except Exception:  # noqa: BLE001 — 定时任务异常不得影响调度器主循环
+        logger.exception("shortline_audit scheduled run 异常")
+
+
+def _register_shortline_audit_jobs(scheduler, repo) -> None:
+    for job_id, hour, minute in SHORTLINE_AUDIT_SLOTS:
+        scheduler.add_job(
+            lambda: _run_shortline_audit(repo),
+            trigger=CronTrigger(day_of_week="mon-fri",
+                                hour=hour, minute=minute,
+                                timezone="Asia/Shanghai"),
+            id=job_id,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+
+
+# ================================================================
+# 投资手册自动维护（扫描 → 账户/现金腿 → 回放）
+# ================================================================
+
+HANDBOOK_REFRESH_SLOTS = (
+    ("handbook_refresh", 16, 20),
+    ("handbook_refresh_retry", 18, 20),
+)
+
+
+def _handbook_refresh_job(repo, on_progress=None) -> dict:
+    from app.services import maintenance
+
+    state = _get_app_state()
+    capset = getattr(state, "capabilities", None) if state else None
+    return maintenance.run_all(repo, capset, repo.store.data_dir,
+                               on_progress or (lambda *a, **k: None))
+
+
+def _run_handbook_refresh(repo) -> bool:
+    """已覆盖最近交易日就什么都不做；否则走 _run_tracked（单飞 + 重任务槽）。
+
+    为什么不等页面：手册链只在有人打开数据页时才补，等于把「自动维护」绑在浏览器上。
+    16:20 给盘后管道留 45 分钟；18:20 兜「管道仍在跑」与供应商迟交 —— 与名单定稿
+    的两次时点同一思路：幂等阶段多跑一次，代价远小于当天永久缺一天。
+    """
+    from app.services import maintenance
+
+    try:
+        st = maintenance.status(repo.store.data_dir)
+    except Exception:  # noqa: BLE001 — 状态读不到就按需要更新处理，不能在调度器里抛
+        logger.exception("handbook refresh: 状态读取失败，按需要更新处理")
+        st = {"stale": True}
+    if not st.get("stale"):
+        logger.info("handbook refresh skipped: 已覆盖最近交易日 (%s)", st.get("expected"))
+        return False
+    return _run_tracked(
+        lambda on_progress=None: _handbook_refresh_job(repo, on_progress),
+        "handbook_refresh",
+    )
+
+
+def _register_handbook_refresh_jobs(scheduler, repo) -> None:
+    for job_id, hour, minute in HANDBOOK_REFRESH_SLOTS:
+        scheduler.add_job(
+            lambda job_id=job_id: _run_handbook_refresh(repo),
+            trigger=CronTrigger(day_of_week="mon-fri",
+                                hour=hour, minute=minute,
+                                timezone="Asia/Shanghai"),
+            id=job_id,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+    logger.info("handbook refresh scheduled @%s mon-fri",
+                "/".join(f"{h:02d}:{m:02d}" for _, h, m in HANDBOOK_REFRESH_SLOTS))
+
+
+# ================================================================
 # 每日名单二次成型 (data/user_data/daily_slate/slate-<as_of>.json)
 # ================================================================
 
@@ -1684,6 +1788,15 @@ def start_scheduler(repo: KlineRepository, capset: CapabilitySet) -> AsyncIOSche
     # 解耦的理由: 名单要的是「收盘定稿」，不是「管道跑完」。15:35 那次若
     # 拿到竞价快照，名单会写成 skipped_not_closed，而单份文件不会自己变新。
     _register_slate_finalize_jobs(scheduler, repo)
+
+    # 盘后: 短线雷达排序体检 (17:10 主跑 + 20:10 幂等补跑)
+    # 预注册见 docs/structural-edge/prereg-heat-sort.md：只登记与重算产出物，
+    # 不做任何裁决 —— 裁决在登记满 120 个交易日后按文档判据执行。
+    _register_shortline_audit_jobs(scheduler, repo)
+
+    # 盘后: 投资手册链 (16:20 主跑 + 18:20 兜底)。已覆盖最近交易日则跳过；
+    # 落后时按「行情 → 扫描 → 账户 → 回放」补齐，与数据页按钮同一条执行体。
+    _register_handbook_refresh_jobs(scheduler, repo)
 
     # 周期性能力重探: 付费 Key 中途过期/续费无需重启即可被发现。
     # 只热更新 app.state.capabilities(API 端点、盘后管道 _pipeline_then_refresh 均读它);
