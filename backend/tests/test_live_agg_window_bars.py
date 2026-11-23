@@ -131,9 +131,14 @@ def test_live_agg_from_history_cache_matches_full(tmp_path):
 def test_live_agg_from_parquet_fallback_matches_full(tmp_path):
     bars = _bars()
     history = bars.filter(pl.col("date") < TODAY)
-    target = tmp_path / "kline_daily_enriched" / "all"
-    target.mkdir(parents=True)
-    history.write_parquet(target / "part.parquet")
+    # 按生产布局写日分区（`date=YYYY-MM-DD/part.parquet`），不是一个 `all/` 目录：
+    # 降级路径现在按区间裁剪分区（`_partition_files_in_range`），非分区布局会被
+    # 判成「区间内无数据」而不报错。
+    target = tmp_path / "kline_daily_enriched"
+    for d in history["date"].unique().sort():
+        part = target / f"date={d}" / "part.parquet"
+        part.parent.mkdir(parents=True, exist_ok=True)
+        history.filter(pl.col("date") == d).write_parquet(part)
     repo = KlineRepository(DataStore(tmp_path))
     assert repo._enriched_history_cache is None  # 走 _build_live_agg_from_parquet 降级路径
 

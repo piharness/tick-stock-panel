@@ -2011,9 +2011,17 @@ def _load_recent_history(enriched_base: Path, symbols: list[str], days: int) -> 
 
     cast_options = pl.ScanCastOptions(integer_cast="allow-float")
     try:
+        # 只枚举 cutoff 之后的分区：全表 glob 会让 polars 逐个打开全部 5313 个
+        # 文件读 footer（容器内 16.8s），而增量窗口只覆盖几十个分区。
+        # 上界用 date.max：原实现只过滤 `date >= cutoff`，不设上界。
+        from app.services.daily_panel import enriched_files
+
+        files = enriched_files(enriched_base.parent, cutoff, date.max, enriched_base.name)
+        if not files:
+            return pl.DataFrame()
         lf = (
             scan_enriched_parquet(
-                str(enriched_base / "**" / "*.parquet"),
+                [str(f) for f in files],
                 cast_options=cast_options,
             )
             .filter(

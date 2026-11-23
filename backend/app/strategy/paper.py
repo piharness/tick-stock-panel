@@ -35,12 +35,14 @@ import uuid
 from datetime import date as _date
 from datetime import datetime
 from datetime import time as _time
+from datetime import timedelta
 from pathlib import Path
 
 import polars as pl
 
 from app.market_time import CN_TZ, cn_now, cn_today
 from app.parquet import scan_daily_parquet
+from app.tickflow.partitions import locate_partition_dir, parse_partition_range
 from app.services.fs_utils import atomic_write_text
 
 logger = logging.getLogger(__name__)
@@ -922,65 +924,93 @@ def _daily_path(data_dir: Path, asset_type: str) -> Path:
     return data_dir / sub
 
 
+def _partition_bar(
+    base: Path,
+    symbol: str,
+    day: _date,
+    *,
+    exact: bool,
+    max_probe: int = 8,
+) -> dict | None:
+    """读某标的在 `day` 当天（exact）或 `day` 及之前最近一根的 raw OHLC。
+
+    **逐分区向前探测，不扫全树。** 原来这四处（单日成交、前收、指数基准、参考价）
+    都是 `scan_daily_parquet(base/**/*.parquet).filter(symbol & date)`：
+    `kline_daily` 现在有 246 个月分区 + 344 个旧日分区，polars 展开 glob 时要逐个
+    打开文件读 footer（容器内实测四位数毫秒，全表 schema 16.8s），而一次结算
+    只需要**一个**分区。`date=2026-11` 一个文件就覆盖整月。
+
+    向前探测而不是「读最近 N 个分区」：停牌票在当月分区里没有行，必须退到上一个
+    分区再找；`max_probe` 只防病态数据，正常 1~2 次就命中。
+
+    返回 {"date", "open", "close"}；找不到返回 None（与旧实现一致，调用方据此
+    判「顺延/无行情」）。
+    """
+    if not base.is_dir():
+        return None
+    table = base.name
+    probe = day
+    for _ in range(max_probe):
+        part = locate_partition_dir(base, table, probe)
+        if part.is_dir():
+            files = sorted(part.glob("*.parquet"))
+            if files:
+                try:
+                    lf = scan_daily_parquet([str(f) for f in files]).filter(
+                        pl.col("symbol") == symbol
+                    )
+                    lf = (
+                        lf.filter(pl.col("date") == day)
+                        if exact
+                        else lf.filter(pl.col("date") <= day)
+                    )
+                    df = lf.sort("date").select(["date", "open", "close"]).collect()
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("paper partition bar failed %s %s: %s", symbol, day, e)
+                    return None
+                if not df.is_empty():
+                    row = df.row(-1, named=True)
+                    if row["open"] is None or row["close"] is None:
+                        return None
+                    return {
+                        "date": row["date"],
+                        "open": float(row["open"]),
+                        "close": float(row["close"]),
+                    }
+        rng = parse_partition_range(part.name)
+        if rng is None:
+            return None
+        probe = rng[0] - timedelta(days=1)
+    return None
+
+
 def read_daily_bar(data_dir: Path, symbol: str, asset_type: str, day: str) -> dict | None:
     """读某标的某日 raw OHLC (不复权); 无数据返回 None。"""
-    base = _daily_path(data_dir, asset_type)
-    if not base.exists():
+    bar = _partition_bar(
+        _daily_path(data_dir, asset_type), symbol, _date.fromisoformat(day), exact=True
+    )
+    if bar is None:
         return None
-    try:
-        df = (
-            scan_daily_parquet((base / "**" / "*.parquet").as_posix())
-            .filter((pl.col("symbol") == symbol) & (pl.col("date") == _date.fromisoformat(day)))
-            .select(["open", "close"])
-            .collect()
-        )
-    except Exception as e:
-        logger.warning("paper read_daily_bar failed %s %s: %s", symbol, day, e)
-        return None
-    if df.is_empty():
-        return None
-    return {"open": float(df["open"][0]), "close": float(df["close"][0])}
+    return {"open": bar["open"], "close": bar["close"]}
 
 
 def _prev_close(data_dir: Path, symbol: str, asset_type: str, day: str) -> float | None:
     """day 之前最近一个有数据的交易日 raw close (严格 < day, 按日期排序取最后)。"""
-    base = _daily_path(data_dir, asset_type)
-    if not base.exists():
-        return None
-    try:
-        df = (
-            scan_daily_parquet((base / "**" / "*.parquet").as_posix())
-            .filter((pl.col("symbol") == symbol) & (pl.col("date") < _date.fromisoformat(day)))
-            .sort("date")
-            .select(pl.col("close").last())
-            .collect()
-        )
-    except Exception as e:
-        logger.warning("paper prev_close failed %s: %s", symbol, e)
-        return None
-    if df.is_empty() or df["close"][0] is None:
-        return None
-    return float(df["close"][0])
+    bar = _partition_bar(
+        _daily_path(data_dir, asset_type),
+        symbol,
+        _date.fromisoformat(day) - timedelta(days=1),
+        exact=False,
+    )
+    return bar["close"] if bar else None
 
 
 def _index_close(data_dir: Path, day: str) -> float | None:
     """沪深300 当日 raw close (基准对比); 指数日K缺失返回 None。"""
-    base = data_dir / "kline_index_daily"
-    if not base.exists():
-        return None
-    try:
-        df = (
-            scan_daily_parquet((base / "**" / "*.parquet").as_posix())
-            .filter((pl.col("symbol") == "000300.SH") & (pl.col("date") == _date.fromisoformat(day)))
-            .select("close")
-            .collect()
-        )
-    except Exception as e:
-        logger.warning("paper index close read failed: %s", e)
-        return None
-    if df.is_empty() or df["close"][0] is None:
-        return None
-    return float(df["close"][0])
+    bar = _partition_bar(
+        data_dir / "kline_index_daily", "000300.SH", _date.fromisoformat(day), exact=True
+    )
+    return bar["close"] if bar else None
 
 
 def _factor_on(data_dir: Path, symbol: str, asset_type: str, day: str) -> float | None:

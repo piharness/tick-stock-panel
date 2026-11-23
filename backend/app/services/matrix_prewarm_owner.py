@@ -14,6 +14,13 @@ class MatrixCachePrewarmOwner:
     def cancel_event(self) -> threading.Event:
         return self._cancel_event
 
+    @property
+    def is_running(self) -> bool:
+        """预热线程是否仍在运行 —— 供 /status 的 busy 判定读取（预热占着
+        DuckDB 全局锁，期间重聚合会在锁上排队）。"""
+        with self._lock:
+            return self._thread is not None and self._thread.is_alive()
+
     def schedule(self, target: Callable[[], None]) -> bool:
         with self._lock:
             if self._cancel_event.is_set():

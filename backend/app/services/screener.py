@@ -218,7 +218,6 @@ class ScreenerService:
         )
 
         # 加载 warmup 历史 (目标日期前 ~120 天)
-        enriched_dir = self.repo.store.data_dir / self._enriched_dirname
         start = target_date - timedelta(days=150)
         # turnover_rate 是 enriched 存储列, 必须随行透传: 否则即时计算后该列
         # 丢失, 自定义 SQL 用它做条件会 Binder Error 被吞成空结果 (#187)
@@ -226,15 +225,26 @@ class ScreenerService:
                      "amount", "raw_close", "raw_high", "raw_low", "turnover_rate"]
 
         try:
+            # 只枚举这 150 天内的分区，不 glob 全树：`**/*.parquet` 会让 polars
+            # 在 schema 解析阶段逐个打开全部 5313 个文件读 footer（实测 16.8s），
+            # 而窗口外的文件一行都用不上。`enriched_files` 用 scandir 取目录名，
+            # 区间外连 stat 都不做。
+            from app.services.daily_panel import enriched_files
+
+            files = enriched_files(
+                self.repo.store.data_dir, start, target_date, self._enriched_dirname
+            )
+            if not files:
+                raise FileNotFoundError(f"{self._enriched_dirname} 在 {start}~{target_date} 无分区")
             lf = (
-                scan_enriched_parquet(str(enriched_dir / "**" / "*.parquet"))
+                scan_enriched_parquet([str(f) for f in files])
                 .filter(
                     (pl.col("date") >= start)
                     & (pl.col("date") <= target_date)
                 )
                 .sort(["symbol", "date"])
             )
-            available = [c for c in read_cols if c in lf.schema]
+            available = [c for c in read_cols if c in lf.collect_schema().names()]
             df_hist = lf.select(available).collect()
         except Exception as e:  # noqa: BLE001
             logger.warning("warmup history load failed: %s", e)
@@ -313,14 +323,20 @@ class ScreenerService:
         warmup = 60
         start = target_date - timedelta(days=min((lookback_days + warmup) * 2, 180))
 
-        enriched_dir = self.repo.store.data_dir / self._enriched_dirname
-        # 同 _compute_enriched_full: turnover_rate 存储列随行透传 (#187)
+        # 同 _compute_enriched_full: 只枚举窗口内的分区，不 glob 全树（原因见那里）。
         read_cols = ["symbol", "date", "open", "high", "low", "close", "volume",
                      "amount", "raw_close", "raw_high", "raw_low", "turnover_rate"]
 
         try:
+            from app.services.daily_panel import enriched_files
+
+            files = enriched_files(
+                self.repo.store.data_dir, start, target_date, self._enriched_dirname
+            )
+            if not files:
+                return pl.DataFrame()
             lf = (
-                scan_enriched_parquet(str(enriched_dir / "**" / "*.parquet"))
+                scan_enriched_parquet([str(f) for f in files])
                 .filter((pl.col("date") >= start) & (pl.col("date") <= target_date))
                 .sort(["symbol", "date"])
             )

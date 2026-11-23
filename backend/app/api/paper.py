@@ -70,24 +70,18 @@ def _resolve_asset_type(request: Request, symbol: str) -> str:
 
 
 def _last_close(data_dir: Path, symbol: str, asset_type: str) -> float | None:
-    """最近收盘价 (amount 折算参考价)。读最新分区日 raw close。"""
-    base = paper._daily_path(data_dir, asset_type)
-    if not base.exists():
-        return None
-    try:
-        import polars as pl
-        df = (
-            pl.scan_parquet((base / "**" / "*.parquet").as_posix())
-            .filter(pl.col("symbol") == symbol)
-            .sort("date")
-            .select(pl.col("close").last())
-            .collect()
-        )
-    except Exception:
-        return None
-    if df.is_empty() or df["close"][0] is None:
-        return None
-    return float(df["close"][0])
+    """最近收盘价 (amount 折算参考价)。从最新分区往前找该票最近一根 raw close。
+
+    旧实现 `scan_parquet(base/**/*.parquet).sort(date).select(close.last())`：
+    为取一行把整棵树（含 246 个月分区）的 footer 全读一遍。下单是一次点击，
+    付不起这个成本。
+    """
+    from app.market_time import cn_today
+
+    bar = paper._partition_bar(
+        paper._daily_path(data_dir, asset_type), symbol, cn_today(), exact=False
+    )
+    return bar["close"] if bar else None
 
 
 @router.get("/accounts")

@@ -234,7 +234,91 @@ def test_load_panel_reads_month_partitions(tmp_path: Path):
     assert df["symbol"][0] == "600001.SH"
 
 
-# ===== 6. API 契约 =====
+# ===== 6. 窗口日历不碰 kline_daily / 不扫 parquet（超时回归） =====
+
+
+def test_panel_window_does_not_need_kline_daily(tmp_path: Path):
+    """`kline_daily` 整个删掉，个股解剖仍然出结果。
+
+    回归背景：`_panel` 曾用 `kline_trading_days`（读 `kline_daily` 的月分区）
+    来截窗口。`list_partition_dates()` 对每个月分区都要 `scan_parquet` 读
+    `date` 列去重 —— 容器 bind mount 上 246 个月分区实测 19.5s，把「20/40/
+    60/120 日重扫」与「60/120/250 日解剖」全部推过前端 30s 默认超时。
+
+    判据故意做成「删掉另一张表」而不是「计时」：计时在 CI 上没有稳定阈值，
+    而这条分支只要被走回去就一定红（旧实现返回 state=no_data）。
+    """
+    import shutil
+
+    data = _write_store(tmp_path, 120)
+    days = sorted(d.name[5:] for d in (data / "kline_daily_enriched").iterdir() if d.is_dir())
+    start, end = date.fromisoformat(days[20]), date.fromisoformat(days[-1])
+
+    shutil.rmtree(data / "kline_daily")
+
+    dis = case_lab.dissect(data, "600001.SH", start, end)
+    assert dis["state"] == "ok"
+    assert len(dis["bars"]) == 100
+
+
+def test_calendar_reads_directory_names_only(tmp_path: Path, monkeypatch):
+    """交易日历只读目录名，一次 parquet 都不打开。
+
+    这是上一条的**因**：删除另一张表只能证明「不依赖那张表」，证明不了
+    「不扫 parquet」。把 scan/read 全部换成抛异常，日历仍然要给出 120 天。
+    """
+    from app.services.daily_panel import enriched_partition_dates
+
+    data = _write_store(tmp_path, 120)
+
+    def boom(*_a, **_k):
+        raise AssertionError("enriched_partition_dates 不应打开 parquet")
+
+    monkeypatch.setattr(pl, "scan_parquet", boom)
+    monkeypatch.setattr(pl, "read_parquet", boom)
+
+    days = enriched_partition_dates(data)
+    assert len(days) == 120
+    assert days == sorted(days)
+
+
+def test_nonstandard_partition_suffix_is_ignored(tmp_path: Path):
+    """`date=2026-11-08.bak` 里的 parquet 不许被读进来。
+
+    目录名与文件列表若用两套判据，就会「同一天读到两份」，把一天的成交额
+    算成两天，页面不报错。**必须用跨区间查询**：单日区间下
+    `'2026-11-08.bak' > '2026-11-08'` 恰好被字符串比较挡住，判据看起来
+    永远是绿的 —— 只有 start != end 时才真的被包含。
+    """
+    data = _write_store(tmp_path, 5)
+    days = sorted(d.name[5:] for d in (data / "kline_daily_enriched").iterdir() if d.is_dir())
+    dup_day = days[2]
+    src = data / "kline_daily_enriched" / f"date={dup_day}" / "part.parquet"
+    dup = data / "kline_daily_enriched" / f"date={dup_day}.bak"
+    dup.mkdir(parents=True)
+    (dup / "part.parquet").write_bytes(src.read_bytes())
+
+    df = load_panel(data, date.fromisoformat(days[0]), date.fromisoformat(days[-1]))
+    assert df.height == len(SYMBOLS) * len(days)  # 25 行，不是 30 行
+
+
+def test_scan_as_of_is_the_last_bar_not_the_request_day(tmp_path: Path):
+    """回看窗口的右端必须是数据里真有的那一天。
+
+    回归：`as_of` 曾直接回显请求日。周末、盘中、数据未落盘时两者差一天，
+    页面顶部写「10-23 → 11-20」而面板实际止于 11-19 —— 这种偏差不报错，
+    只悄悄改变「回看 20 个交易日」的读法。
+    """
+    data = _write_store(tmp_path, 120)
+    days = sorted(d.name[5:] for d in (data / "kline_daily_enriched").iterdir() if d.is_dir())
+
+    out = case_lab.scan(data, date.fromisoformat(days[-1]) + timedelta(days=10), 20, 30)
+    assert out["state"] == "ok"
+    assert out["as_of"] == days[-1]
+    assert out["start"] == days[-20]
+
+
+# ===== 7. API 契约 =====
 
 def _api_client(data_dir: Path):
     from types import SimpleNamespace

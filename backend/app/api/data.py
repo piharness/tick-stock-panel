@@ -148,9 +148,15 @@ def repair_integrity(body: IntegrityRepairIn, request: Request) -> dict:
 # 同步期间前端 2s 轮一次 status,每张表 aggregate 全表 count + min/max + distinct
 # 太重,加 TTL + 事件失效。stage 写完只清对应那张表的缓存。
 
-_TABLE_TTL = 30.0  # 兜底 TTL,即使没人调 invalidate 也会过期
-_TABLE_TTL_LARGE = 120.0  # 大表(分钟K等)单独 TTL，避免多分区聚合反复重算
-_STORAGE_TTL = 60.0  # storage 文件扫描独立 TTL,stage 写完不触发重算
+_TABLE_TTL = 300.0  # 兜底 TTL,即使没人调 invalidate 也会过期。
+# 注意: 不能短于单次重算耗时 —— DuckDB 全表 count 在 9p 挂载上 ~40s, 若 TTL < 重算耗时,
+# 缓存一写入就"已过期", 每个请求都重算 (2026-11-19 /status 40s 超时的根因之一)。
+_TABLE_TTL_LARGE = 600.0  # 大表(分钟K等)单独 TTL，避免多分区聚合反复重算
+_STORAGE_TTL = 1800.0  # storage 文件扫描独立 TTL,stage 写完不触发重算。
+# 注意: 必须远大于单次扫描耗时 —— 全量遍历 2 万+ 文件逐个 stat 在 9p 挂载上
+# 实测 ~71s, 若 TTL(60s) < 扫描耗时, 缓存刚写满就过期, 扫描永远在后台刷、
+# 永远占满 9p 元数据带宽, 把 /status 自身的文件操作也拖到 25~40s
+# (2026-11-19 /status 超时的真正根因, 与表聚合无关)。30min 足够覆盖日更节奏。
 
 # 聚合慢的大表（分区数多、行数多），使用更长的 TTL
 _LARGE_TABLES = {"minute"}
@@ -179,6 +185,11 @@ _table_cache_ts: dict[str, float] = {k: 0.0 for k in _table_cache}
 # 宁可数字旧一点, 也不能让重聚合在 DuckDB 锁上排队到前端超时
 _table_cache_stale: dict[str, dict | None] = {}
 _table_cache_lock = threading.Lock()
+
+# 单飞 (single-flight): TTL 过期后的重算只允许一个请求执行, 其余等待复用。
+# key = 表名, value = 该表正在重算的完成信号。
+_inflight: dict[str, threading.Event] = {}
+_inflight_lock = threading.Lock()
 
 _last_finished_cache: dict[str, str | None] | None = None
 _last_finished_lock = threading.Lock()
@@ -281,25 +292,52 @@ def _get_table_stats(
     DuckDB 单连接全局锁 — 管道持锁跑长查询时重算会在锁上排队, 2s 的 /status
     轮询堆积后触发前端 30s 超时 (2026-10-28 用户反馈)。任务结束的失效事件
     会清 TTL 缓存, 结束后第一次调用即恢复正常重算。
+
+    单飞 (single-flight): TTL 过期后, 多个并发轮询若各自触发一次重算, 会在
+    DuckDB 全局锁上排队叠加, 把一次 40s 的重算放大成 N 次。这里只让一个请求
+    真正重算, 其余等待复用结果。
     """
     ttl = _TABLE_TTL_LARGE if name in _LARGE_TABLES else _TABLE_TTL
-    now = time.time()
     with _table_cache_lock:
         if busy:
             return _table_cache_stale.get(name)
         cached = _table_cache.get(name)
         cached_ts = _table_cache_ts.get(name, 0.0)
-        if cached is not None and (now - cached_ts) < ttl:
+        if cached is not None and (time.time() - cached_ts) < ttl:
             return cached
 
-    fresh = fetch()
+    with _inflight_lock:
+        ev = _inflight.get(name)
+        if ev is None:
+            ev = _inflight[name] = threading.Event()
+            owner = True
+        else:
+            owner = False
 
-    with _table_cache_lock:
-        _table_cache[name] = fresh
-        _table_cache_ts[name] = now
-        if fresh is not None:
-            _table_cache_stale[name] = fresh
-    return fresh
+    if not owner:
+        ev.wait(timeout=ttl)
+        with _table_cache_lock:
+            cached = _table_cache.get(name)
+            if cached is not None:
+                return cached
+        # 等待超时仍未算完 (极端情况), 兜底自己算一次
+        return fetch()
+
+    try:
+        fresh = fetch()
+        with _table_cache_lock:
+            _table_cache[name] = fresh
+            # 时间戳必须是「重算完成后的当下」, 不能用进入函数时的旧值 ——
+            # 否则 40s 的重算一写入就是「已过期」(>TTL), 每个请求都重算
+            # (2026-11-19 /status 每次 40s 的根因)。
+            _table_cache_ts[name] = time.time()
+            if fresh is not None:
+                _table_cache_stale[name] = fresh
+        return fresh
+    finally:
+        with _inflight_lock:
+            _inflight.pop(name, None)
+        ev.set()
 
 
 def _safe_aggregate(repo, view: str) -> dict | None:
@@ -903,6 +941,11 @@ def _last_finished(job_label: str) -> str | None:
 def _data_pipeline_busy(request: Request) -> bool:
     """同步任务运行中或指标预热未完成 — /status 的重聚合应退化为纯缓存读。"""
     if not getattr(request.app.state, "indicators_ready", True):
+        return True
+    # matrix 缓存预热同样占着 DuckDB 全局锁 (启动时一次 ~34s), 期间重聚合会
+    # 在锁上排队, 把冷启动首请求拖到 ~48s。让它也退回纯缓存读。
+    owner = getattr(request.app.state, "matrix_prewarm_owner", None)
+    if owner is not None and getattr(owner, "is_running", False):
         return True
     active_id = job_store.active_id()
     if not active_id:

@@ -822,7 +822,15 @@ class KlineRepository:
                                          "volume", "amount", "raw_close", "raw_high", "raw_low"]
                              if c in df_latest.columns]
                 lf = (
-                    scan_enriched_parquet(self._enriched_glob)
+                    # 按区间裁剪分区，不扫全树：全表 glob 会让 polars 在 schema
+                    # 解析阶段逐个打开 5313 个文件读 footer（容器内实测 16.8s），
+                    # 而这里只要近 300 个日历日的分区。裁剪逻辑与单票查询同源
+                    # （`_partition_files_in_range`），失败时自动回退原 glob。
+                    scan_enriched_parquet(
+                        self._daily_scan_source(
+                            "kline_daily_enriched", self._enriched_glob, start_full, latest
+                        )
+                    )
                     .filter(pl.col("date") >= start_full)
                     .sort(["symbol", "date"])
                 )
@@ -1118,7 +1126,11 @@ class KlineRepository:
         consec_source = df_hist
         if len(consec_cols) != 3:
             lf = (
-                scan_enriched_parquet(self._enriched_glob)
+                scan_enriched_parquet(
+                    self._daily_scan_source(
+                        "kline_daily_enriched", self._enriched_glob, start_60d, latest
+                    )
+                )
                 .filter((pl.col("date") >= start_60d) & (pl.col("date") <= latest))
                 .sort(["symbol", "date"])
             )
@@ -1210,9 +1222,14 @@ class KlineRepository:
         from app.indicators.pipeline import compute_indicators
 
         # 多读一段自然日, 再按交易日计数确定窗口起点 (长假前后 90 个自然日不足 60 个交易日)
+        scan_start = start_60d - timedelta(days=60)
         lf = (
-            scan_enriched_parquet(self._enriched_glob)
-            .filter(pl.col("date") >= start_60d - timedelta(days=60))
+            scan_enriched_parquet(
+                self._daily_scan_source(
+                    "kline_daily_enriched", self._enriched_glob, scan_start, latest
+                )
+            )
+            .filter(pl.col("date") >= scan_start)
             .filter(pl.col("date") <= latest)
             .sort(["symbol", "date"])
         )

@@ -46,8 +46,7 @@ from typing import Any
 import polars as pl
 
 from app.market_time import cn_now, cn_today
-from app.services.daily_panel import attach_returns, load_panel
-from app.services.trading_days import kline_trading_days
+from app.services.daily_panel import attach_returns, enriched_partition_dates, load_panel
 
 logger = logging.getLogger(__name__)
 
@@ -277,9 +276,15 @@ def _panel(data_dir: Path, end: date_cls, days: int) -> pl.DataFrame:
     **不缓存面板**。一份 400 天 × 5500 只 × 30 列的面板约 300–500MB；把它挂在
     进程里，一个人打开两次页面就能把容器的内存预算吃掉。这里缓存的是**结果**
     （`_SCAN_CACHE` / `_DISSECT_CACHE`，几十 KB 到几百 KB），不是中间态。
-    重算一次的代价是 3 秒，换来的是不会随标签页数量增长的内存曲线。
+    重算一次的代价是 1 秒级，换来的是不会随标签页数量增长的内存曲线。
+
+    交易日集合取自 `kline_daily_enriched` 的日分区名，**不是**
+    `kline_trading_days`：后者读 `kline_daily` 的月分区，要对 246 个月逐个
+    `scan_parquet` 读 date 列，容器内实测 19.5s —— 而调用方随后读的是
+    enriched，用另一张表的日历来截窗口只是多一次全表扫描（见
+    `daily_panel.enriched_partition_dates` 的注释）。
     """
-    all_days = [d for d in kline_trading_days(Path(data_dir)) if d <= end]
+    all_days = [d for d in enriched_partition_dates(Path(data_dir)) if d <= end]
     if not all_days:
         return pl.DataFrame()
     window = all_days[-days:]
@@ -548,7 +553,10 @@ def _scan_impl(data_dir: Path, end: date_cls, lookback: int, limit: int) -> dict
         })
     return {
         "state": "ok",
-        "as_of": end.isoformat(),
+        # as_of = **面板里真实存在的最后一天**，不是请求日。周末/盘中/数据未落盘时
+        # 两者不同：页面顶部写「10-23 → 11-20」而窗口实际止于 11-19，会让「回看
+        # 20 个交易日」的终点凭空多一天 —— 这种偏差不报错，只改变读法。
+        "as_of": str(days[-1]),
         "start": str(start),
         "lookback": lookback,
         "counts": {"candidates": total, "shown": len(out)},
@@ -944,7 +952,10 @@ def _main() -> int:  # pragma: no cover - 手工入口
         if payload.get("state") != "ok":
             print(f"统计不可用: {payload.get('state')}")
             return 1
-        days = [d for d in kline_trading_days(data_dir)]
+        # latest 必须与 `compute_stats` 的 `as_of` 同源：两者都取自 enriched 面板。
+        # 用 `kline_daily` 的日历会在两表不同步时永远报 stale —— 一条永远红的
+        # 判据等于没有判据。
+        days = enriched_partition_dates(data_dir)
         latest = days[-1].isoformat() if days else None
         stale = payload.get("as_of") != latest
         print(f"stats.as_of={payload.get('as_of')} latest_bar={latest} stale={stale}")
