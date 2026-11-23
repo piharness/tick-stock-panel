@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>结构优势 · 研究展示窗口</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f7f7f5; --border: #e3e2dd;
+    --text: #2c2c2a; --muted: #5f5e5a; --hint: #888780;
+    --blue: #185fa5; --blue-bg: #e6f1fb;
+    --teal: #0f6e56; --teal-bg: #e1f5ee;
+    --amber: #854f0b; --amber-bg: #faeeda;
+    --red: #a32d2d; --red-bg: #fcebeb;
+    --gray: #5f5e5a; --gray-bg: #f1efe8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; font-size: 14px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  h2 { font-size: 17px; font-weight: 600; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .hero { background: var(--blue-bg); border-left: 4px solid var(--blue); padding: 18px 20px; border-radius: 8px; margin: 16px 0; }
+  .hero .q { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .hero .a { font-size: 15px; font-weight: 600; color: var(--blue); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .card .k { font-size: 12px; color: var(--muted); }
+  .card .v { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .card .d { font-size: 12px; color: var(--hint); margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--surface); font-weight: 600; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .tag.false { background: var(--gray-bg); color: var(--gray); }
+  .tag.true { background: var(--teal-bg); color: var(--teal); }
+  .tag.cand { background: var(--amber-bg); color: var(--amber); }
+  .tag.neg { background: var(--red-bg); color: var(--red); }
+  .chart { width: 100%; height: 300px; margin: 12px 0; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+  code { background: var(--surface); padding: 1px 6px; border-radius: 4px; font-size: 12px; font-family: "SF Mono", Consolas, monospace; }
+  .note { color: var(--hint); font-size: 12px; margin-top: 8px; }
+  ul { margin: 8px 0 8px 20px; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>结构优势 · 研究展示窗口</h1>
+  <div class="sub">注意力定价失效后：结构变化 → 可持续决策优势 → 凭什么是我。5 个可复现实验的收敛结果。</div>
+
+  <div class="hero">
+    <div class="q">最终裁决（一句话）</div>
+    <div class="a" id="verdict"></div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <h2>1 · 研究弧线</h2>
+  <table>
+    <tr><th style="width:18%">阶段</th><th>内容</th></tr>
+    <tr><td>原始问题</td><td>「注意力定价失效了，怎么把结构变化变成可持续优势，凭什么接住错位的是我？」</td></tr>
+    <tr><td>升级后问题</td><td>注意力从来不是独立因子（正交化归零＝市值+换手率+流动性的复合代理）；结构变化是事件不是现金流。真正要验的是：<b>「做被迫交易方的耐心对手方」能不能、凭什么成为可持续 edge？</b></td></tr>
+    <tr><td>实证检验</td><td>把账本每类被迫流用真实数据、生存偏差修正、跨 regime 样本外逐条裁决。</td></tr>
+  </table>
+
+  <h2>2 · 五个实验的裁决</h2>
+  <table id="expTable"></table>
+
+  <h2>3 · 两条关键数据曲线</h2>
+  <div class="two">
+    <div>
+      <div class="note" style="margin:0 0 4px">跌破 1 元后 60 日退市率，按跌破前回撤深度分桶（1.5 元阈值 · post2020）</div>
+      <div class="chart" id="chartDelist"></div>
+    </div>
+    <div>
+      <div class="note" style="margin:0 0 4px">指数调样：调入/调出股 生效前后 20 日超额（bp，真实名单）</div>
+      <div class="chart" id="chartRebalance"></div>
+    </div>
+  </div>
+
+  <h2>4 · 被迫交易方账本（六类裁决）</h2>
+  <table id="flowTable"></table>
+
+  <h2>5 · 收敛规律</h2>
+  <div class="hero" style="background:var(--amber-bg);border-left-color:var(--amber)">
+    <div class="a" style="color:var(--amber)">A 股「被迫流反转」错位，要么被抢跑、要么被动量主导、要么被制度改革杀死。「做被迫方对手方」这个动作太便宜、太公开——不是可持续优势。</div>
+    <div class="q" style="margin-top:8px">与你既有结论（T+2 残差作废、打板溢价 17 年无趋势）是同一条规律的第五、六次印证。</div>
+  </div>
+
+  <h2>6 · 「凭什么是我」的两半</h2>
+  <table>
+    <tr><th style="width:50%">第一半：moat 是真的</th><th>第二半：moat ≠ edge</th></tr>
+    <tr>
+      <td>退市/ST 段，机构被基金合同锁死、不能碰。「约束集真空」被数据证实，「慢+小+丑+容量小」的生态位结构性只归你。</td>
+      <td>5 个实验里<b>没有一条被迫流翻成正 EV</b>。「没人抢」有时是「抢了会亏」，不是「别人没看见」。<b>约束集真空是必要非充分条件——真空保证轮得到你，不保证赚得到钱。</b></td>
+    </tr>
+  </table>
+
+  <h2>7 · 正面的路（三个充分条件，任一即可）</h2>
+  <ul>
+    <li><b>动作有摩擦</b>：需要持有 20 天、承受回撤、研究基本面——这些正是机构不能做的原因。</li>
+    <li><b>制度不变 + 叠加摩擦</b>：例行制度（半年度调样、退市规则）制造的错位必须叠加条件 1，否则太便宜会被抢跑。</li>
+    <li><b>真实的非公开信息优势</b>：只有你能廉价获取的数据/分析（退市规则距离、龙虎榜席位归因）。</li>
+  </ul>
+  <div class="hero" style="background:var(--teal-bg);border-left-color:var(--teal)">
+    <div class="a" style="color:var(--teal)">唯一被数据证实的正价值：把这些错位信号当<b>风控排除</b>（「回撤深度→退市概率」跨 regime 稳定），而不是买入信号。排除只需要信号正确；买入还需要信号稀缺。</div>
+  </div>
+
+  <h2>8 · 可复现清单与下一步</h2>
+  <table id="scriptTable"></table>
+  <h3 style="font-size:14px;font-weight:600;margin-top:16px">下一步（可证伪）</h3>
+  <ul id="nextList"></ul>
+
+  <div class="note" style="margin-top:28px">维护说明：本页数据块集中在前部 <code>&lt;script&gt;</code> 的 DATA 对象，逐项对应 <code>analysis/_diag_*_result.json</code>；跑完新实验后更新对应字段即可，图表与表格自动刷新。数据来源：中证指数官网（调样名单）、东财补全包（退市股）、本地 kline_daily_enriched。</div>
+</div>
+
+<script>
+const DATA = {
+  verdict: "约束集真空是必要条件，不是充分条件。moat 真、edge 负——5 个实验无一翻正。你的可持续优势不在「接错位」，而在「用信号做排除（风控）而非买入（alpha）」。",
+  cards: [
+    { k: "可复现实验", v: "5", d: "脚本 + JSON 全部落地" },
+    { k: "被迫流已裁决", v: "4 / 6", d: "指数调样、退市/ST、龙虎榜、涨跌停" },
+    { k: "翻正的正 EV", v: "0", d: "条件化后仍无一翻正" },
+    { k: "退市名单完整性", v: "通过", d: "与 Wind 口径几乎一致" },
+  ],
+  experiments: [
+    { name: "moat 过滤器", script: "_diag_moat_filter.py", q: "你已有的 edge 归谁", v: "成立", tag: "true", detail: "silent 四层全过；T+2 日内腿速度层淘汰" },
+    { name: "指数调样（naive）", script: "_diag_index_rebalance.py", q: "调样反转存在吗", v: "证伪", tag: "false", detail: "高换手反转是普适的，调样窗口内反而更弱" },
+    { name: "退市无条件买跌", script: "_diag_delisting_forced_sell.py", q: "砸坑→回补", v: "证伪", tag: "false", detail: "跌破 1 元 20 日 EV −49%（生存偏差修正后）" },
+    { name: "退市条件化+样本外", script: "_diag_delisting_conditional.py / _oos.py", q: "条件化能否翻正", v: "证伪", tag: "false", detail: "+970bp 是假象；「保壳」死于 2020 退市新规" },
+    { name: "指数调样（真实名单）", script: "_diag_index_rebalance_real.py", q: "真实名单驱动", v: "证伪", tag: "false", detail: "调出中位 −10.5bp、买调出/卖调入价差 −37bp" },
+  ],
+  delist: [
+    { b: "深跌\n−100~−70%", rate: 82.1, ev: -8307 },
+    { b: "−70~−50%", rate: 27.7, ev: -1298 },
+    { b: "−50~−30%", rate: 14.9, ev: -575 },
+    { b: "浅跌\n−30~0%", rate: 6.2, ev: -347 },
+  ],
+  rebalance: { pre_add: 196, pre_remove: -141, fwd_add: 196, fwd_remove_med: -10.5, spread: -37 },
+  flows: [
+    { f: "指数定期调样", who: "指数基金（契约锁死）", moat: "小+容量", verdict: "无 edge", tag: "neg", d: "被公告日抢跑 + 动量主导 + 被动资金占比小" },
+    { f: "退市 / ST 清仓", who: "基金合同+风控", moat: "丑+容量（四层全过）", verdict: "moat 真 · edge 负", tag: "neg", d: "无条件买跌 −49%；保壳死于 2020 退市新规" },
+    { f: "龙虎榜席位流", who: "短线资金", moat: "干净+容量够", verdict: "不可交易", tag: "false", d: "上榜后 H20 −400~−500bp 均值回归" },
+    { f: "涨跌停制度", who: "散户", moat: "快", verdict: "归量化", tag: "false", d: "打板溢价 17 年无趋势，溢价全搬到隔夜" },
+    { f: "ETF 申赎", who: "做市商", moat: "容量", verdict: "未验证", tag: "cand", d: "缺 ETF 申赎流数据" },
+    { f: "季末机构再平衡", who: "公募（排名考核）", moat: "慢+容量", verdict: "未验证", tag: "cand", d: "最可能满足「摩擦+制度不变」，待跑" },
+  ],
+  scripts: [
+    { s: "_diag_moat_filter.py", o: "moat 过滤器 + 判定" },
+    { s: "_diag_index_rebalance.py", o: "naive 代理（证伪）" },
+    { s: "_diag_delisting_forced_sell.py", o: "无条件退市买跌（证伪）" },
+    { s: "_diag_delisting_conditional.py", o: "条件化（候选）" },
+    { s: "_diag_delisting_oos.py", o: "样本外（证伪）" },
+    { s: "_diag_delisting_completeness_findings.md", o: "名单完整性（通过）" },
+    { s: "_diag_index_rebalance_real.py", o: "真实名单（证伪）" },
+  ],
+  next: [
+    "把「退市规则距离」接入决策主链路做买入阻断（风控排除层，可回测避雷）",
+    "跑季末机构再平衡——账本里唯一未验证、且理论上最可能满足「摩擦+制度不变」的一条",
+    "停掉「被迫流反转」整条线（5 次证伪已足够）",
+  ],
+};
+
+document.getElementById("verdict").textContent = DATA.verdict;
+
+const cardsEl = document.getElementById("cards");
+cardsEl.innerHTML = DATA.cards.map(c =>
+  `<div class="card"><div class="k">${c.k}</div><div class="v">${c.v}</div><div class="d">${c.d}</div></div>`
+).join("");
+
+const expEl = document.getElementById("expTable");
+expEl.innerHTML =
+  `<tr><th>实验</th><th>脚本</th><th>问题</th><th>裁决</th><th>结论</th></tr>` +
+  DATA.experiments.map(e =>
+    `<tr><td><b>${e.name}</b></td><td><code>${e.script}</code></td><td>${e.q}</td>` +
+    `<td><span class="tag ${e.tag}">${e.v}</span></td><td>${e.detail}</td></tr>`
+  ).join("");
+
+const flowEl = document.getElementById("flowTable");
+flowEl.innerHTML =
+  `<tr><th>被迫流</th><th>谁被迫</th><th>错位段落在哪</th><th>裁决</th><th>说明</th></tr>` +
+  DATA.flows.map(f =>
+    `<tr><td><b>${f.f}</b></td><td>${f.who}</td><td>${f.moat}</td>` +
+    `<td><span class="tag ${f.tag}">${f.verdict}</span></td><td>${f.d}</td></tr>`
+  ).join("");
+
+const scriptEl = document.getElementById("scriptTable");
+scriptEl.innerHTML =
+  `<tr><th>脚本 / 文档</th><th>产出</th></tr>` +
+  DATA.scripts.map(s => `<tr><td><code>analysis/${s.s}</code></td><td>${s.o}</td></tr>`).join("");
+
+document.getElementById("nextList").innerHTML = DATA.next.map(n => `<li>${n}</li>`).join("");
+
+function renderDelist() {
+  const c = echarts.init(document.getElementById("chartDelist"));
+  c.setOption({
+    tooltip: { trigger: "axis", formatter: p => `${p[0].name}<br/>60日退市率 <b>${p[0].value}%</b>` },
+    grid: { left: 46, right: 20, top: 24, bottom: 34 },
+    xAxis: { type: "category", data: DATA.delist.map(d => d.b), axisLabel: { fontSize: 11 } },
+    yAxis: { type: "value", name: "退市率 %", max: 100, nameTextStyle: { fontSize: 11 } },
+    series: [{ type: "bar", data: DATA.delist.map(d => d.rate), barWidth: "46%",
+      itemStyle: { color: "#185FA5" },
+      label: { show: true, position: "top", formatter: "{c}%", fontSize: 11, color: "#185FA5" } }],
+  });
+}
+
+function renderRebalance() {
+  const c = echarts.init(document.getElementById("chartRebalance"));
+  c.setOption({
+    tooltip: { trigger: "axis" },
+    legend: { data: ["生效前 20 日", "生效后 20 日"], top: 0, textStyle: { fontSize: 11 } },
+    grid: { left: 46, right: 20, top: 34, bottom: 34 },
+    xAxis: { type: "category", data: ["调入", "调出"] },
+    yAxis: { type: "value", name: "超额 bp", nameTextStyle: { fontSize: 11 } },
+    series: [
+      { name: "生效前 20 日", type: "bar", data: [DATA.rebalance.pre_add, DATA.rebalance.pre_remove], barWidth: "30%", itemStyle: { color: "#85B7EB" } },
+      { name: "生效后 20 日", type: "bar", data: [DATA.rebalance.fwd_add, DATA.rebalance.fwd_remove_med], barWidth: "30%", itemStyle: { color: "#185FA5" },
+        label: { show: true, position: "top", formatter: p => `${p.value}`, fontSize: 11 } },
+    ],
+  });
+}
+
+renderDelist();
+renderRebalance();
+window.addEventListener("resize", () => { renderDelist(); renderRebalance(); });
+</script>
+</body>
+</html>
