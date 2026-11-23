@@ -1,0 +1,31 @@
+{
+  "n_trades": 12117,
+  "capacity": {
+    "median_amount_yuan": 576495500.0,
+    "p25": 435625543.88,
+    "p75": 813624356.37,
+    "median_amount_yi": 5.76,
+    "share_below_1yi": 0.0,
+    "share_below_5000w": 0.0,
+    "implied_max_position_at_5pct_adv_yi": 0.288
+  },
+  "equity": {
+    "trading_days": 5314,
+    "signal_days": 3185,
+    "final_equity_full_calendar": 0.0,
+    "final_equity_signal_days_only": 0.0,
+    "years": 21.8,
+    "cagr_full": -0.8181
+  },
+  "risk": {
+    "daily_win_rate": 0.161,
+    "worst_losing_streak_days": 45,
+    "max_drawdown": -1.0,
+    "worst_day": -0.1018,
+    "best_day": 0.0982
+  },
+  "concentration": {
+    "best10_sum": 0.7094,
+    "total_sum": -36.5341
+  }
+}

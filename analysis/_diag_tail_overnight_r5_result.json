@@ -1,0 +1,55 @@
+{
+  "cells": {
+    "chg3-4 lowturn": {
+      "n": 66603,
+      "turnover_median_pct": 0.31,
+      "turnover_p90_pct": 1.02,
+      "amount_median_yi": 0.549,
+      "amount_p25_yi": 0.236,
+      "fmcap_median_yi": 222.3,
+      "one_word_board_share": 0.0,
+      "range_median_pct": 0.0473,
+      "looks_like_5pct_limit_share": 0.0,
+      "gap_open_median_bp": 7.7,
+      "active_bp": -4.0,
+      "active_t": -4.96,
+      "raw_bp": -12.9,
+      "n_dates": 5067
+    },
+    "chg4-5 lowturn": {
+      "n": 31114,
+      "turnover_median_pct": 0.28,
+      "turnover_p90_pct": 0.93,
+      "amount_median_yi": 0.595,
+      "amount_p25_yi": 0.225,
+      "fmcap_median_yi": 257.0,
+      "one_word_board_share": 0.0555,
+      "range_median_pct": 0.0564,
+      "looks_like_5pct_limit_share": 0.2005,
+      "gap_open_median_bp": 20.0,
+      "active_bp": 49.1,
+      "active_t": 26.54,
+      "raw_bp": 41.6,
+      "n_dates": 4832,
+      "names_per_day_median": 4.0,
+      "board_mix": [
+        {
+          "b": "main",
+          "len": 22352
+        },
+        {
+          "b": "STAR",
+          "len": 4135
+        },
+        {
+          "b": "GEM",
+          "len": 4035
+        },
+        {
+          "b": "BJ",
+          "len": 592
+        }
+      ]
+    }
+  }
+}

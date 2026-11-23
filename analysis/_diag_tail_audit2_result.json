@@ -1,0 +1,107 @@
+{
+  "B1_zero_vol": 0,
+  "B2": {
+    "000001.SZ": {
+      "rows": 5163,
+      "distinct_adj": 20,
+      "share_days_adj_changes": 0.0037,
+      "adj_first": 0.193738,
+      "adj_last": 1.0,
+      "monotone_nondecreasing": true,
+      "max_adj": 1.0
+    },
+    "600519.SH": {
+      "rows": 5246,
+      "distinct_adj": 27,
+      "share_days_adj_changes": 0.005,
+      "adj_first": 0.18368,
+      "adj_last": 1.0,
+      "monotone_nondecreasing": true,
+      "max_adj": 1.0
+    },
+    "000002.SZ": {
+      "rows": 5111,
+      "distinct_adj": 20,
+      "share_days_adj_changes": 0.0037,
+      "adj_first": 0.157315,
+      "adj_last": 1.0,
+      "monotone_nondecreasing": true,
+      "max_adj": 1.0
+    },
+    "601398.SH": {
+      "rows": 4855,
+      "distinct_adj": 25,
+      "share_days_adj_changes": 0.0049,
+      "adj_first": 0.384617,
+      "adj_last": 1.0,
+      "monotone_nondecreasing": true,
+      "max_adj": 1.0
+    }
+  },
+  "B5_rows": {
+    "n_trades": 12117,
+    "n_dates": 3185,
+    "day_mean_bp": -99.7,
+    "trade_mean_bp": -87.5,
+    "t_day": -37.19
+  },
+  "B5_calendar": {
+    "n_trades": 12398,
+    "n_dates": 3194,
+    "day_mean_bp": -98.4,
+    "trade_mean_bp": -85.9,
+    "t_day": -37.01
+  },
+  "B5_agreement": {
+    "both": 2418635,
+    "rows_only": 16643
+  },
+  "B4_no amount filter": {
+    "n_trades": 12117,
+    "n_dates": 3185,
+    "day_mean_bp": -99.7,
+    "trade_mean_bp": -87.5,
+    "t_day": -37.19
+  },
+  "B4_>= 20m": {
+    "n_trades": 12117,
+    "n_dates": 3185,
+    "day_mean_bp": -99.7,
+    "trade_mean_bp": -87.5,
+    "t_day": -37.19
+  },
+  "B4_>= 50m (used)": {
+    "n_trades": 12117,
+    "n_dates": 3185,
+    "day_mean_bp": -99.7,
+    "trade_mean_bp": -87.5,
+    "t_day": -37.19
+  },
+  "B4_>= 100m": {
+    "n_trades": 12117,
+    "n_dates": 3185,
+    "day_mean_bp": -99.7,
+    "trade_mean_bp": -87.5,
+    "t_day": -37.19
+  },
+  "B6": {
+    "n_trades": 12117,
+    "n_dates": 3185,
+    "day_mean_bp": -99.7,
+    "trade_mean_bp": -87.5,
+    "t_day": -37.19,
+    "gap_bp": -12.2
+  },
+  "B3": {
+    "cost_0.0": {
+      "arith_pct": -243.3,
+      "compound_pct": -91.6,
+      "n_dates": 3185
+    },
+    "cost_0.0015": {
+      "arith_pct": -279.9,
+      "compound_pct": -94.2,
+      "n_dates": 3185
+    }
+  }
+}

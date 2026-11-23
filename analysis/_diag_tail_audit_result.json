@@ -1,0 +1,224 @@
+{
+  "A9_duplicates": 0,
+  "A5_zero_vol_rows": 0,
+  "A4_n": 5572,
+  "A4_median_abs_err_float": 0.0174,
+  "A4_median_abs_err_total": 0.0307,
+  "A4_share_err_float_lt_2pct": 0.575,
+  "A4_share_err_total_lt_2pct": 0.373,
+  "A4_verdict": "FLOAT",
+  "A4_examples": [
+    {
+      "symbol": "601939.SH",
+      "name": "建设银行",
+      "fmcap": 1204.1531865046363,
+      "cap_float": 1224.1507105256,
+      "cap_total": 33380.208674168396
+    },
+    {
+      "symbol": "688801.SH",
+      "name": "燧原科技-U",
+      "fmcap": 62.05214041497753,
+      "cap_float": 60.377796225000004,
+      "cap_total": 1451.576378544
+    },
+    {
+      "symbol": "600941.SH",
+      "name": "中国移动",
+      "fmcap": 976.1795085226521,
+      "cap_float": 981.3989482157,
+      "cap_total": 23592.5170871033
+    }
+  ],
+  "A6_formula_n": 12117,
+  "A6_st_like_n": 777,
+  "A6_st_like_share": 0.0641,
+  "A6_st_sealed_n": 20,
+  "A7_next_limit_down_n": 0,
+  "A7_next_limit_down_share": 0.0,
+  "A7_open_le_-9.5_n": 30,
+  "A3_adj_jumps": 50438,
+  "A3_adj_jump_share": 0.00329,
+  "A2_replay": [
+    {
+      "symbol": "000930.SZ",
+      "date": "2006-04-24",
+      "date_next": "2006-04-25",
+      "t_open": 4.775971659766529,
+      "t_high": 5.036006414381766,
+      "t_low": 4.680625583074275,
+      "t_close": 4.793307310074211,
+      "t_raw_close": 5.53,
+      "t1_open": 4.680625583074275,
+      "t1_close": 4.871317736458782,
+      "chg": 0.0473,
+      "turn": 8.218,
+      "vr": 1.951,
+      "fmcap_yi": 104.6,
+      "close_eq_high": false,
+      "r_on_bp": -235.1,
+      "match": true,
+      "r_cc_bp": 162.7
+    },
+    {
+      "symbol": "001696.SZ",
+      "date": "2015-10-13",
+      "date_next": "2015-10-14",
+      "t_open": 9.763425126880858,
+      "t_high": 10.412308095127964,
+      "t_low": 9.567251206248013,
+      "t_close": 10.08032146021084,
+      "t_raw_close": 13.36,
+      "t1_open": 10.087866611004412,
+      "t1_close": 9.70306392053229,
+      "chg": 0.0333,
+      "turn": 8.497,
+      "vr": 1.508,
+      "fmcap_yi": 118.6,
+      "close_eq_high": false,
+      "r_on_bp": 7.5,
+      "match": true,
+      "r_cc_bp": -374.3
+    },
+    {
+      "symbol": "300266.SZ",
+      "date": "2018-11-08",
+      "date_next": "2018-11-09",
+      "t_open": 3.97,
+      "t_high": 4.2,
+      "t_low": 3.95,
+      "t_close": 4.15,
+      "t_raw_close": 4.15,
+      "t1_open": 4.06,
+      "t1_close": 4.09,
+      "chg": 0.0453,
+      "turn": 5.916,
+      "vr": 1.53,
+      "fmcap_yi": 63.6,
+      "close_eq_high": false,
+      "r_on_bp": -216.9,
+      "match": true,
+      "r_cc_bp": -144.6
+    },
+    {
+      "symbol": "600231.SH",
+      "date": "2021-04-12",
+      "date_next": "2021-04-13",
+      "t_open": 2.8502303030303024,
+      "t_high": 3.3377696969696964,
+      "t_low": 2.8221030303030297,
+      "t_close": 3.1783818181818178,
+      "t_raw_close": 3.39,
+      "t1_open": 3.056496969696969,
+      "t1_close": 2.925236363636363,
+      "chg": 0.0463,
+      "turn": 6.897,
+      "vr": 1.73,
+      "fmcap_yi": 91.5,
+      "close_eq_high": false,
+      "r_on_bp": -383.5,
+      "match": true,
+      "r_cc_bp": -796.5
+    },
+    {
+      "symbol": "300788.SZ",
+      "date": "2023-05-31",
+      "date_next": "2023-06-01",
+      "t_open": 34.476389011090106,
+      "t_high": 36.87111062928048,
+      "t_low": 34.16279451346994,
+      "t_close": 35.74977272869927,
+      "t_raw_close": 37.62,
+      "t1_open": 34.68545200950355,
+      "t1_close": 37.31774521680013,
+      "chg": 0.0372,
+      "turn": 7.907,
+      "vr": 1.644,
+      "fmcap_yi": 71.1,
+      "close_eq_high": false,
+      "r_on_bp": -297.7,
+      "match": true,
+      "r_cc_bp": 438.6
+    }
+  ],
+  "A2_all_match": true,
+  "A2_any_close_eq_high": false,
+  "A8_signals": 12117,
+  "A8_null_td": 0,
+  "A8_null_bench": 0,
+  "A8_active_mean_bp": -43.2,
+  "A10_5min_vs_close": [
+    {
+      "date": "2026-11-12",
+      "time": "14:50:00",
+      "median_abs_err": 0.00149,
+      "share_within_0.2pct": 0.615,
+      "n": 5572
+    },
+    {
+      "date": "2026-11-12",
+      "time": "14:55:00",
+      "median_abs_err": 0.00119,
+      "share_within_0.2pct": 0.692,
+      "n": 5572
+    },
+    {
+      "date": "2026-11-12",
+      "time": "15:00:00",
+      "median_abs_err": 0.0,
+      "share_within_0.2pct": 1.0,
+      "n": 5572
+    },
+    {
+      "date": "2026-11-13",
+      "time": "14:50:00",
+      "median_abs_err": 0.00187,
+      "share_within_0.2pct": 0.53,
+      "n": 5571
+    },
+    {
+      "date": "2026-11-13",
+      "time": "14:55:00",
+      "median_abs_err": 0.00152,
+      "share_within_0.2pct": 0.605,
+      "n": 5571
+    },
+    {
+      "date": "2026-11-13",
+      "time": "15:00:00",
+      "median_abs_err": 0.0,
+      "share_within_0.2pct": 1.0,
+      "n": 5571
+    },
+    {
+      "date": "2026-11-16",
+      "time": "14:50:00",
+      "median_abs_err": 0.00296,
+      "share_within_0.2pct": 0.351,
+      "n": 5572
+    },
+    {
+      "date": "2026-11-16",
+      "time": "14:55:00",
+      "median_abs_err": 0.00143,
+      "share_within_0.2pct": 0.629,
+      "n": 5572
+    },
+    {
+      "date": "2026-11-16",
+      "time": "15:00:00",
+      "median_abs_err": 0.0,
+      "share_within_0.2pct": 1.0,
+      "n": 5572
+    }
+  ],
+  "A1": {
+    "legs_used": [
+      "close[t] -> open[t+1]",
+      "close[t] -> close[t+1]"
+    ],
+    "same_day_roundtrip_anywhere": false,
+    "verdict": "both legs hold at least one overnight, sellable next session -> T+1 legal",
+    "note": "r_id (open[t+1]->close[t+1]) is reported only as the leg you forgo by selling at the open; it is never assumed tradable on its own"
+  }
+}
