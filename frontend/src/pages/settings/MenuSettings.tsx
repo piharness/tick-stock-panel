@@ -25,7 +25,7 @@ import { toast } from '@/components/Toast'
 import { QK } from '@/lib/queryKeys'
 import { usePreferences } from '@/lib/useSharedQueries'
 import { getFrontendExtensionNavigation } from '@/extensions/registry'
-import { compareByDefaultNav, defaultNavIndex, CORE_NAV_PATHS, CORE_NAV_LABELS, type CoreNavPath } from '@/lib/navOrder'
+import { compareByDefaultNav, defaultNavIndex, canonicalNavPath, CORE_NAV_PATHS, CORE_NAV_LABELS, type CoreNavPath } from '@/lib/navOrder'
 
 interface NavEntry {
   id: string
@@ -72,6 +72,8 @@ const CORE_ARCH: Record<CoreNavPath, { kind: ArchKind; reason: string }> = {
   '/data':           { kind: 'core', reason: '数据底座 — 同步管道与数据源路由' },
   '/decisions':      { kind: 'core', reason: '决策账本 — 制卡/结算/校准的权威记录' },
   '/case-lab':       { kind: 'core', reason: '操盘档案 — 判据库与案例库, 痕迹对账叙事' },
+  '/common-sense':   { kind: 'core', reason: '市场常识 — 行业内规则/博弈/法规的确定性沉淀' },
+  '/handbook':       { kind: 'core', reason: '投资手册 — 事件低吸：总则/证据/规则/执行/反证/工具六章' },
 }
 
 const ARCH_CLASS: Record<string, { kind: ArchKind; reason: string }> = {
@@ -255,7 +257,8 @@ export function SettingsMenuSettingsPanel() {
     }))
 
   const allEntries = useMemo(() => {
-    const saved = prefs?.nav_order ?? []
+    // 旧路径归一化：/citizenship 改名后，老用户保存过的位置仍能落到新页面。
+    const saved = [...new Set((prefs?.nav_order ?? []).map(canonicalNavPath))]
     const entryMap = new Map<string, NavEntry>()
     for (const e of BUILTIN_PAGES) entryMap.set(e.id, e)
     for (const e of analysisEntries) entryMap.set(e.id, e)
@@ -293,12 +296,15 @@ export function SettingsMenuSettingsPanel() {
     return ordered
   }, [prefs?.nav_order, analysisEntries, extensionEntries])
 
-  const hiddenSet = useMemo(() => new Set(prefs?.nav_hidden ?? []), [prefs?.nav_hidden])
+  const hiddenSet = useMemo(
+    () => new Set((prefs?.nav_hidden ?? []).map(canonicalNavPath)),
+    [prefs?.nav_hidden],
+  )
 
   // Local order state for optimistic drag updates
   const [localOrder, setLocalOrder] = useState<string[] | null>(null)
   const orderedEntries = useMemo(() => {
-    const order = localOrder ?? prefs?.nav_order ?? []
+    const order = [...new Set((localOrder ?? prefs?.nav_order ?? []).map(canonicalNavPath))]
     if (!order.length) return allEntries
     const byId = new Map(allEntries.map(e => [e.id, e]))
     const result: NavEntry[] = []

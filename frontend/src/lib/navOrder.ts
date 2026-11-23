@@ -10,7 +10,8 @@
  */
 export const CORE_NAV_PATHS = [
   '/', '/battle', '/watchlist', '/screener', '/factors', '/backtest',
-  '/regime', '/indices', '/data', '/decisions', '/case-lab',
+  '/regime', '/indices', '/data', '/decisions', '/case-lab', '/common-sense',
+  '/handbook',
 ] as const
 
 export type CoreNavPath = (typeof CORE_NAV_PATHS)[number]
@@ -35,6 +36,8 @@ export const CORE_NAV_LABELS: Record<CoreNavPath, string> = {
   '/data': '数据',
   '/decisions': '决策账本',
   '/case-lab': '操盘档案',
+  '/common-sense': '市场常识',
+  '/handbook': '投资手册',
 }
 
 /**
@@ -63,9 +66,35 @@ export const DEFAULT_NAV_PATHS = [
   // 2026-11 新增 /case-lab（操盘档案）排在最后：它是「学」的一站，不是「看盘」的一站。
   // 与「决策账本」相邻而位于其后，动线是 看盘 → 复盘 → 学习。
   '/case-lab',
+  // 2026-11 新增 /common-sense（市场常识）排在末尾，与「操盘档案」相邻：
+  // 它是「基本功」的一站，动线是 看盘 → 复盘 → 学习 → 常识沉淀。
+  '/common-sense',
+  // 2026-11 新增 /structural-edge（结构优势）排在末尾：它是研究结论看板，
+  // 不是看盘入口，与「学习」动线收尾相邻。
+  // 2026-11-22 明确决策：/structural-edge 与 /position-art 合并为「投资手册」，
+  // 路径改为 /long-strategy，沿用前者在默认序里的位置（23）。旧路径只做路由重定向，
+  // 不再进默认序 —— 已保存过 nav_order 的用户，由 Layout 的「插回默认前驱之后」
+  // 逻辑把它放回 /common-sense 之后，与升级前一致。
+  '/handbook',
 ] as const
 
 const INDEX = new Map<string, number>(DEFAULT_NAV_PATHS.map((p, i) => [p, i]))
+
+/**
+ * 改名遗留路径 → 当前路径。
+ *
+ * 只用于读取「已保存的 nav_order / nav_hidden」：页面改名后旧路径不再存在，
+ * 若不归一化，老用户保存过的排序会丢掉这一项（被追加到末尾），隐藏状态也会失效。
+ * 旧书签由路由重定向负责，这里只修内存里的偏好。
+ */
+export const LEGACY_NAV_PATHS: Record<string, string> = {
+  '/citizenship': '/shortline-radar',
+}
+
+/** 旧路径归一化；未知路径原样返回（分析页与二开扩展不受影响）。 */
+export function canonicalNavPath(path: string): string {
+  return LEGACY_NAV_PATHS[path] ?? path
+}
 
 /** 路径的默认序号; 未知路径返回 Infinity (排在全部已知路径之后) */
 export function defaultNavIndex(path: string): number {

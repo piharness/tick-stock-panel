@@ -25,7 +25,7 @@ import { QK, MINUTE_DATA_QUERY_PREFIXES } from '@/lib/queryKeys'
 import { setUiPref } from '@/lib/uiPrefs'
 import { getPageScale } from '@/lib/pageZoom'
 import { setKlineBatchLimits } from '@/lib/klineBatchLimits'
-import { compareByDefaultNav, defaultNavIndex, seedHiddenForNewUser, CORE_NAV_PATHS, CORE_NAV_LABELS, type CoreNavPath } from '@/lib/navOrder'
+import { compareByDefaultNav, defaultNavIndex, canonicalNavPath, seedHiddenForNewUser, CORE_NAV_PATHS, CORE_NAV_LABELS, type CoreNavPath } from '@/lib/navOrder'
 import {
   Settings,
   DatabaseZap,
@@ -46,6 +46,7 @@ import {
   PanelLeftOpen,
   Download,
   HardDriveDownload,
+  Layers,
 } from 'lucide-react'
 import {
   IconDashboard,
@@ -59,6 +60,7 @@ import {
   IconData,
   IconDecision,
   IconCaseLab,
+  IconCommonSense,
   type BrandIconProps,
 } from './BrandIcons'
 import { Logo } from './Logo'
@@ -106,6 +108,9 @@ const CORE_NAV_ICONS: Record<CoreNavPath, (props: BrandIconProps) => ReactNode> 
   '/data':      IconData,
   '/decisions': IconDecision,
   '/case-lab':  IconCaseLab,
+  '/common-sense': IconCommonSense,
+  // 投资手册六章：合并原「结构优势」与「仓位艺术」。
+  '/handbook': (props) => <Layers {...props} />,
 }
 
 // 博弈链路紧跟看板：它是"今天该看什么"的入口，先有流程再有页面。
@@ -621,7 +626,8 @@ export function Layout() {
   }))
 
   const allNav: NavItem[] = [...nav, ...analysisNav, ...extensionNav]
-  const savedOrder = prefs?.nav_order ?? []
+  // 改名页面的旧路径归一化：老用户保存过的排序/隐藏不因改名失效。
+  const savedOrder = [...new Set((prefs?.nav_order ?? []).map(canonicalNavPath))]
 
   const navItems = savedOrder.length > 0
     ? (() => {
@@ -653,7 +659,7 @@ export function Layout() {
     // 不沉底 — 老用户升级侧栏顺序与迁移前一致; 未知路径稳定追加在后。
     : [...allNav].sort((a, b) => compareByDefaultNav(a.to, b.to))
 
-  const hiddenIds = new Set(prefs?.nav_hidden ?? [])
+  const hiddenIds = new Set((prefs?.nav_hidden ?? []).map(canonicalNavPath))
   const visibleNavItems = navItems.filter(n => !hiddenIds.has(n.to) && !hiddenIds.has(n.to.replace(/^\/analysis\//, '')))
 
   // 新装用户一次性种子: 扩展域页面默认隐藏, 菜单设置里可逐个开启。

@@ -234,3 +234,15 @@ export const IconCaseLab = make(
     <line x1="6.5" y1="15" x2="11.5" y2="15" strokeWidth="1.4" strokeOpacity="0.75" />
   </>,
 )
+
+/** 市场常识 — 打开的书本 + 中央竖线 (把「规则/潜规则」写成可读的确定性条目) */
+export const IconCommonSense = make(
+  <>
+    <path d="M12 6.5C10.4 5.3 8.2 4.8 5.5 4.8V17.2C8.2 17.2 10.4 17.7 12 18.9C13.6 17.7 15.8 17.2 18.5 17.2V4.8C15.8 4.8 13.6 5.3 12 6.5Z" />
+    <line x1="12" y1="6.5" x2="12" y2="18.9" strokeWidth="1.4" strokeOpacity="0.75" />
+    <line x1="8" y1="8" x2="10.6" y2="8" strokeWidth="1.3" strokeOpacity="0.6" />
+    <line x1="8" y1="10.5" x2="10.2" y2="10.5" strokeWidth="1.3" strokeOpacity="0.6" />
+    <line x1="13.4" y1="8" x2="16" y2="8" strokeWidth="1.3" strokeOpacity="0.6" />
+    <line x1="13.8" y1="10.5" x2="16" y2="10.5" strokeWidth="1.3" strokeOpacity="0.6" />
+  </>,
+)

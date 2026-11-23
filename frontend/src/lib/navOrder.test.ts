@@ -4,6 +4,8 @@ import {
   CORE_NAV_PATHS,
   DEFAULT_NAV_PATHS,
   EXT_DOMAIN_PAGE_PATHS,
+  LEGACY_NAV_PATHS,
+  canonicalNavPath,
   compareByDefaultNav,
   defaultNavIndex,
   seedHiddenForNewUser,
@@ -15,10 +17,16 @@ import {
 // 2026-11 明确决策: /battle 插在 / 之后 (入口级页面), 其余路径整体后移一位。
 // 2026-11 明确决策: /decisions 追加在 /data 之后 (复盘入口, 但不越过数据维护页)。
 // 2026-11 明确决策: /case-lab 追加在 /decisions 之后 (学习入口, 动线 看盘 → 复盘 → 学习)。
+// 2026-11 明确决策: /common-sense 追加在 /case-lab 之后 (基本功入口, 动线 … → 学习 → 常识沉淀)。
+// 2026-11 明确决策: /structural-edge 追加在 /common-sense 之后 (研究结论看板, 不是看盘入口)。
+// 2026-11 明确决策: /position-art 追加在 /structural-edge 之后 (规则验证页, 动线 学习 → 结论 → 反证自己)。
+// 2026-11-22 明确决策: 两页合并为「投资手册」, 路径 /handbook, 沿用 /structural-edge 的位置;
+//   旧路径 /long-strategy、/structural-edge 与 /position-art 只做 router 重定向, 不再占默认序 ——
+//   已保存 nav_order 的用户由 Layout 的「插回默认前驱之后」逻辑放回 /common-sense 之后。
 describe('navOrder: 迁移前默认排序基准', () => {
-  it('覆盖迁移前全部内置路径 (新增 /battle、/decisions、/case-lab 后共 22 个) 且无重复', () => {
-    expect(DEFAULT_NAV_PATHS).toHaveLength(22)
-    expect(new Set(DEFAULT_NAV_PATHS).size).toBe(22)
+  it('覆盖迁移前全部内置路径 (合并 /handbook 后共 24 个) 且无重复', () => {
+    expect(DEFAULT_NAV_PATHS).toHaveLength(24)
+    expect(new Set(DEFAULT_NAV_PATHS).size).toBe(24)
   })
 
   it('关键位置与迁移前核心导航数组一致', () => {
@@ -31,6 +39,14 @@ describe('navOrder: 迁移前默认排序基准', () => {
     expect(DEFAULT_NAV_PATHS[19]).toBe('/data')
     expect(DEFAULT_NAV_PATHS[20]).toBe('/decisions')
     expect(DEFAULT_NAV_PATHS[21]).toBe('/case-lab')
+    expect(DEFAULT_NAV_PATHS[22]).toBe('/common-sense')
+    expect(DEFAULT_NAV_PATHS[23]).toBe('/handbook')
+  })
+
+  it('已合并的旧路径不再占默认序 (只做路由重定向)', () => {
+    expect(defaultNavIndex('/structural-edge')).toBe(Number.POSITIVE_INFINITY)
+    expect(defaultNavIndex('/position-art')).toBe(Number.POSITIVE_INFINITY)
+    expect(defaultNavIndex('/long-strategy')).toBe(Number.POSITIVE_INFINITY)
   })
 
   it('未知道径返回 Infinity, 排在已知路径之后', () => {
@@ -65,6 +81,30 @@ describe('core 导航与默认基准的绑定 (防止新页面静默沉底)', ()
   it('核心页面的默认序互不相同 (合并排序时锚点不打架)', () => {
     const indexes = CORE_NAV_PATHS.map(p => defaultNavIndex(p))
     expect(new Set(indexes).size).toBe(indexes.length)
+  })
+})
+
+describe('canonicalNavPath: 页面改名的旧路径兼容', () => {
+  it('市场公民 /citizenship 归一化到短线雷达 /shortline-radar', () => {
+    expect(canonicalNavPath('/citizenship')).toBe('/shortline-radar')
+    expect(canonicalNavPath('/shortline-radar')).toBe('/shortline-radar')
+  })
+
+  it('新旧路径都不占默认序 (扩展页), 归一化不改变侧栏位置语义', () => {
+    expect(defaultNavIndex('/citizenship')).toBe(Number.POSITIVE_INFINITY)
+    expect(defaultNavIndex('/shortline-radar')).toBe(Number.POSITIVE_INFINITY)
+  })
+
+  it('未知路径原样返回, 不误伤分析页与二开扩展', () => {
+    expect(canonicalNavPath('/analysis/foo')).toBe('/analysis/foo')
+    expect(canonicalNavPath('/my-extension')).toBe('/my-extension')
+  })
+
+  it('映射不自指、不链式 (旧→新一步到位)', () => {
+    for (const [from, to] of Object.entries(LEGACY_NAV_PATHS)) {
+      expect(from).not.toBe(to)
+      expect(LEGACY_NAV_PATHS[to]).toBeUndefined()
+    }
   })
 })
 
