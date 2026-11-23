@@ -34,6 +34,7 @@ import { useToggleRealtimeQuotes, useUpdateQuoteInterval } from '@/lib/useShared
 import { MissingCapChip, routeCap, routeCapUsable, routeProviderDisplay, type RouteCapId } from '@/lib/capability-labels'
 import { QK, DAILY_DATA_QUERY_PREFIXES } from '@/lib/queryKeys'
 import { PageHeader } from '@/components/PageHeader'
+import { MaintenanceCard } from '@/components/MaintenanceCard'
 import { useAdjFactorSyncGate } from '@/components/AdjFactorSyncGate'
 import { formatScheduleDatePart, formatScheduleTimePart, isToday } from '@/lib/format'
 import { findDataSource } from '@/lib/dataSources'
@@ -945,6 +946,9 @@ export function Data() {
             </div>
           </div>
         </div>
+
+        {/* 自动维护：行情 + 手册两条链，一个按钮 */}
+        <MaintenanceCard />
 
         {/* 数据画像 */}
         <div>

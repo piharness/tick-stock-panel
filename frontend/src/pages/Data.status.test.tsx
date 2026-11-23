@@ -16,6 +16,14 @@ vi.mock('@/lib/api', () => ({ api: {
   regimeCoverage: vi.fn(async () => ({ rows: 0, earliest_date: null, latest_date: null })),
   pipelineJobs: vi.fn(async () => ({ active_id: null, jobs: [] })),
   pipelineJob: vi.fn(async () => null),
+  maintenance: vi.fn(async () => ({
+    now: '2026-11-23T19:50', expected: '2026-11-23', phase: 'closed', stale: false,
+    domains: [
+      { id: 'kline', label: '行情数据', asof: '2026-11-23', stale: false, detail: '' },
+      { id: 'handbook', label: '投资手册', asof: '2026-11-23', stale: false, detail: '' },
+    ],
+    job: null, last: null,
+  })),
   extDataList: vi.fn(async () => ({ items: [] })),
   dataSources: vi.fn(async () => []),
   settings: vi.fn(async () => ({ onboarding_completed: true, mode: 'api_key', has_tickflow_key: true })),
