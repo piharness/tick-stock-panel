@@ -20,11 +20,11 @@ from app.api import (
     analysis,
     backtest,
     case_lab,
-    citizenship,
     config_backup,
     data,
     decision,
     definitions,
+    etf_watch,
     events,
     ext_data,
     ext_pages,
@@ -37,6 +37,7 @@ from app.api import (
     kline,
     lab,
     lots,
+    maintenance,
     market_recap,
     mining,
     monitor_rules,
@@ -44,11 +45,13 @@ from app.api import (
     pages_admin,
     paper,
     pipeline,
+    position_art,
     position_policies,
     regime,
     rps,
     screener,
     sector_rotation,
+    shortline_radar,
     table_game,
     signals,
     stock_analysis,
@@ -115,6 +118,28 @@ def _start_table_game_warmup(data_dir) -> None:
     import threading
 
     threading.Thread(target=_run, name="table-game-warm", daemon=True).start()
+
+
+def _start_trading_days_warmup(data_dir) -> None:
+    """后台预热交易日历（`kline_daily` 分区 → 日期集合）。
+
+    `kline_trading_days` 要对 246 个月分区逐个 `scan_parquet` 读 `date` 列，
+    容器内实测 19.5s，而它落在 `/api/market-recap/dragon-tiger` 的首屏路径上
+    （一次请求还会调两遍，未缓存时 38.5s，直接顶穿前端 30s 超时）。
+    预热是 daemon 线程：失败只记日志，冷路径仍会自己算出来，只是慢。
+    """
+    def _run() -> None:
+        try:
+            from app.services.trading_days import kline_trading_days
+
+            days = kline_trading_days(data_dir)
+            logger.info("trading days warmup: %d 个交易日", len(days))
+        except Exception as exc:  # noqa: BLE001 — 预热失败不影响任何功能
+            logger.warning("trading days warmup failed: %s", exc)
+
+    import threading
+
+    threading.Thread(target=_run, name="trading-days-warm", daemon=True).start()
 
 
 def _start_provider_warmup() -> None:
@@ -261,6 +286,10 @@ async def _application_lifespan(app: FastAPI):
     # 对手盘模型预热 — 一次读 250 个日线分区 + 242 个龙虎榜 JSON, 9p 上实测 6.5s。
     # 不预热的话「博弈链路」页首次打开要转 6 秒; 预热是 daemon 线程, 失败只记日志。
     _start_table_game_warmup(repo.store.data_dir)
+
+    # 交易日历预热 — kline_daily 的 246 个月分区逐个读 date 列要 19.5s,
+    # 冷启动后首次打开龙虎榜/博弈链路会卡在它上面。与上面两个预热互不阻塞。
+    _start_trading_days_warmup(repo.store.data_dir)
 
     # 行情客户端预热 — 免费档每个进程的第一次真实请求要付 ~100s 握手成本。
     # 个股分析的「上游前复权补齐」正好长在这条冷路径上，挪到后台线程。
@@ -468,6 +497,9 @@ async def _application_lifespan(app: FastAPI):
     logger.info("strategy engine loaded: %d strategies", len(strategy_engine.list_strategies()))
 
     matrix_prewarm_owner = MatrixCachePrewarmOwner()
+    # 挂到 state: data.py 的 /status busy 判定需要知道预热是否在跑
+    # (预热占着 DuckDB 全局锁, 期间 /status 重聚合会排队 → 冷启动一次 ~34s 假超时)。
+    app.state.matrix_prewarm_owner = matrix_prewarm_owner
 
     def _schedule_matrix_cache_prewarm() -> None:
         if (
@@ -770,6 +802,9 @@ app.include_router(regime.router)
 app.include_router(analysis.router)
 app.include_router(pipeline.router)
 app.include_router(position_policies.router)
+app.include_router(position_art.router)
+app.include_router(etf_watch.router)
+app.include_router(maintenance.router)
 app.include_router(data.router)
 app.include_router(ext_data.router)
 app.include_router(ext_pages.router)
@@ -793,7 +828,8 @@ app.include_router(rps.router)
 app.include_router(sector_rotation.router)
 app.include_router(table_game.router)
 app.include_router(case_lab.router)
-app.include_router(citizenship.router)
+app.include_router(shortline_radar.router)
+app.include_router(shortline_radar.legacy_router)
 
 # 二次开发路由与小粒度策略在所有核心路由后注册, 禁止覆盖核心路径。
 extension_registry, extension_load_errors = configure_backend_extensions(app)
