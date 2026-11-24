@@ -64,12 +64,27 @@ def test_strict_mode_fails(repo: Path):
     assert guard.main(["--strict"]) == 1
 
 
-def test_ignored_and_non_py_files_are_not_reported(repo: Path, capsys):
-    (repo / ".gitignore").write_text("*.json\nanalysis/scratch_*\n", encoding="utf-8")
+def test_ignored_files_are_not_reported(repo: Path, capsys):
+    (repo / ".gitignore").write_text("analysis/*_tmp.json\nanalysis/scratch_*\n", encoding="utf-8")
     (repo / "analysis" / "scratch_note.py").write_text("x = 1\n", encoding="utf-8")
-    (repo / "analysis" / "result.json").write_text("{}", encoding="utf-8")
+    (repo / "analysis" / "run_tmp.json").write_text("{}", encoding="utf-8")
 
     assert guard.main([]) == 0
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("name", ["_diag_x.py", "_diag_x_findings.md", "_diag_x_result.json"])
+def test_all_provenance_suffixes_are_reported(repo: Path, capsys, name):
+    """三类都是"结论的出处"，留一个在工作区就是同一个待决问题。"""
+    (repo / "analysis" / name).write_text("x\n", encoding="utf-8")
+
+    assert guard.main([]) == 0
+    assert f"analysis/{name}" in capsys.readouterr().err
+
+
+def test_other_suffixes_are_not_reported(repo: Path, capsys):
+    (repo / "analysis" / "notes.txt").write_text("x\n", encoding="utf-8")
+    assert guard.main(["--strict"]) == 0
     assert capsys.readouterr().err == ""
 
 

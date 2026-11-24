@@ -13,7 +13,7 @@
 
 ## 判据
 
-只看 `analysis/` 下**未被跟踪且未被忽略**的 `.py`：
+只看 `analysis/` 下**未被跟踪且未被忽略**的 `.py` / `.md` / `.json`：
 
 - **已入库的**不动（棘轮之外的历史，不做批量治理）；
 - **被 `.gitignore` 忽略的**不管 —— 那是作者明确表示"这是临时文件"；
@@ -39,9 +39,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-#: 关注的后缀。只收脚本：分析产物（`*_result.json`）与文档的归属另有惯例，
-#: 混在一起提示会让人直接关掉这条提醒。
-WATCHED_SUFFIX = ".py"
+#: 关注的后缀。`.py`（脚本）、`.md`（结论文档）、`.json`（样例/结果）都算 ——
+#: 这三类在 `analysis/` 里都是"结论的出处"，留一个在工作区就是同一个待决问题。
+#:
+#: 不担心噪声：真正属于临时产物的文件本该被 `.gitignore` 挡掉，而
+#: `--exclude-standard` 正好不报告它们。2026-11-24 起，`data/` 是产物默认去处，
+#: `analysis/` 是出处，二者的边界由这条提示维持。
+WATCHED_SUFFIXES = (".py", ".md", ".json")
 
 #: 提示里给出的两条出路。写死在文案里，避免"提示了但没说怎么办"。
 HINT_ADD = "git add <文件>          # 它是要入库的出处材料（结论已写进 docs/ 或记忆）"
@@ -75,13 +79,13 @@ def untracked_scripts(root: Path) -> list[str]:
     found = [
         line.strip()
         for line in out.stdout.splitlines()
-        if line.strip().endswith(WATCHED_SUFFIX)
+        if line.strip().endswith(WATCHED_SUFFIXES)
     ]
     return sorted(found)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="提示 analysis/ 下未入库的新脚本")
+    parser = argparse.ArgumentParser(description="提示 analysis/ 下未入库的新文件")
     parser.add_argument("--strict", action="store_true", help="有残留时 exit 1")
     parser.add_argument("--quiet", action="store_true", help="有残留也不打印（仍影响 --strict）")
     args = parser.parse_args(argv)
@@ -97,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.quiet:
         # 走 stderr：pre-commit 的输出在 stdout 会被某些工具当作结果吞掉
         print(
-            f"\n提示：analysis/ 下有 {len(pending)} 个未入库的脚本 —— "
+            f"\n提示：analysis/ 下有 {len(pending)} 个未入库的文件 —— "
             "它们是出处材料还是一次性试算？",
             file=sys.stderr,
         )
