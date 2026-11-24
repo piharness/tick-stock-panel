@@ -2246,6 +2246,25 @@ export interface Lot {
   created_at?: string
 }
 
+/**
+ * 席位锁仓状态（持仓排雷）。
+ * 只覆盖上过龙虎榜的个股；ETF / 未上榜个股不会出现在 items 里 —— 那是「无数据」，不是「安全」。
+ * level=review 仅驱动人工复核，不构成卖出指令（依据按日 t=−1.86，边缘显著）。
+ */
+export interface SeatRiskItem {
+  relay5: number | null
+  net5_ratio: number | null
+  streak: number | null
+  dist_hi: number | null
+  level: 'review' | 'watch' | 'ok'
+}
+
+export interface SeatRiskResponse {
+  /** 状态表的最新席位日，可能早于今天，UI 必须透出 */
+  as_of: string | null
+  items: Record<string, SeatRiskItem>
+}
+
 // ===== Paper (虚拟账户/模拟盘) =====
 /** 多账户: 追加 ?account= 查询参数 (缺省账户由后端 default 兜底)。 */
 function accUrl(base: string, account?: string): string {
@@ -6762,6 +6781,12 @@ export const api = {
 
   lotDelete: (id: string) =>
     request<{ ok: boolean }>(`/api/lots/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  /** 持仓排雷：批量查席位锁仓状态。symbols 为空时后端返回空 items。 */
+  lotsSeatRisk: (symbols: string[]) =>
+    request<SeatRiskResponse>(
+      `/api/lots/seat-risk?symbols=${encodeURIComponent(symbols.join(','))}`,
+    ),
 
   // ===== Paper (虚拟账户/模拟盘: 虚拟资金 + 真实行情价格模拟撮合, 多账户) =====
   paperAccounts: () =>

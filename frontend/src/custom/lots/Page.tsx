@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUpRight, CalendarClock, Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { api, type Lot } from '@/lib/api'
+import { AlertTriangle, ArrowUpRight, CalendarClock, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { api, type Lot, type SeatRiskItem } from '@/lib/api'
 import { fetchDailyBatchChunked } from '@/lib/klineBatchChunked'
 import { QK } from '@/lib/queryKeys'
 import { cn } from '@/lib/cn'
@@ -45,6 +45,47 @@ function CostPnL({ close, cost }: { close?: number; cost: number }) {
   return <span className={cn('font-mono', priceColorClass(pnl))}>{fmtPct(pnl)}</span>
 }
 
+/**
+ * 席位状态标记。
+ * 无数据 ≠ 安全：ETF 与未上榜个股不会出现在 items 里，必须显式区分。
+ * review 只表示「该人工复核」——历史同状态 122 个样本 ex5 −356bp、按日 t=−1.86，
+ * 方向成立但只是边缘显著，不构成卖出指令。
+ */
+function SeatBadge({ item }: { item?: SeatRiskItem }) {
+  if (!item) {
+    return (
+      <span className="text-muted/40" title="未上龙虎榜（或为 ETF / 非个股），没有席位数据。这不等于安全。">
+        —
+      </span>
+    )
+  }
+  const newFaces = Math.round((item.relay5 ?? 0) * 100)
+  const distHi = item.dist_hi == null ? '—' : `${(item.dist_hi * 100).toFixed(1)}%`
+  const tip = `买入前5席位中新面孔 ${newFaces}% · 连续上榜 ${item.streak ?? 0} 日 · 距20日高 ${distHi}`
+  if (item.level === 'review') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 whitespace-nowrap rounded border border-danger/30 bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger"
+        title={`${tip}\n锁仓 + 高位 + 连续上榜≥5日：同状态历史 5 日超额 −356bp、中位 −800bp、胜率 37%。建议人工复核。`}
+      >
+        <AlertTriangle className="h-2.5 w-2.5" />锁仓·复核
+      </span>
+    )
+  }
+  if (item.level === 'watch') {
+    return (
+      <span className="whitespace-nowrap text-[10px] text-warning" title={`${tip}\n锁仓 + 高位，但连续上榜不足 5 日。`}>
+        锁仓·{item.streak ?? 0}日
+      </span>
+    )
+  }
+  return (
+    <span className="whitespace-nowrap text-[10px] text-muted" title={`${tip}\n仍在换人接力 / 已回落。`}>
+      接力·{item.streak ?? 0}日
+    </span>
+  )
+}
+
 export function Lots() {
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -65,6 +106,16 @@ export function Lots() {
   })
   const symbolNames = namesQuery.data?.names ?? {}
 
+  // 席位锁仓状态（持仓排雷）：离线表按日生成，as_of 可能早于今天，必须透出
+  const seatQuery = useQuery({
+    queryKey: QK.lotsSeatRisk(allSymbols.join(',')),
+    queryFn: () => api.lotsSeatRisk(allSymbols),
+    enabled: allSymbols.length > 0,
+    staleTime: 300000,
+  })
+  const seatItems = seatQuery.data?.items ?? {}
+  const seatAsOf = seatQuery.data?.as_of ?? null
+
   // 9999 哨兵: 未记买入日期的排最后
   const sortedLots = useMemo(() => {
     return [...lots].sort((a, b) => (a.buy_date ?? '9999-12-31').localeCompare(b.buy_date ?? '9999-12-31'))
@@ -72,6 +123,10 @@ export function Lots() {
   const lotsNavItems = useMemo(
     () => toNavItems(sortedLots.map(l => ({ symbol: l.symbol, name: symbolNames[l.symbol] }))),
     [sortedLots, symbolNames],
+  )
+  const reviewLots = useMemo(
+    () => sortedLots.filter(l => seatItems[l.symbol]?.level === 'review'),
+    [sortedLots, seatItems],
   )
 
   const dailyQuery = useQuery({
@@ -127,6 +182,25 @@ export function Lots() {
             </button>
           </div>
 
+          {reviewLots.length > 0 && (
+            <div className="rounded-xl border border-danger/30 bg-danger/5 px-4 py-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                <div className="min-w-0 space-y-1">
+                  <div className="text-xs font-medium text-danger">
+                    {reviewLots.length} 只持仓处于「席位锁仓 + 高位 + 连续上榜≥5日」
+                  </div>
+                  <div className="text-[11px] leading-5 text-secondary">
+                    {reviewLots.slice(0, 6).map(l => l.symbol).join('、')}
+                    {reviewLots.length > 6 ? ` 等 ${reviewLots.length} 只` : ''}
+                    {' — '}同状态历史 122 个样本，后续 5 日超额 −356bp、中位 −800bp、胜率 37%（按日 t=−1.86，边缘显著）。这是复核提示，不是卖出指令。
+                  </div>
+                  {seatAsOf && <div className="text-[10px] text-muted">席位数据截至 {seatAsOf}</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
           {lotsQuery.isLoading ? (
             <div className="rounded-xl border border-dashed border-border px-6 py-12 text-center text-xs text-muted">加载中…</div>
           ) : lotsQuery.isError ? (
@@ -151,6 +225,7 @@ export function Lots() {
                   <thead>
                     <tr className="border-b border-border/60 bg-surface/60 text-[10px] uppercase tracking-wide text-muted">
                       <th className="px-4 py-2 font-medium">标的</th>
+                      <th className="px-2 py-2 font-medium" title="龙虎榜席位状态：锁仓 = 买入前5席位中新面孔≤1个；接力 = 仍在换人">席位</th>
                       <th className="px-2 py-2 font-medium text-right">数量(参考)</th>
                       <th className="px-2 py-2 font-medium text-right">成本价</th>
                       <th className="px-2 py-2 font-medium text-right">现价</th>
@@ -165,7 +240,7 @@ export function Lots() {
                   </thead>
                   <tbody>
                     {sortedLots.map(lot => (
-                      <tr key={lot.id} className="border-b border-border/40 last:border-0 hover:bg-elevated/40">
+                      <tr key={lot.id} className={cn('border-b border-border/40 last:border-0 hover:bg-elevated/40', seatItems[lot.symbol]?.level === 'review' && 'bg-danger/5')}>
                         <td className="px-4 py-2.5">
                           <button
                             onClick={() => setPreviewSymbol(lot.symbol)}
@@ -177,6 +252,7 @@ export function Lots() {
                             {symbolNames[lot.symbol] && <span className="text-secondary truncate max-w-28">{symbolNames[lot.symbol]}</span>}
                           </button>
                         </td>
+                        <td className="px-2 py-2.5"><SeatBadge item={seatItems[lot.symbol]} /></td>
                         <td className="px-2 py-2.5 text-right font-mono text-secondary">{lot.qty}</td>
                         <td className="px-2 py-2.5 text-right font-mono text-foreground">{lot.cost_price}</td>
                         <td className="px-2 py-2.5 text-right font-mono text-secondary">{lastPrices[lot.symbol] != null ? fmtPrice(lastPrices[lot.symbol]) : '—'}</td>

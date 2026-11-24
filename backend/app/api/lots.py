@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from app.strategy import lots as lots_domain
 from app.strategy import monitor_rules
+from app.services import seat_risk as seat_risk_service
 
 router = APIRouter(prefix="/api/lots", tags=["lots"])
 
@@ -99,6 +100,19 @@ def sync_lot(request: Request, lot: dict) -> None:
 @router.get("")
 def list_lots(request: Request):
     return {"lots": lots_domain.load_all(_data_dir(request))}
+
+
+@router.get("/seat-risk")
+def seat_risk(request: Request, symbols: str = ""):
+    """持仓排雷：返回请求标的的席位锁仓状态（relay5 / net5_ratio / streak / level）。
+
+    状态来自离线表 `dragon_tiger_seats/seat_relay_state.parquet`，只覆盖龙虎榜标的。
+    查不到的标的 = 无数据（未上榜 / ETF），不是「安全」——前端须区分这两种显示。
+    `as_of` 为状态表的最新席位日，可能早于今天，必须透出。
+    """
+    as_of, state = seat_risk_service.load_state(_data_dir(request))
+    syms = [s.strip() for s in symbols.split(",") if s.strip()]
+    return {"as_of": as_of, "items": seat_risk_service.pick(state, syms) if syms else {}}
 
 
 @router.post("")
