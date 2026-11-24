@@ -43,6 +43,10 @@ export interface Props {
   navList?: NavItem[]
   /** 切股回调: 收到目标 symbol/name, 由调用方更新预览状态 */
   onNavigate?: (symbol: string, name?: string) => void
+  /** 页面级上下文条 (如机会雷达的判定四条): 有值时在顶栏下方显示一条中性蓝条。
+   *  与 triggerInfo 的区别: triggerInfo 是「监控触发」的琥珀警报语义, 这里是
+   *  「打开弹窗的页面想让你带着什么信息看图」——中性、只陈述, 不报警。 */
+  contextBar?: { label: string; chips: string[] } | null
 }
 
 // ===== 板块标识（与 Screener 列表一致）=====
@@ -91,7 +95,7 @@ function fmtAbnormalCalcTime(asofSec: number): string {
 }
 
 
-export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, navList: navListSource, onNavigate }: Props) {
+export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, navList: navListSource, onNavigate, contextBar }: Props) {
   const [view, setView] = useState<PreviewView>('daily')
   const [intradayDays, setIntradayDays] = useState<number | null>(loadIntradayDays)
   const [dateRange, setDateRange] = useState(getDefaultRange)
@@ -442,6 +446,18 @@ export function StockPreviewDialogContent({ symbol, name, onClose, triggerInfo, 
               </div>
               </div>
             </div>
+
+            {/* 页面级上下文条 (如机会雷达的判定四条) */}
+            {contextBar && contextBar.chips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-accent/15 bg-accent/[0.05] px-5 py-2 shrink-0">
+                <span className="shrink-0 text-[10px] font-semibold tracking-[0.06em] text-accent">{contextBar.label}</span>
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                  {contextBar.chips.map(s2 => (
+                    <span key={s2} className="rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{s2}</span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 触发信息条 (来自监控触发记录) */}
             {triggerInfo && (

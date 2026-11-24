@@ -47,6 +47,7 @@ import {
   Download,
   HardDriveDownload,
   Layers,
+  BookOpen,
 } from 'lucide-react'
 import {
   IconDashboard,
@@ -109,8 +110,9 @@ const CORE_NAV_ICONS: Record<CoreNavPath, (props: BrandIconProps) => ReactNode> 
   '/decisions': IconDecision,
   '/case-lab':  IconCaseLab,
   '/common-sense': IconCommonSense,
-  // 投资手册六章：合并原「结构优势」与「仓位艺术」。
+  // 机会雷达（每日）与策略图书馆（理论沉淀）：手册 2026-11-24 拆成两页。
   '/handbook': (props) => <Layers {...props} />,
+  '/library': (props) => <BookOpen {...props} />,
 }
 
 // 博弈链路紧跟看板：它是"今天该看什么"的入口，先有流程再有页面。

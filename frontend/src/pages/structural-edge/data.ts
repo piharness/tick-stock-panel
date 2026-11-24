@@ -532,7 +532,7 @@ export interface Refusal {
   act: string
   why: string
   proof: string
-  to: 'mandate' | 'evidence' | 'rules' | 'today' | 'archive' | 'tools'
+  to: 'mandate' | 'evidence' | 'rules' | 'archive' | 'tools'
   anchor: string
   /** 环境依赖：托底常态失效后这条还成不成立。定义见 ENV_LABEL。 */
   env: EnvDep
@@ -690,7 +690,7 @@ export const repro = {
     '维护说明：结论性数字集中在 structural-edge/data.ts，对应 docs/structural-edge/*.md 与 analysis/_diag_*_result.json；跑完新实验改 data.ts 对应分区即可，图表与表格自动刷新。动态读数不进本文件 —— 扫描、账户、现金腿、V1 进度、广度都来自接口，经 live.ts 映射成句子；手抄会被 liveClaims.test.ts 拦下，产物不同日会被 analysis/handbook_audit.py 标出。',
   docs: [
     { f: 'industry-etf-asymmetry.md', o: '规则（买点/不买）· 证据（位置/形态/时点）' },
-    { f: 'industry-etf-watch.md', o: '执行（扫描 · V1 账本，每天重写）' },
+    { f: 'industry-etf-watch.md', o: '机会雷达（扫描 · V1 账本，每天重写）' },
     { f: 'holding-and-exit.md', o: '规则（持有与退出）· 证据（强度）' },
     { f: 'theme-etf-entry.md', o: '规则（仓位）· 证据（久期/两个再等等）' },
     { f: 'portfolio-replay.md', o: '证据 · 组合层（基准阶梯）' },
@@ -703,7 +703,7 @@ export const repro = {
     { f: '2026-duration-review.md', o: '反证 B · 久期九条判据' },
     { f: 'cost-vs-return.md', o: '反证 C · 成本账与二手信息' },
     { f: 'narrative-exclusion.md', o: '反证 D · 七道闸门' },
-    { f: 'account-runbook.md', o: '执行（账户指令：每日三条）' },
+    { f: 'account-runbook.md', o: '机会雷达（账户指令：每日三条）' },
     { f: 'verdict.md', o: '总则 · 任务定义与「凭什么是我」' },
   ],
   data: '中证指数官网（调样名单）· 东财补全包（退市股）· 本地 kline_daily_enriched / kline_etf_daily / 511990 万份收益 / 511010 分红还原',

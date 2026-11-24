@@ -6,7 +6,7 @@
  */
 import type { EtfWatchIndustry, EtfWatchPayload, EtfWatchStatus } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { DataTable, type Col, Tag, type Tone } from './ui'
+import { DataTable, type Col, Empty, Tag, type Tone } from './ui'
 
 export type ScanPayload = {
   meta: Pick<EtfWatchPayload['meta'], 'thresholds' | 'vol_convention'>
@@ -45,11 +45,7 @@ export function ScanTable({
   const th = payload.meta.thresholds
 
   if (rows.length === 0) {
-    return (
-      <div className="mt-3 rounded-lg border border-dashed border-border bg-surface/40 px-4 py-5 text-center text-[11px] text-secondary">
-        {emptyText}
-      </div>
-    )
+    return <Empty text={emptyText} />
   }
 
   const cols: Col<EtfWatchIndustry>[] = [
@@ -59,7 +55,7 @@ export function ScanTable({
       render: x => (
         <span className="font-medium">
           {x.industry}
-          {x.stale_days != null && x.stale_days > 0 && <span className="ml-1 text-[9.5px] font-normal text-warning">stale {x.stale_days}d</span>}
+          {x.stale_days != null && x.stale_days > 0 && <span className="ml-1 text-[11px] font-normal text-warning">stale {x.stale_days}d</span>}
         </span>
       ),
     },
@@ -97,7 +93,7 @@ export function ScanTable({
     {
       head: reasonHead,
       w: '19%',
-      render: x => <span className="text-[10.5px] leading-relaxed text-secondary">{x.reasons.length ? x.reasons.join('；') : '—'}</span>,
+      render: x => <span className="text-[12px] leading-[1.6] text-muted">{x.reasons.length ? x.reasons.join('；') : '—'}</span>,
     },
   ]
 

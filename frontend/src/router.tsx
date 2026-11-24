@@ -28,7 +28,9 @@ const Regime = lazy(() => import('./pages/Regime').then(m => ({ default: m.Regim
 const Decision = lazy(() => import('./pages/Decision').then(m => ({ default: m.Decision })))
 const CaseLab = lazy(() => import('./pages/CaseLab').then(m => ({ default: m.CaseLab })))
 const CommonSense = lazy(() => import('./pages/CommonSense').then(m => ({ default: m.CommonSense })))
-const Handbook = lazy(() => import('./pages/StructuralEdge').then(m => ({ default: m.Handbook })))
+// 手册两页：/handbook = 机会雷达（每天看），/library = 策略图书馆（低频查）。
+const DailyRadar = lazy(() => import('./pages/StructuralEdge').then(m => ({ default: m.Daily })))
+const StrategyLibrary = lazy(() => import('./pages/StructuralEdge').then(m => ({ default: m.Library })))
 const Dev = lazy(() => import('./pages/Dev').then(m => ({ default: m.Dev })))
 // Onboarding 只在首次使用时进入, Auth 只在登录页用到 — 均改按需加载
 const Onboarding = lazy(() => import('./pages/Onboarding').then(m => ({ default: m.Onboarding })))
@@ -52,6 +54,7 @@ const CORE_ROUTE_PATHS = new Set([
   '/case-lab',
   '/common-sense',
   '/handbook',
+  '/library',
   // 旧路径仍在用（书签/文档），保留在冲突清单里；它们只做重定向。
   '/long-strategy',
   '/structural-edge',
@@ -73,13 +76,20 @@ if (frontendExtensionErrors.length > 0) {
   console.error('部分前端扩展加载失败', frontendExtensionErrors)
 }
 
-// 旧链接兼容：结构优势 + 仓位艺术已合并为「投资手册」(/handbook)。
-// 必须保留 hash（#buy / #sizing-audit / #archive-b），否则旧书签会停在页面顶部。
-// 没有 hash 时按来源给一个合理落点：仓位艺术 → 反例登记（当日读数），其余 → 执行章。
+// 旧链接兼容：结构优势 + 仓位艺术已合并，2026-11-24 又拆成雷达（执行）与图书馆（理论）。
+// 必须保留 hash（#buy / #sizing-audit / #archive-b / #register），否则旧书签会停在页面顶部。
+// 分流按锚点性质：执行类锚点 → /handbook（机会雷达），理论类锚点 → /library（图书馆）；
+// 没有 hash 时按来源给合理落点：仓位艺术 → 反例登记，其余 → 雷达（默认落点就是每天那页）。
+const DAILY_HASHES = new Set(['today', 'account', 'cash', 'scan', 'ledger', 'next', 'register'])
 function LegacyHandbookRedirect() {
   const { pathname } = useLocation()
-  const fallback = pathname.endsWith('/position-art') ? '#register' : '#today'
-  return <Navigate to={`/handbook${window.location.hash || fallback}`} replace />
+  const hash = window.location.hash
+  const h = hash.replace(/^#/, '')
+  if (!h) {
+    const fallback = pathname.endsWith('/position-art') ? '#register' : ''
+    return <Navigate to={`/handbook${fallback}`} replace />
+  }
+  return <Navigate to={`${DAILY_HASHES.has(h) ? '/handbook' : '/library'}${hash}`} replace />
 }
 
 // 旧链接兼容: 挖掘已并入因子页 (/factors?tab=mining), 保留 run/candidate 等参数重定向
@@ -167,7 +177,8 @@ export const router = createBrowserRouter([
     { path: 'decisions', element: <Decision /> },
     { path: 'case-lab', element: <CaseLab /> },
     { path: 'common-sense', element: <CommonSense /> },
-    { path: 'handbook', element: <Handbook /> },
+    { path: 'handbook', element: <DailyRadar /> },
+    { path: 'library', element: <StrategyLibrary /> },
     { path: 'long-strategy', element: <LegacyHandbookRedirect /> },
     { path: 'structural-edge', element: <LegacyHandbookRedirect /> },
     { path: 'position-art', element: <LegacyHandbookRedirect /> },

@@ -10,7 +10,7 @@
  */
 import { buyQuestions, exits, sizing, stopRules, thesis } from './data'
 import { CrossLink, TabLayout } from './Shell'
-import { Cadence, Callout, DataTable, type Col, Section, StatGrid, Tag } from './ui'
+import { Cadence, Callout, DataTable, type Col, Section, StatGrid, Tag, Tile, Tiles } from './ui'
 
 export function RulesPanel() {
   return (
@@ -44,11 +44,11 @@ function BuySection() {
       source="docs/structural-edge/industry-etf-asymmetry.md · theme-etf-entry.md"
       actions={<Cadence kind="frozen" note="预注册" />}
     >
-      <div className="mt-3 grid gap-2.5 md:grid-cols-2">
+      <Tiles cols={2}>
         {buyQuestions.map(q => <BuyCard key={q.n} {...q} />)}
-      </div>
+      </Tiles>
 
-      <p className="mt-3 text-[10.5px] leading-relaxed text-muted">
+      <p className="mt-6 max-w-[46em] text-[12px] leading-[1.7] text-muted">
         1–4 是入场闸门（缺一不可），5 是仓位约束，6 是放行闸门。
         每条的依据在「证据」视图；第 6 条的完整清单在下一节。
       </p>
@@ -62,20 +62,12 @@ function BuySection() {
 
 function BuyCard({ n, badge, q, a, basis }: (typeof buyQuestions)[number]) {
   return (
-    <div className="flex gap-3 rounded-lg border border-border bg-surface p-3.5">
-      <div className="flex w-6 shrink-0 flex-col items-center">
-        <span className="font-mono text-[10px] text-muted">{n}</span>
-        <span className="mt-1 h-px w-3 bg-border" />
-      </div>
-      <div className="min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="text-[10.5px] text-muted">{q}</span>
-          <span className="rounded bg-elevated px-1.5 py-0.5 text-[9.5px] text-muted">{badge}</span>
-        </div>
-        <div className="mt-0.5 text-[14px] font-semibold leading-snug text-foreground">{a}</div>
-        <p className="mt-1 text-[11px] leading-relaxed text-secondary">{basis}</p>
-      </div>
-    </div>
+    <Tile
+      lead={<><span className="font-mono tabular-nums">{n}</span><span className="ml-2.5 font-sans">{q}</span></>}
+      aside={<span className="text-[11px] tracking-[0.06em] text-muted">{badge}</span>}
+      title={a}
+      body={basis}
+    />
   )
 }
 
@@ -117,7 +109,7 @@ function SizingSection() {
       render: r => (
         <>
           <span className="font-medium leading-snug">{r.name}</span>
-          <span className="mt-0.5 block font-mono text-[10px] text-muted">{r.code}</span>
+          <span className="mt-0.5 block font-mono text-[11px] text-muted">{r.code}</span>
         </>
       ),
     },
@@ -128,7 +120,7 @@ function SizingSection() {
     { head: '20 日均额', headCls: 'whitespace-nowrap', render: r => <span className="font-mono tabular-nums">{r.amt} 亿</span>, w: '9%', align: 'right' },
     { head: '与沪深300 相关', render: r => <span className="font-mono tabular-nums">{r.corr.toFixed(2)}</span>, w: '10%', align: 'right' },
     { head: 'beta', render: r => <span className="font-mono tabular-nums">{r.beta.toFixed(2)}</span>, w: '7%', align: 'right' },
-    { head: '备注', render: r => <span className="text-[10.5px] text-secondary">{r.note}</span>, w: '15%' },
+    { head: '备注', render: r => <span className="text-[12px] text-muted">{r.note}</span>, w: '15%' },
   ]
 
   return (
@@ -204,7 +196,7 @@ function ExitSection() {
         {exits.verdict}
       </Callout>
 
-      <div className="mt-6 text-[10.5px] font-medium text-secondary">延迟进场：晚 8 天，alpha 就不显著了</div>
+      <div className="mt-10 text-[11px] font-medium tracking-[0.1em] text-muted">延迟进场：晚 8 天，alpha 就不显著了</div>
       <DataTable
         cols={lateCols}
         rows={exits.late}

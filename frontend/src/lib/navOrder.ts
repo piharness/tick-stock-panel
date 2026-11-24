@@ -11,7 +11,7 @@
 export const CORE_NAV_PATHS = [
   '/', '/battle', '/watchlist', '/screener', '/factors', '/backtest',
   '/regime', '/indices', '/data', '/decisions', '/case-lab', '/common-sense',
-  '/handbook',
+  '/handbook', '/library',
 ] as const
 
 export type CoreNavPath = (typeof CORE_NAV_PATHS)[number]
@@ -37,7 +37,8 @@ export const CORE_NAV_LABELS: Record<CoreNavPath, string> = {
   '/decisions': '决策账本',
   '/case-lab': '操盘档案',
   '/common-sense': '市场常识',
-  '/handbook': '投资手册',
+  '/handbook': '机会雷达',
+  '/library': '策略图书馆',
 }
 
 /**
@@ -76,6 +77,10 @@ export const DEFAULT_NAV_PATHS = [
   // 不再进默认序 —— 已保存过 nav_order 的用户，由 Layout 的「插回默认前驱之后」
   // 逻辑把它放回 /common-sense 之后，与升级前一致。
   '/handbook',
+  // 2026-11-24 明确决策：手册拆成两页 —— 理论沉淀（总则/证据/规则/反证/工具）是
+  // 「策略图书馆」，冻结低频，单独成页；每天找机会的动态部分是「机会雷达」(/handbook)。
+  // 图书馆排在其后：动线是 每天看机会 → 偶尔翻理论。
+  '/library',
 ] as const
 
 const INDEX = new Map<string, number>(DEFAULT_NAV_PATHS.map((p, i) => [p, i]))

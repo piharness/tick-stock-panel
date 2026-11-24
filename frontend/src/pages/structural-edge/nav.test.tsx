@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-// 结构回归：这一页的重构（六视图 → 一本手册的六章）。
+// 结构回归：策略图书馆（/library，原手册的理论五章）。
 // 最容易被改坏的不是内容，而是「结构契约」：
-//   - 六个 tab 与六个 panel 是否一一对应；
+//   - 五个 tab（总则/证据/规则/反证/工具）与五个 panel 是否一一对应；
 //   - 非当前视图是否仍在 DOM 里（否则搜索、深链、档案测试都会静默失效）；
-//   - 默认视图是否仍是「术 · 今天」（唯一每天要看的）；
+//   - 默认视图是「总则」（图书馆从第一页翻开）；
 //   - 四个档案折叠是否还在、索引能否展开对应折叠；
 //   - 旧锚点（#buy / #sizing-audit / #archive-b）是否还落到同一块内容上。
+// 每天要看的执行部分现在是独立页面 /handbook（机会雷达），契约在 daily.test.tsx。
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -112,10 +113,10 @@ async function render() {
 
 const panel = (el: HTMLElement, id: string) => el.querySelector(`#se-panel-${id}`)
 
-it('六个 tab 与六个 panel 一一对应，默认视图是「执行」', async () => {
+it('五个 tab 与五个 panel 一一对应，默认视图是「总则」', async () => {
   const el = await render()
   const tabs = Array.from(el.querySelectorAll('[role="tab"]')) as HTMLButtonElement[]
-  expect(tabs).toHaveLength(6)
+  expect(tabs).toHaveLength(5)
 
   for (const t of tabs) {
     const id = t.getAttribute('aria-controls')!
@@ -125,26 +126,26 @@ it('六个 tab 与六个 panel 一一对应，默认视图是「执行」', asyn
     expect(p!.getAttribute('aria-labelledby')).toBe(t.id)
   }
 
-  expect(el.querySelector('#se-tab-today')!.getAttribute('aria-selected')).toBe('true')
-  expect(el.querySelector('#se-tab-today')!.textContent).toContain('执行')
-  expect(panel(el, 'today')!.hasAttribute('hidden')).toBe(false)
-  for (const k of ['mandate', 'evidence', 'rules', 'tools', 'archive']) {
+  expect(el.querySelector('#se-tab-mandate')!.getAttribute('aria-selected')).toBe('true')
+  expect(el.querySelector('#se-tab-mandate')!.textContent).toContain('总则')
+  expect(panel(el, 'mandate')!.hasAttribute('hidden')).toBe(false)
+  for (const k of ['evidence', 'rules', 'archive', 'tools']) {
     expect(panel(el, k)!.hasAttribute('hidden'), `${k} 不应该默认可见`).toBe(true)
   }
 })
 
-it('六章按决策链排列，且每个 tab 带自己的更新频率', async () => {
+it('五章按决策链排列，且每个 tab 带自己的更新频率', async () => {
   const el = await render()
   const tabs = Array.from(el.querySelectorAll('[role="tab"]')) as HTMLButtonElement[]
   const labels = tabs.map(t => (t.textContent ?? '').trim())
-  for (const [i, s] of ['总则', '证据', '规则', '执行', '反证', '工具'].entries()) {
+  for (const [i, s] of ['总则', '证据', '规则', '反证', '工具'].entries()) {
     expect(labels[i].startsWith(s), `第 ${i + 1} 个 tab 应为 ${s}，实际 ${labels[i]}`).toBe(true)
   }
-  // 频率必须写在 tab 上：总则/反证冻结，执行每日，规则预注册
+  // 频率必须写在 tab 上：总则/反证冻结，规则预注册，工具按需
   expect(labels[0]).toContain('冻结')
-  expect(labels[3]).toContain('每日')
   expect(labels[2]).toContain('预注册')
-  expect(labels[5]).toContain('按需')
+  expect(labels[3]).toContain('冻结')
+  expect(labels[4]).toContain('按需')
 })
 
 it('切换 tab 只改变可见性，所有面板内容常驻 DOM', async () => {
@@ -154,20 +155,20 @@ it('切换 tab 只改变可见性，所有面板内容常驻 DOM', async () => {
 
   expect(rules.getAttribute('aria-selected')).toBe('true')
   expect(panel(el, 'rules')!.hasAttribute('hidden')).toBe(false)
-  expect(panel(el, 'today')!.hasAttribute('hidden')).toBe(true)
+  expect(panel(el, 'mandate')!.hasAttribute('hidden')).toBe(true)
   // 档案在另一个视图里，但内容仍应可被检索/测试读到
   expect(el.textContent).toContain('这五个月的账')
   expect(el.textContent).toContain('被迫流账本')
 })
 
-it('键盘左右箭头可以在六章之间移动', async () => {
+it('键盘左右箭头可以在五章之间移动', async () => {
   const el = await render()
-  const today = el.querySelector('#se-tab-today') as HTMLButtonElement
+  const mandate = el.querySelector('#se-tab-mandate') as HTMLButtonElement
   await act(async () => {
-    today.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    mandate.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
   })
-  // 章节顺序：总则 → 证据 → 规则 → 执行 → 反证 → 工具
-  expect(el.querySelector('#se-tab-archive')!.getAttribute('aria-selected')).toBe('true')
+  // 章节顺序：总则 → 证据 → 规则 → 反证 → 工具
+  expect(el.querySelector('#se-tab-evidence')!.getAttribute('aria-selected')).toBe('true')
 
   const rules = el.querySelector('#se-tab-rules') as HTMLButtonElement
   await act(async () => {
@@ -248,14 +249,14 @@ it('六条不做的每一条都能落到真实存在的章与锚点（总则不�
   }
 })
 
-it('执行章的反例登记与扫描并列，并明确「不构成指令」', async () => {
+it('图书馆不再包含每日执行读数（它们已迁往机会雷达 /handbook）', async () => {
   const el = await render()
   const text = el.textContent ?? ''
-  expect(text).toContain('反例登记')
-  expect(text).toContain('不构成指令')
-  expect(text).toContain('空仓')
-  // 它与扫描器不是同一条规则，必须写出「不能相加、不能替代」
-  expect(text).toContain('不能相加')
+  // 拆分契约：这些是每日读数的 UI 标志，出现在图书馆里 = 拆分没拆干净
+  // （维护表/文档地图里提到「账户指令」这些流水线名词是允许的，所以只查 UI 句式）
+  expect(text).not.toContain('个四条全过')
+  expect(text).not.toContain('账户指令：腿')
+  expect(text).not.toContain('触发后的四步')
 })
 
 it('证据章保留仓位择时的五项验收，未通过的项必须显示「未通过」', async () => {
@@ -333,9 +334,10 @@ it('工具章的回放未生成时给出命令，不静默空白', async () => {
   expect(el.textContent).toContain('etf_watch_replay.py')
 })
 
-it('活数据未就绪时页面仍完整渲染，不出现空白或报错页', async () => {
+it('接口全挂时图书馆仍完整渲染，不出现空白或报错页', async () => {
   const el = await render()
-  expect(el.textContent).toContain('还没有盘后扫描结果')
   expect(el.textContent).toContain('买点：六个问题，一次答完')
   expect(el.textContent).toContain('不买清单')
+  // 广度读数/边界读数依赖扫描快照：挂了也要给「未就绪」而不是旧值
+  expect(el.textContent).toContain('未就绪')
 })

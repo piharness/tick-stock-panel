@@ -73,7 +73,8 @@ const CORE_ARCH: Record<CoreNavPath, { kind: ArchKind; reason: string }> = {
   '/decisions':      { kind: 'core', reason: '决策账本 — 制卡/结算/校准的权威记录' },
   '/case-lab':       { kind: 'core', reason: '操盘档案 — 判据库与案例库, 痕迹对账叙事' },
   '/common-sense':   { kind: 'core', reason: '市场常识 — 行业内规则/博弈/法规的确定性沉淀' },
-  '/handbook':       { kind: 'core', reason: '投资手册 — 事件低吸：总则/证据/规则/执行/反证/工具六章' },
+  '/handbook':       { kind: 'core', reason: '机会雷达 — 每日盘后：判定/指令/明细/账本/反例' },
+  '/library':        { kind: 'core', reason: '策略图书馆 — 理论沉淀：总则/证据/规则/反证/工具' },
 }
 
 const ARCH_CLASS: Record<string, { kind: ArchKind; reason: string }> = {

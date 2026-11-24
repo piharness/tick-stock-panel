@@ -21,12 +21,11 @@
 import {
   createContext, useContext, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
 } from 'react'
-import {
-  Archive as ArchiveIcon, ArrowRight, BarChart3, BookOpen, Clock3, ListChecks, Radar, Wrench, type LucideIcon,
-} from 'lucide-react'
+import { ArrowRight, Archive as ArchiveIcon, BarChart3, BookOpen, ListChecks, Wrench, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
-export type TabKey = 'mandate' | 'evidence' | 'rules' | 'today' | 'archive' | 'tools'
+/** 图书馆的五章。每天要看的「执行」已拆成独立页面 /handbook（机会雷达）。 */
+export type TabKey = 'mandate' | 'evidence' | 'rules' | 'archive' | 'tools'
 
 export interface TabDef {
   key: TabKey
@@ -66,14 +65,6 @@ export const TABS: TabDef[] = [
     icon: ListChecks,
   },
   {
-    key: 'today',
-    label: '执行',
-    cadence: '每日 · 盘后',
-    hint: '收盘后由 analysis/etf_watch.py 重写；页面不内联副本',
-    source: 'GET /api/etf-watch · GET /api/etf-watch/account · GET /api/position-art',
-    icon: Radar,
-  },
-  {
     key: 'archive',
     label: '反证',
     cadence: '冻结 · 只追加',
@@ -104,7 +95,6 @@ export const SECTION_TAB: Record<string, TabKey> = {
   grade: 'evidence', position: 'evidence', breadth: 'evidence', duration: 'evidence', waits: 'evidence',
   portfolio: 'evidence', 'sizing-audit': 'evidence', evidence: 'evidence', fa: 'evidence',
   buy: 'rules', stop: 'rules', sizing: 'rules', exits: 'rules', rules: 'rules',
-  today: 'today', register: 'today', scan: 'today', ledger: 'today', next: 'today',
   archive: 'archive', 'archive-a': 'archive', 'archive-b': 'archive', 'archive-c': 'archive', 'archive-d': 'archive',
   review: 'archive',
   replay: 'tools', 'replay-day': 'tools', 'replay-track': 'tools', 'replay-outcome': 'tools',
@@ -113,9 +103,9 @@ export const SECTION_TAB: Record<string, TabKey> = {
 
 export function tabFromHash(hash = window.location.hash): TabKey {
   const h = hash.replace(/^#/, '')
-  if (!h) return 'today'
+  if (!h) return 'mandate'
   if ((TAB_KEYS as string[]).includes(h)) return h as TabKey
-  return SECTION_TAB[h] ?? 'today'
+  return SECTION_TAB[h] ?? 'mandate'
 }
 
 export function scrollToId(id: string) {
@@ -149,6 +139,9 @@ export function CrossLink({
   className?: string
 }) {
   const { go } = usePageNav()
+  // 注意：CrossLink 只做图书馆内的章内跳转。跨页（图书馆 → 机会雷达）请用
+  // react-router 的 Link，例如 <Link to="/handbook#register"> —— 因为雷达是独立路由，
+  // 不在本页的 PageNav 状态机里，混进 go() 会让两页共享一套 tab 状态。
   return (
     <button
       type="button"
@@ -161,13 +154,18 @@ export function CrossLink({
   )
 }
 
-/** 顶层视图切换。固定在滚动容器顶部，长页里也能随时换视图。 */
+/**
+ * 顶层视图切换。固定在滚动容器顶部，长页里也能随时换视图。
+ *
+ * 这一版去掉了图标：六个 14px 的图标 + 六段 10px 的频率说明，把 tab 条变成了
+ * 第二张目录。现在只留两行 —— 章名（13.5px）与频率（10.5px）——
+ * 频率仍写在 tab 上（nav.test.tsx 守），但降为脚注级；图标留给左侧目录。
+ */
 export function PageTabs({
-  active, onChange, badge,
+  active, onChange,
 }: {
   active: TabKey
   onChange: (key: TabKey) => void
-  badge?: number
 }) {
   const btns = useRef<Array<HTMLButtonElement | null>>([])
   const listRef = useRef<HTMLDivElement>(null)
@@ -198,15 +196,17 @@ export function PageTabs({
   }
 
   return (
-    <div className="sticky top-0 z-20 -mx-6 mt-5 border-b border-border bg-base/95 backdrop-blur supports-[backdrop-filter]:bg-base/80">
+    <div className="sticky top-0 z-20 -mx-6 mt-7 border-b border-border bg-base/95 backdrop-blur supports-[backdrop-filter]:bg-base/80">
       <div
         ref={listRef}
         role="tablist"
         aria-label="投资手册章节"
-        className="flex gap-0.5 overflow-x-auto px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >        {TABS.map((t, i) => {
-          const Icon = t.icon
+        className="flex gap-1 overflow-x-auto px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {TABS.map((t, i) => {
           const on = active === t.key
+          /** tab 上只留频率的前半句（「冻结 · 只随裁决改」→「冻结」）；完整说明在左侧目录。 */
+          const short = t.cadence.split('·')[0].trim()
           return (
             <button
               key={t.key}
@@ -220,19 +220,16 @@ export function PageTabs({
               onClick={() => onChange(t.key)}
               onKeyDown={e => onKeyDown(e, i)}
               className={cn(
-                'group relative flex shrink-0 items-center gap-2 border-b-2 px-3 pb-2.5 pt-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50',
+                'group relative flex shrink-0 flex-col items-start border-b-2 px-3.5 pb-3 pt-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40',
                 on ? 'border-accent' : 'border-transparent hover:border-border',
               )}
             >
-              <Icon className={cn('h-3.5 w-3.5 shrink-0 transition-colors', on ? 'text-accent' : 'text-muted group-hover:text-secondary')} />
-              <span className="flex flex-col">
-                <span className={cn('text-[12.5px] font-medium leading-tight transition-colors', on ? 'text-foreground' : 'text-secondary group-hover:text-foreground')}>
-                  {t.label}
-                  {t.key === 'today' && badge != null && badge > 0 && (
-                    <span className="ml-1.5 rounded-full bg-accent/15 px-1.5 py-px font-mono text-[9.5px] tabular-nums text-accent">{badge}</span>
-                  )}
-                </span>
-                <span className="mt-0.5 hidden text-[9.5px] leading-tight text-secondary sm:block">{t.cadence}</span>              </span>
+              <span className={cn('flex items-baseline gap-1.5 text-[14px] font-medium leading-none transition-colors', on ? 'text-foreground' : 'text-secondary group-hover:text-foreground')}>
+                {t.label}
+              </span>
+              <span className={cn('mt-2 text-[11px] leading-none tracking-[0.04em] transition-colors', on ? 'text-secondary' : 'text-muted')}>
+                {short}
+              </span>
             </button>
           )
         })}
@@ -251,14 +248,18 @@ export interface RailItem {
   onSelect?: () => void
 }
 
-/** 视图内目录。桌面端常驻左侧；窄屏由 TabLayout 的 meta 条替代。 */
+/**
+ * 视图内目录。桌面端常驻左侧；窄屏由 TabLayout 的 meta 条替代。
+ *
+ * 删掉了上一版的「更新频率」卡片：它把 cadence、一句说明和五行 API 路径装进一个
+ * 描边盒子里，在每一章重复六次。现在频率只剩三行无框文字，路径交给每节的元信息行。
+ */
 export function SectionRail({
-  items, cadence, hint, source,
+  items, cadence, hint,
 }: {
   items: RailItem[]
   cadence: string
   hint: string
-  source: string
 }) {
   const [active, setActive] = useState(items[0]?.id ?? '')
   const ids = items.map(i => i.id).join('|')
@@ -290,9 +291,9 @@ export function SectionRail({
   }
 
   return (
-    <nav aria-label="本页目录" className="sticky top-[74px] hidden self-start xl:block">
-      <div className="text-[9.5px] font-medium tracking-[0.14em] text-secondary">本页目录</div>
-      <ul className="mt-2 border-l border-border">
+    <nav aria-label="本页目录" className="sticky top-[84px] hidden self-start xl:block">
+      <div className="text-[11px] font-medium tracking-[0.16em] text-muted">本页目录</div>
+      <ul className="mt-3">
         {items.map(item => (
           <li key={item.id}>
             <button
@@ -300,27 +301,23 @@ export function SectionRail({
               onClick={() => jump(item)}
               aria-current={active === item.id ? 'true' : undefined}
               className={cn(
-                '-ml-px flex w-full items-baseline gap-2 border-l-2 py-1.5 pl-3 pr-2 text-left text-[11.5px] leading-snug transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40',
+                '-ml-px flex w-full items-baseline gap-2.5 border-l py-1.5 pl-3 pr-2 text-left text-[13px] leading-snug transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40',
                 active === item.id
                   ? 'border-accent text-foreground'
-                  : 'border-transparent text-secondary hover:border-border hover:text-foreground',
+                  : 'border-border/70 text-secondary hover:border-border hover:text-foreground',
               )}
             >
-              <span className="shrink-0 font-mono text-[9.5px] text-muted">{item.no}</span>
+              <span className="w-4 shrink-0 font-mono text-[11px] tabular-nums text-muted">{item.no}</span>
               <span className="min-w-0">{item.label}</span>
             </button>
           </li>
         ))}
       </ul>
 
-      <div className="mt-4 rounded-lg border border-border bg-surface/60 p-3">
-        <div className="flex items-center gap-1.5 text-[9.5px] font-medium tracking-wide text-secondary">
-          <Clock3 className="h-3 w-3" />
-          更新频率
-        </div>
-        <div className="mt-1 text-[11px] font-medium text-foreground">{cadence}</div>
-        <div className="mt-1 text-[10px] leading-relaxed text-secondary">{hint}</div>
-        <div className="mt-2 break-all border-t border-border/70 pt-2 font-mono text-[9px] leading-relaxed text-secondary">{source}</div>
+      <div className="mt-7 border-t border-border pt-3">
+        <div className="text-[11px] font-medium tracking-[0.14em] text-muted">更新频率</div>
+        <div className="mt-1.5 text-[12px] font-medium leading-snug text-foreground">{cadence}</div>
+        <p className="mt-1.5 text-[12px] leading-[1.7] text-muted">{hint}</p>
       </div>
     </nav>
   )
@@ -330,14 +327,11 @@ export function SectionRail({
 export function TabLayout({ tab, items, children }: { tab: TabKey; items: RailItem[]; children: ReactNode }) {
   const def = TABS.find(t => t.key === tab) ?? TABS[0]
   return (
-    <div className="mt-6 grid gap-8 xl:grid-cols-[184px_minmax(0,1fr)]">
-      <SectionRail items={items} cadence={def.cadence} hint={def.hint} source={def.source} />
+    <div className="mt-10 grid gap-9 xl:grid-cols-[188px_minmax(0,1fr)] xl:gap-14">
+      <SectionRail items={items} cadence={def.cadence} hint={def.hint} />
       <div className="min-w-0">
-        <div className="mb-6 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg border border-border bg-surface/50 px-3 py-2 xl:hidden">
-          <Clock3 className="h-3 w-3 shrink-0 self-center text-muted" />
-          <span className="text-[10.5px] font-medium text-secondary">{def.cadence}</span>
-          <span className="text-[10px] text-secondary">{def.hint}</span>
-        </div>
+        {/* 窄屏没有左侧目录：只补一句「这一章多久变一次」，频率本身已写在 tab 上，不再重复。 */}
+        <p className="mb-8 max-w-[46em] text-[12px] leading-[1.7] text-muted xl:hidden">{def.hint}</p>
         {children}
       </div>
     </div>

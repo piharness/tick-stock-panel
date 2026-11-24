@@ -18,7 +18,7 @@ import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { scrollToId } from './Shell'
 import { ScanTable, statusLabel, statusTone } from './ScanTable'
-import { Callout, DataTable, type Col, Fold, Section, Stat, Tag } from './ui'
+import { Callout, DataTable, type Col, Empty, Fold, Section, Stat, Tag } from './ui'
 
 const PIT_LABEL: Record<string, string> = {
   liquidity: '流动性排名',
@@ -88,29 +88,27 @@ export function ReplayPanel({ active }: { active: boolean }) {
           source="data/etf_watch/replay.json · analysis/etf_watch_replay.py"
         >
           {loading ? (
-            <div className="mt-4 flex items-center gap-2 rounded-lg border border-border bg-surface/50 px-4 py-6 text-[11.5px] text-secondary">
-              <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted" />
+            <div className="mt-4 flex items-center gap-2 border-t border-border pt-4 text-[13px] text-muted">
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
               正在读取历史回放…
             </div>
           ) : err ? (
-            <div className="mt-4 rounded-lg border border-warning/40 bg-warning/[0.06] p-4">
-              <div className="text-[12px] font-medium text-foreground">历史回放未生成</div>
-              <p className="mt-1 text-[11px] leading-relaxed text-secondary">{err}</p>
-              <pre className="mt-2 inline-block rounded border border-border bg-base px-2.5 py-1.5 font-mono text-[10.5px] text-foreground">
+            <div className="mt-4 border-l-2 border-warning pl-4">
+              <div className="text-[13px] font-medium text-foreground">历史回放未生成</div>
+              <p className="mt-2 text-[13px] leading-[1.75] text-muted">{err}</p>
+              <pre className="mt-3 inline-block rounded border border-border px-3 py-1.5 font-mono text-[12px] text-foreground">
                 python analysis/etf_watch_replay.py --lookback 120
               </pre>
               <button
                 type="button"
                 onClick={load}
-                className="mt-2 flex items-center gap-1 text-[11px] font-medium text-accent hover:underline"
+                className="mt-3 flex items-center gap-1 text-[12px] font-medium text-accent hover:underline"
               >
                 <RefreshCw className="h-3 w-3" /> 重新读取
               </button>
             </div>
           ) : (
-            <div className="mt-4 rounded-lg border border-dashed border-border bg-surface/40 px-4 py-6 text-center text-[11px] text-secondary">
-              打开本视图时读取回放数据。
-            </div>
+            <Empty text="打开本视图时读取回放数据。" />
           )}
         </Section>
     )
@@ -138,18 +136,18 @@ export function ReplayPanel({ active }: { active: boolean }) {
         }
         source={`${data.meta.start} → ${data.meta.end} · ${data.meta.sessions} 个交易日 · ${data.meta.rule_version}`}
         actions={
-          <span className="text-[10px] text-secondary">
+          <span className="text-[12px] text-secondary">
             生成于 {data.meta.generated_at.slice(5, 16)}
           </span>
         }
       >
-        <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-border bg-surface p-3">
-          <label className="flex flex-col gap-1">
-            <span className="text-[9.5px] text-secondary">交易日期</span>
+        <div className="mt-6 flex flex-wrap items-end gap-x-3 gap-y-3 border-y border-border/70 py-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-medium tracking-[0.1em] text-muted">交易日期</span>
             <select
               value={selected}
               onChange={e => setSelected(e.target.value)}
-              className="h-8 rounded border border-border bg-base px-2 font-mono text-[11px] text-foreground outline-none focus:border-accent"
+              className="h-8 rounded border border-border bg-base px-2 font-mono text-[12px] text-foreground outline-none focus:border-accent"
             >
               {[...sessions].reverse().map(d => (
                 <option key={d} value={d}>
@@ -162,7 +160,7 @@ export function ReplayPanel({ active }: { active: boolean }) {
             type="button"
             disabled={sessionIndex <= 0}
             onClick={() => setSelected(sessions[sessionIndex - 1])}
-            className="flex h-8 items-center gap-1 rounded border border-border px-2 text-[10.5px] text-secondary transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 items-center gap-1 rounded border border-border px-2.5 text-[12px] text-secondary transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronLeft className="h-3 w-3" /> 上一交易日
           </button>
@@ -170,18 +168,18 @@ export function ReplayPanel({ active }: { active: boolean }) {
             type="button"
             disabled={sessionIndex >= sessions.length - 1}
             onClick={() => setSelected(sessions[sessionIndex + 1])}
-            className="flex h-8 items-center gap-1 rounded border border-border px-2 text-[10.5px] text-secondary transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-8 items-center gap-1 rounded border border-border px-2.5 text-[12px] text-secondary transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           >
             下一交易日 <ChevronRight className="h-3 w-3" />
           </button>
-          <span className="ml-auto pb-1 font-mono text-[9.5px] text-secondary">
+          <span className="ml-auto pb-1.5 font-mono text-[11px] text-muted">
             回放窗口 {data.meta.lookback} 日 · 末日 {data.meta.end}
           </span>
         </div>
 
         {snapshot && (
           <>
-            <div className="mt-3 grid grid-cols-2 gap-2.5 md:grid-cols-4">
+            <div className="mt-7 grid grid-cols-2 gap-x-7 gap-y-6 md:grid-cols-4">
               <Stat k="候选行业" v={String(snapshot.counts.candidate)} d={`区间内 ${snapshot.counts.in_band} · 高波信号 ${snapshot.counts.signal}`} />
               <Stat k="被排除行业" v={String(excluded)} d={`共 ${snapshot.counts.industries} 个行业`} />
               <Stat k="市场状态" v={snapshot.market.state} d={`沪深300 ${snapshot.market.hs300_close}`} />
@@ -207,34 +205,33 @@ export function ReplayPanel({ active }: { active: boolean }) {
         }
         source="track = 最新候选行业 × 每个交易日 · 载体按当日 F6 选取，可能换"
         actions={
-          <div className="flex items-center gap-1">
-            {([10, 20, 40] as const).map(n => (
+          <span className="inline-flex overflow-hidden rounded border border-border">
+            {([10, 20, 40] as const).map((n, i) => (
               <button
                 key={n}
                 type="button"
                 aria-pressed={range === n}
                 onClick={() => setRange(n)}
                 className={cn(
-                  'rounded px-1.5 py-0.5 text-[9.5px] transition-colors',
-                  range === n ? 'bg-accent/15 font-medium text-accent' : 'text-secondary hover:text-foreground',
+                  'px-2.5 py-1 text-[12px] leading-5 transition-colors',
+                  i > 0 && 'border-l border-border',
+                  range === n ? 'bg-foreground text-base' : 'text-secondary hover:bg-elevated hover:text-foreground',
                 )}
               >
                 近 {n} 日
               </button>
             ))}
-          </div>
+          </span>
         }
       >
         {data.tracks.length === 0 ? (
-          <div className="mt-3 rounded-lg border border-dashed border-border bg-surface/40 px-4 py-5 text-center text-[11px] text-secondary">
-            末日没有候选行业，无法生成轨迹。
-          </div>
+          <Empty text="末日没有候选行业，无法生成轨迹。" />
         ) : (
           <>
             <TrackSummary tracks={data.tracks} sessions={sessions} />
             <Legend />
             <TrackMatrix tracks={data.tracks} dates={viewDates} />
-            <p className="mt-1 text-[9.5px] text-secondary sm:hidden">左右滑动查看完整轨迹 →</p>
+            <p className="mt-2 text-[11px] text-muted sm:hidden">左右滑动查看完整轨迹 →</p>
             <Callout tone="warn" label="别把「六只」当成六次机会">
               轨迹按<b className="text-foreground">行业</b>判定；最新载体只是当日 F6 选出的表达工具。军工首次触发的载体是
               航空航天ETF华夏，电新首次触发是电池ETF广发 —— 后来才换成现在这两只。
@@ -261,15 +258,15 @@ export function ReplayPanel({ active }: { active: boolean }) {
       </Section>
 
       <Fold id="replay-caveats" title="回放口径与未消除的偏差" hint="读结论前先看这七条">
-        <p className="mt-3 rounded border border-border bg-base px-2.5 py-1.5 font-mono text-[10px] text-secondary">
+        <p className="mt-4 inline-block rounded border border-border px-3 py-1.5 font-mono text-[12px] text-muted">
           新增交易日后重跑：python analysis/etf_watch_replay.py --lookback 120
         </p>
         {data.meta.mae_convention && (
-          <p className="mt-2 text-[11px] leading-relaxed text-secondary">
-            <b className="text-foreground">MAE/MFE 口径：</b>{data.meta.mae_convention}
+          <p className="mt-3 max-w-[46em] text-[12px] leading-[1.7] text-muted">
+            <b className="font-medium text-secondary">MAE/MFE 口径：</b>{data.meta.mae_convention}
           </p>
         )}
-        <div className="mt-2 space-y-1.5 text-[11px] leading-relaxed text-secondary">
+        <div className="mt-3 max-w-[46em] space-y-2 text-[12px] leading-[1.7] text-muted">
           {Object.entries(data.meta.point_in_time).map(([k, v]) => (
             <p key={k}>
               <b className="text-foreground">{PIT_LABEL[k] ?? k}：</b>{v}
@@ -290,7 +287,7 @@ function TrackSummary({ tracks, sessions }: { tracks: EtfWatchTrack[]; sessions:
       render: t => (
         <div>
           <div className="whitespace-nowrap font-medium">{t.industry}</div>
-          <div className="max-w-[170px] truncate text-[9.5px] text-secondary" title={t.name}>{t.name}</div>
+          <div className="max-w-[170px] truncate text-[11px] text-muted" title={t.name}>{t.name}</div>
         </div>
       ),
     },
@@ -299,8 +296,8 @@ function TrackSummary({ tracks, sessions }: { tracks: EtfWatchTrack[]; sessions:
       render: t => t.first_trigger
         ? (
           <div>
-            <div className="whitespace-nowrap font-mono text-[11px]">{t.first_trigger}</div>
-            <div className="text-[9px] text-secondary">{offsetLabel(t.first_trigger, sessions)}</div>
+            <div className="whitespace-nowrap font-mono text-[12px]">{t.first_trigger}</div>
+            <div className="text-[11px] text-muted">{offsetLabel(t.first_trigger, sessions)}</div>
           </div>
         )
         : <span className="text-secondary">窗口内未触发</span>,
@@ -321,7 +318,7 @@ function TrackSummary({ tracks, sessions }: { tracks: EtfWatchTrack[]; sessions:
         if (t.left_censored) notes.push('窗口左端已触发')
         if (t.carrier_changed) notes.push(`载体已换（首次 ${t.carrier_at_first}）`)
         if (t.segments.length > 1) notes.push(`中途退出 ${t.segments.length - 1} 次`)
-        return <span className="text-[10px] leading-relaxed text-secondary">{notes.join('；') || '—'}</span>
+        return <span className="text-[12px] leading-[1.6] text-muted">{notes.join('；') || '—'}</span>
       },
     },
   ]
@@ -332,15 +329,19 @@ function TrackSummary({ tracks, sessions }: { tracks: EtfWatchTrack[]; sessions:
 
 type CellKind = 'candidate' | 'low' | 'market' | 'liquidity' | 'position' | 'deep' | 'stale' | 'multi'
 
+/**
+ * 轨迹九宫格的色板。红绿在这一页只留给涨跌，所以「排除」用琥珀、「阻断」用墨色：
+ * 深跌阻断不是「跌」，是「这道闸门直接不放行」，用最重的墨色比用红色更准。
+ */
 const CELL: Record<CellKind, { code: string; label: string; cls: string }> = {
   candidate: { code: '候', label: '候选（四条全过）', cls: 'border-accent/40 bg-accent/15 text-accent' },
   low: { code: '低', label: '低波排除', cls: 'border-warning/30 bg-warning/10 text-warning' },
   market: { code: '市', label: '市场状态排除', cls: 'border-warning/30 bg-warning/10 text-warning' },
   liquidity: { code: '流', label: '流动性排除', cls: 'border-warning/30 bg-warning/10 text-warning' },
-  position: { code: '位', label: '未到位置', cls: 'border-border bg-elevated text-secondary' },
-  deep: { code: '深', label: '深跌阻断', cls: 'border-danger/40 bg-danger/15 text-danger' },
-  stale: { code: '停', label: '数据停更', cls: 'border-danger/30 bg-danger/10 text-danger' },
-  multi: { code: '多', label: '多重排除', cls: 'border-warning/30 bg-elevated text-warning' },
+  position: { code: '位', label: '未到位置', cls: 'border-border bg-elevated text-muted' },
+  deep: { code: '深', label: '深跌阻断', cls: 'border-foreground/25 bg-foreground/10 text-foreground' },
+  stale: { code: '停', label: '数据停更', cls: 'border-warning/40 bg-warning/15 text-warning' },
+  multi: { code: '多', label: '多重排除', cls: 'border-border bg-elevated text-warning' },
 }
 
 function cellKind(d: EtfWatchTrackDay): CellKind {
@@ -369,20 +370,20 @@ function cellTitle(d: EtfWatchTrackDay, carrier: string | null): string {
 function TrackMatrix({ tracks, dates }: { tracks: EtfWatchTrack[]; dates: string[] }) {
   return (
     <div className="mt-2 overflow-x-auto overscroll-x-contain">
-      <table className="table-fixed border-collapse text-[10px]" style={{ minWidth: 168 + dates.length * 34 }}>
+      <table className="table-fixed border-collapse text-[12px]" style={{ minWidth: 168 + dates.length * 34 }}>
         <colgroup>
           <col style={{ width: 168 }} />
           {dates.map(d => <col key={d} style={{ width: 34 }} />)}
         </colgroup>        <thead>
           <tr>
-            <th className="sticky left-0 z-10 border-b border-border bg-base px-2 py-1.5 text-left text-[9.5px] font-medium text-secondary">
+            <th className="sticky left-0 z-10 border-b border-border bg-base px-2 py-1.5 text-left text-[11px] font-medium text-secondary">
               行业 / 载体
             </th>
             {dates.map((d, i) => (
               <th
                 key={d}
                 className={cn(
-                  'border-b border-border px-0.5 py-1.5 text-center font-mono text-[8.5px] font-normal',
+                  'border-b border-border px-0.5 py-1.5 text-center font-mono text-[11px] font-normal',
                   i === dates.length - 1 ? 'text-foreground' : 'text-secondary',
                 )}
                 title={fullDate(d)}
@@ -398,8 +399,8 @@ function TrackMatrix({ tracks, dates }: { tracks: EtfWatchTrack[]; dates: string
             return (
               <tr key={t.industry}>
                 <th className="sticky left-0 z-10 border-b border-border/70 bg-base px-2 py-1 text-left align-middle">
-                  <div className="whitespace-nowrap text-[10.5px] font-medium text-foreground">{t.industry}</div>
-                  <div className="max-w-[132px] truncate text-[8.5px] font-normal text-secondary" title={t.name}>{t.name}</div>
+                  <div className="whitespace-nowrap text-[12px] font-medium text-foreground">{t.industry}</div>
+                  <div className="max-w-[132px] truncate text-[11px] font-normal text-secondary" title={t.name}>{t.name}</div>
                 </th>
                 {dates.map(d => {
                   const day = byDate.get(d)
@@ -412,7 +413,7 @@ function TrackMatrix({ tracks, dates }: { tracks: EtfWatchTrack[]; dates: string
                         title={cellTitle(day, day.best_name)}
                         aria-label={`${t.industry} ${cellTitle(day, day.best_name)}`}
                         className={cn(
-                          'inline-flex h-[23px] w-[23px] items-center justify-center rounded border text-[9.5px] font-medium',
+                          'inline-flex h-[23px] w-[23px] items-center justify-center rounded border text-[11px] font-medium',
                           meta.cls,
                           t.first_trigger === d && 'ring-1 ring-foreground/70 ring-offset-1 ring-offset-base',
                         )}
@@ -434,10 +435,10 @@ function TrackMatrix({ tracks, dates }: { tracks: EtfWatchTrack[]; dates: string
 function Legend() {
   const kinds: CellKind[] = ['candidate', 'low', 'market', 'liquidity', 'position', 'deep', 'stale', 'multi']
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[9.5px] text-secondary">
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-secondary">
       {kinds.map(k => (
         <span key={k} className="inline-flex items-center gap-1">
-          <span className={cn('inline-flex h-4 w-4 items-center justify-center rounded border text-[8.5px] font-medium', CELL[k].cls)}>
+          <span className={cn('inline-flex h-4 w-4 items-center justify-center rounded border text-[11px] font-medium', CELL[k].cls)}>
             {CELL[k].code}
           </span>
           {CELL[k].label}
@@ -458,7 +459,7 @@ function OutcomeTable({ outcomes, sessions }: { outcomes: EtfWatchOutcome[]; ses
       render: o => (
         <div>
           <div className="whitespace-nowrap font-medium">{o.industry}</div>
-          <div className="truncate text-[9px] text-secondary" title={o.name}>{o.name}</div>
+          <div className="truncate text-[12px] text-secondary" title={o.name}>{o.name}</div>
         </div>
       ),
     },
@@ -468,8 +469,8 @@ function OutcomeTable({ outcomes, sessions }: { outcomes: EtfWatchOutcome[]; ses
       render: o => o.first_trigger
         ? (
           <div>
-            <div className="whitespace-nowrap font-mono text-[10.5px]">{o.first_trigger}</div>
-            <div className="truncate text-[9px] text-secondary" title={o.carrier ?? ''}>{offsetLabel(o.first_trigger, sessions)} · {o.carrier ?? '—'}</div>
+            <div className="whitespace-nowrap font-mono text-[12px]">{o.first_trigger}</div>
+            <div className="truncate text-[12px] text-secondary" title={o.carrier ?? ''}>{offsetLabel(o.first_trigger, sessions)} · {o.carrier ?? '—'}</div>
           </div>
         )
         : <span className="text-secondary">窗口内未触发</span>,
@@ -495,7 +496,7 @@ function OutcomeTable({ outcomes, sessions }: { outcomes: EtfWatchOutcome[]; ses
           <div>
             <span className={cn('font-mono tabular-nums', retCls(o.mae))}>{fmtPct(o.mae)}</span>
             {gap >= 0.002 && (
-              <div className="whitespace-nowrap font-mono text-[9px] text-secondary" title="收盘口径：只看每日收盘，会漏掉盘中跌破">
+              <div className="whitespace-nowrap font-mono text-[12px] text-secondary" title="收盘口径：只看每日收盘，会漏掉盘中跌破">
                 收盘 {fmtPct(o.mae_close)}
               </div>
             )}
@@ -510,7 +511,7 @@ function OutcomeTable({ outcomes, sessions }: { outcomes: EtfWatchOutcome[]; ses
       align: 'right',
       render: o => <span className={cn('font-mono tabular-nums', retCls(o.mfe))}>{fmtPct(o.mfe)}</span>,
     },
-    { head: '备注', w: '20%', render: o => <span className="line-clamp-2 text-[9.5px] leading-relaxed text-secondary" title={o.note}>{o.note}</span> },
+    { head: '备注', w: '20%', render: o => <span className="line-clamp-2 text-[11px] leading-relaxed text-secondary" title={o.note}>{o.note}</span> },
   ]
   return (
     <DataTable
@@ -530,7 +531,7 @@ function MaeGap({ meta }: { meta: EtfWatchReplayMeta }) {
   if (!gap?.n || gap.median_delta_bp == null) return null
   const w = gap.worst
   return (
-    <p className="mt-2 text-[10.5px] leading-relaxed text-secondary">
+    <p className="mt-2 text-[12px] leading-relaxed text-secondary">
       <b className="text-foreground">口径差</b>：盘中 MAE 中位比收盘口径多 {Math.abs(Math.round(gap.median_delta_bp))}bp
       {w && <>，最差 {w.industry} 多 {Math.abs(Math.round(w.delta_bp))}bp（收盘 {fmtPct(w.mae_close)} → 盘中 {fmtPct(w.mae)}）</>}
       。收盘序列看不到「盘中跌破、收盘拉回」，所以收盘口径只留作审计，不用它判断仓位；V1 预注册判据里的 MAE 仍是收盘口径，不改判据。

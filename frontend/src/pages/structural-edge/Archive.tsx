@@ -12,7 +12,7 @@ import type { EChartsOption } from 'echarts'
 import { ArrowRight } from 'lucide-react'
 import { cost, duration, forcedFlows, gates } from './data'
 import { CrossLink, TabLayout } from './Shell'
-import { Callout, Chart, DataTable, type Col, Fold, fmtBp, Section, StatGrid, Tag, type Tone, useAxis } from './ui'
+import { Callout, Chart, DataTable, type Col, Fold, fmtBp, Section, StatGrid, Tag, Tile, Tiles, type Tone, useAxis } from './ui'
 
 interface ArchiveIndexItem {
   key: string
@@ -103,36 +103,38 @@ export function ArchivePanel() {
         }
         source="docs/structural-edge/ 四组案卷（A–D）· analysis/_diag_* 全部可重跑"
       >
-        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+        <Tiles cols={2}>
           {ARCHIVE_INDEX.map(item => (
             <a
               key={item.key}
               href={`#archive-${item.key}`}
               data-archive-index={item.key}
               onClick={e => { e.preventDefault(); openArchiveFold(item.key) }}
-              className="group flex h-full flex-col rounded-lg border border-border bg-surface p-4 text-left transition-colors hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="group flex h-full flex-col rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             >
-              <div className="flex items-start justify-between gap-3">
-                <span className="font-mono text-[10px] text-muted">{item.letter}</span>
-                <Tag tone={item.tone}>{item.verdict}</Tag>
-              </div>
-              <div className="mt-2 text-[13.5px] font-semibold text-foreground">{item.title}</div>
-              <p className="mt-1 text-[11px] leading-relaxed text-secondary">{item.desc}</p>
-              <span className="mt-auto inline-flex items-center gap-1 pt-3 text-[10.5px] font-medium text-accent">
-                展开案卷
-                <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
-              </span>
+              <Tile
+                lead={item.letter}
+                aside={<Tag tone={item.tone}>{item.verdict}</Tag>}
+                title={<span className="transition-colors group-hover:text-accent">{item.title}</span>}
+                body={item.desc}
+                foot={
+                  <span className="inline-flex items-center gap-1 text-[12px] font-medium text-accent">
+                    展开案卷
+                    <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                }
+              />
             </a>
           ))}
-        </div>
+        </Tiles>
 
         <ForcedFlowArchive />
         <DurationArchive />
         <CostArchive />
         <GateArchive />
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-          <p className="text-[10.5px] leading-relaxed text-secondary">
+        <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <p className="text-[12px] leading-[1.7] text-muted">
             这些案卷的文档、脚本与口径入口，统一放在「工具」章。
           </p>
           <CrossLink to="tools" anchor="maint">维护与数据来源</CrossLink>
@@ -153,20 +155,20 @@ function ForcedFlowArchive() {
       return `${a.name}<br/>60 日退市率 <b>${a.value}%</b>`
     } },
     grid: { left: 44, right: 20, top: 20, bottom: 34 },
-    xAxis: { type: 'category', data: forcedFlows.delist.map(d => d.b), axisLabel: { fontSize: 11, color: axisText }, axisLine: { lineStyle: { color: axisLine } } },
-    yAxis: { type: 'value', name: '退市率 %', max: 100, nameTextStyle: { fontSize: 11, color: axisText }, axisLabel: { color: axisText }, splitLine: { lineStyle: { color: axisLine } } },
-    series: [{ type: 'bar', data: forcedFlows.delist.map(d => d.rate), barWidth: '46%', itemStyle: { color: barUp }, label: { show: true, position: 'top', formatter: '{c}%', fontSize: 11, color: axisText } }],
+    xAxis: { type: 'category', data: forcedFlows.delist.map(d => d.b), axisLabel: { fontSize: 11.5, color: axisText }, axisLine: { lineStyle: { color: axisLine } } },
+    yAxis: { type: 'value', name: '退市率 %', max: 100, nameTextStyle: { fontSize: 11.5, color: axisText }, axisLabel: { color: axisText }, splitLine: { lineStyle: { color: axisLine } } },
+    series: [{ type: 'bar', data: forcedFlows.delist.map(d => d.rate), barWidth: '46%', itemStyle: { color: barUp }, label: { show: true, position: 'top', formatter: '{c}%', fontSize: 11.5, color: axisText } }],
   }), [axisText, axisLine, barUp])
 
   const rebalanceOption = useMemo<EChartsOption>(() => ({
     tooltip: { trigger: 'axis' },
-    legend: { data: ['生效前 20 日', '生效后 20 日'], top: 0, textStyle: { fontSize: 11, color: axisText } },
+    legend: { data: ['生效前 20 日', '生效后 20 日'], top: 0, textStyle: { fontSize: 11.5, color: axisText } },
     grid: { left: 44, right: 20, top: 34, bottom: 34 },
     xAxis: { type: 'category', data: ['调入', '调出'], axisLabel: { color: axisText }, axisLine: { lineStyle: { color: axisLine } } },
-    yAxis: { type: 'value', name: '超额 bp', nameTextStyle: { fontSize: 11, color: axisText }, axisLabel: { color: axisText }, splitLine: { lineStyle: { color: axisLine } } },
+    yAxis: { type: 'value', name: '超额 bp', nameTextStyle: { fontSize: 11.5, color: axisText }, axisLabel: { color: axisText }, splitLine: { lineStyle: { color: axisLine } } },
     series: [
       { name: '生效前 20 日', type: 'bar', data: [forcedFlows.rebalance.pre_add, forcedFlows.rebalance.pre_remove], barWidth: '30%', itemStyle: { color: barAlt } },
-      { name: '生效后 20 日', type: 'bar', data: [forcedFlows.rebalance.fwd_add, forcedFlows.rebalance.fwd_remove_med], barWidth: '30%', itemStyle: { color: barUp }, label: { show: true, position: 'top', formatter: '{c}', fontSize: 11, color: axisText } },
+      { name: '生效后 20 日', type: 'bar', data: [forcedFlows.rebalance.fwd_add, forcedFlows.rebalance.fwd_remove_med], barWidth: '30%', itemStyle: { color: barUp }, label: { show: true, position: 'top', formatter: '{c}', fontSize: 11.5, color: axisText } },
     ],
   }), [axisText, axisLine, barAlt, barUp])
 
@@ -180,7 +182,7 @@ function ForcedFlowArchive() {
 
   const expCols: Col<(typeof forcedFlows.experiments)[number]>[] = [
     { head: '实验', render: r => <span className="font-medium">{r.name}</span> },
-    { head: '脚本', render: r => <span className="font-mono text-[10px] text-secondary">{r.script}</span> },
+    { head: '脚本', render: r => <span className="font-mono text-[11px] text-muted">{r.script}</span> },
     { head: '问题', render: r => r.q },
     { head: '裁决', render: r => <Tag tone={r.tone}>{r.verdict}</Tag> },
     { head: '结论', render: r => r.detail },
@@ -188,7 +190,7 @@ function ForcedFlowArchive() {
 
   return (
     <Fold id="archive-a" title="A · 被迫流账本：六类跑完，moat 真、edge 负" hint="6 类被迫流 · 5 个实验 · 4 证伪 / 1 成立">
-      <p className="mt-3 text-[13px] leading-relaxed text-secondary">{forcedFlows.lead}</p>
+      <p className="mt-4 max-w-[46em] text-[14px] leading-[1.8] text-secondary">{forcedFlows.lead}</p>
 
       <DataTable cols={flowCols} rows={forcedFlows.rows} rowKey={r => r.f} />
 
@@ -196,29 +198,29 @@ function ForcedFlowArchive() {
 
       <DataTable cols={expCols} rows={forcedFlows.experiments} rowKey={r => r.name} />
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
+      <div className="mt-7 grid gap-x-8 gap-y-7 md:grid-cols-2">
         <div>
-          <div className="text-[10.5px] text-secondary">跌破 1 元后 60 日退市率，按跌破前回撤深度分桶（1.5 元阈值 · post2020）</div>
+          <div className="text-[12px] leading-[1.6] text-muted">跌破 1 元后 60 日退市率，按跌破前回撤深度分桶（1.5 元阈值 · post2020）</div>
           <Chart option={delistOption} height={240} />
         </div>
         <div>
-          <div className="text-[10.5px] text-secondary">指数调样：调入/调出股 生效前后 20 日超额（bp，真实名单）</div>
+          <div className="text-[12px] leading-[1.6] text-muted">指数调样：调入/调出股 生效前后 20 日超额（bp，真实名单）</div>
           <Chart option={rebalanceOption} height={240} />
         </div>
       </div>
 
       <Callout tone="ok" label="唯一被证实的正价值">{forcedFlows.positive}</Callout>
 
-      <div className="mt-3 text-[12.5px] text-secondary">
-        <div className="font-medium text-foreground">下一步（就这三条）</div>
-        <ul className="mt-1 list-disc space-y-1 pl-5">
+      <div className="mt-6 text-[13px] leading-[1.75] text-secondary">
+        <div className="text-[11px] font-medium tracking-[0.1em] text-muted">下一步（就这三条）</div>
+        <ul className="mt-2 list-disc space-y-1.5 pl-5">
           {forcedFlows.next.map(n => <li key={n}>{n}</li>)}
         </ul>
       </div>
 
       <DataTable
         cols={[
-          { head: '脚本 / 文档', render: (s: (typeof forcedFlows.scripts)[number]) => <span className="font-mono text-[10px] text-secondary">analysis/{s.s}</span> },
+          { head: '脚本 / 文档', render: (s: (typeof forcedFlows.scripts)[number]) => <span className="font-mono text-[11px] text-muted">analysis/{s.s}</span> },
           { head: '产出', render: (s: (typeof forcedFlows.scripts)[number]) => s.o },
         ]}
         rows={forcedFlows.scripts}
@@ -241,8 +243,8 @@ function DurationArchive() {
 
   return (
     <Fold id="archive-b" title="B · 久期复核：现象是真的，归因是错的" hint="9 条可证伪判据 · 1,092 万行日 K">
-      <p className="mt-3 text-[13px] leading-relaxed text-secondary">{duration.lead}</p>
-      <p className="mt-1 text-[10.5px] leading-relaxed text-secondary">
+      <p className="mt-4 max-w-[46em] text-[14px] leading-[1.8] text-secondary">{duration.lead}</p>
+      <p className="mt-2 max-w-[46em] text-[12px] leading-[1.7] text-muted">
         外部叙事：险资只买高股息（有底）、量化只买动量（有顶）、主动公募从 5 万亿缩到 3.4–4.06 万亿，
         无股息无动量的中小盘被两边同时抛弃。用本地日 K（2016-01 → 2026-11）拆成 9 条可证伪判据。
       </p>
@@ -279,29 +281,26 @@ function CostArchive() {
       <StatGrid items={cost.cards} />
       <Callout tone="danger" label="按交易回报算">{cost.verdict}</Callout>
 
-      <div className="mt-3 grid gap-2.5 md:grid-cols-3">
+      <Tiles cols={3} className="mt-6">
         {cost.waste.map(w => (
-          <div key={w.t} className="rounded-lg border border-border bg-surface px-3 py-3">
-            <div className="text-[12px] font-medium leading-snug text-foreground">{w.t}</div>
-            <p className="mt-1 text-[10.5px] leading-relaxed text-secondary">{w.d}</p>
-          </div>
+          <Tile key={w.t} title={<span className="text-[13px]">{w.t}</span>} body={w.d} />
         ))}
-      </div>
+      </Tiles>
 
-      <h4 className="mt-5 text-[12.5px] font-semibold text-foreground">
+      <h4 className="mt-9 text-[14px] font-medium text-foreground">
         「二手信息有信息量」是对的 —— 而且这条已经走过了
       </h4>
-      <p className="mt-1 text-[11px] leading-relaxed text-secondary">
+      <p className="mt-2 max-w-[46em] text-[13px] leading-[1.8] text-secondary">
         四类最典型的二手信息全部进过检验；第五行是唯一跨规模稳定的传播维度。它们不是「假的」，而是
         <b className="text-foreground">信息量在传到你之前已被换手率与成交额吸收干净</b>。
       </p>
       <DataTable cols={secondCols} rows={cost.secondhand} rowKey={r => r.src} />
 
-      <div className="mt-4 rounded-lg border border-border bg-surface px-3 py-3">
-        <div className="text-[12px] font-medium text-foreground">叙事质量三个维度 × 规模控制（H20 超额组间差，bp）</div>
-        <p className="mt-1 text-[10.5px] text-secondary">{cost.decay.note}</p>
+      <div className="mt-8 border-t border-border pt-4">
+        <div className="text-[14px] font-medium text-foreground">叙事质量三个维度 × 规模控制（H20 超额组间差，bp）</div>
+        <p className="mt-1.5 text-[12px] leading-[1.7] text-muted">{cost.decay.note}</p>
         <DataTable cols={decayCols} rows={cost.decay.rows} rowKey={r => r.dim} dense />
-        <p className="mt-2 text-[10.5px] text-warning">{cost.decay.gate}</p>
+        <p className="mt-3 text-[12px] leading-[1.7] text-warning">{cost.decay.gate}</p>
       </div>
 
       <Callout tone="ok" label="可检验性悖论">{cost.paradox}</Callout>
@@ -348,8 +347,8 @@ function GateArchive() {
 
   return (
     <Fold id="archive-d" title="D · 叙事的七道闸门：不跑数据先杀选项" hint="7 道 · 平安案例 · 分母实测 · 六嫌疑人">
-      <p className="mt-3 text-[13px] leading-relaxed text-secondary">{gates.intro}</p>
-      <p className="mt-1 text-[10.5px] text-secondary">{gates.tool}</p>
+      <p className="mt-4 max-w-[46em] text-[14px] leading-[1.8] text-secondary">{gates.intro}</p>
+      <p className="mt-2 text-[12px] leading-[1.6] text-muted">{gates.tool}</p>
 
       <DataTable
         cols={[
@@ -363,32 +362,31 @@ function GateArchive() {
         reason="七道全过才有资格进实证。大多数流行叙事死在第 1、2 道，连数据都不用跑。"
       />
 
-      <h4 className="mt-5 text-[12.5px] font-semibold text-foreground">{gates.caseTitle}</h4>
-      <div className="mt-2 grid gap-2 md:grid-cols-3">
+      <h4 className="mt-9 text-[14px] font-medium text-foreground">{gates.caseTitle}</h4>
+      <Tiles cols={3} className="mt-4">
         {gates.caseSteps.map(s => (
-          <div key={s.step} className="rounded-lg border border-border bg-surface px-3 py-3">
-            <div className="flex items-baseline justify-between gap-2">
-              <div className="text-[12px] font-medium text-foreground">{s.step}</div>
-              <div className={`shrink-0 text-[10.5px] font-medium ${s.tone === 'danger' ? 'text-danger' : 'text-warning'}`}>{s.verdict}</div>
-            </div>
-            <p className="mt-1 text-[10.5px] leading-relaxed text-secondary">{s.why}</p>
-          </div>
+          <Tile
+            key={s.step}
+            lead={s.step}
+            aside={<span className={s.tone === 'danger' ? 'text-danger' : 'text-warning'}>{s.verdict}</span>}
+            title={<span className="text-[13px]">{s.why}</span>}
+          />
         ))}
-      </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-secondary">
+      </Tiles>
+      <p className="mt-3 max-w-[46em] text-[12px] leading-[1.7] text-muted">
         三步里<b className="text-warning">第一步是真的</b>（确实亏了）、<b className="text-danger">第二步是误读</b>（重估≠卖出）、
         <b className="text-danger">第三步方向反了</b>（行业层面在增配）。
       </p>
 
-      <div className="mt-4 rounded-lg border border-border bg-surface px-3 py-3">
-        <div className="text-[12px] font-medium text-foreground">{gates.denom.head}</div>
+      <div className="mt-8 border-t border-border pt-4">
+        <div className="text-[14px] font-medium text-foreground">{gates.denom.head}</div>
         <DataTable cols={denomCols} rows={gates.denom.rows} rowKey={r => r.m} dense />
-        <p className="mt-2 text-[11px] leading-relaxed text-secondary">{gates.denom.note}</p>
+        <p className="mt-3 max-w-[46em] text-[12px] leading-[1.7] text-muted">{gates.denom.note}</p>
       </div>
 
-      <h4 className="mt-5 text-[12.5px] font-semibold text-foreground">六个嫌疑人过堂：同一份下跌，谁够格</h4>
+      <h4 className="mt-9 text-[14px] font-medium text-foreground">六个嫌疑人过堂：同一份下跌，谁够格</h4>
       <DataTable cols={suspectCols} rows={gates.suspects} rowKey={r => r.who} />
-      <p className="mt-2 text-[11px] leading-relaxed text-secondary">{gates.suspectsNote}</p>
+      <p className="mt-3 max-w-[46em] text-[12px] leading-[1.7] text-muted">{gates.suspectsNote}</p>
 
       <Callout tone="warn" label="边界">{gates.boundary}</Callout>
     </Fold>

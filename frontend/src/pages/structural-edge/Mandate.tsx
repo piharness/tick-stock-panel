@@ -54,7 +54,7 @@ function ThesisBlock() {
       actions={<Cadence kind="frozen" />}
     >
       <StatGrid items={mandate.cards} />
-      <Callout tone={mandate.edgeTone} label="「凭什么是我」的正式回答">
+      <Callout tone={mandate.edgeTone} label="结论">
         {mandate.edge}
       </Callout>
     </Section>
@@ -70,7 +70,7 @@ function RefusalBlock() {
       w: '16%',
       render: r => (
         <span className="whitespace-nowrap">
-          <span className="mr-1.5 font-mono text-[10px] text-muted">{r.no}</span>
+          <span className="mr-1.5 font-mono text-[11px] text-muted">{r.no}</span>
           <span className="font-medium">{r.act}</span>
         </span>
       ),
@@ -111,7 +111,7 @@ function RefusalBlock() {
         先看你今天最想破哪一条，再点进证据 —— 这六条里任何一条被推翻，都会先以「重跑实验 + 改 data.ts + 同 commit 改 md」的形式出现，
         不会以「这次不一样」的形式出现。
       </Callout>
-      <p className="mt-2 text-[10.5px] leading-relaxed text-secondary">
+      <p className="mt-4 max-w-[46em] text-[12px] leading-[1.7] text-muted">
         「环境」列不是难度，是适用域：<b className="font-medium text-foreground">制度无关</b> 的可以无条件带走；
         <b className="font-medium text-foreground">依赖托底</b> 的收益里含制度租金，托底失效时可能翻转 ——
         定义与三组分类见 <CrossLink to="mandate" anchor="env" className="align-baseline">05 · 制度环境</CrossLink>。
@@ -159,10 +159,10 @@ function EnvBlock() {
           { k: '制度样本', v: 'N=1', d: '16 个独立月全在托底常态内' },
         ]}
       />
-      <p className="mt-3 text-[13px] leading-relaxed text-secondary">
+      <p className="mt-5 max-w-[46em] text-[14px] leading-[1.8] text-secondary">
         {envGate.lead}{envGate.effect}
       </p>
-      <p className="mt-1.5 text-[11px] leading-relaxed text-muted">{envGate.effectNote}</p>
+      <p className="mt-2 max-w-[46em] text-[12px] leading-[1.7] text-muted">{envGate.effectNote}</p>
 
       <DataTable
         cols={cols}
@@ -184,16 +184,21 @@ function EnvBlock() {
 
 // ---------------------------------------------------------------- 03 构成轴
 
-/** 左尾概率 → 色阶。低=安全(淡)，高=危险(深)。 */
+/**
+ * 左尾概率 → 色阶。低=安全(淡)，高=危险(深)。
+ *
+ * 用琥珀而不是红：这一页的红已经表示「涨」，再让红表示「跌得更可能」，
+ * 同一个色就有两个相反的意思。琥珀是这一页唯一的「风险」色。
+ */
 function tailBg(p: number | undefined, max = 23): string {
   if (p == null) return 'transparent'
   const t = Math.min(1, Math.max(0, p / max))
-  return `rgba(192, 57, 43, ${(0.08 + t * 0.75).toFixed(3)})`
+  return `rgba(247, 144, 9, ${(0.07 + t * 0.72).toFixed(3)})`
 }
 
 function tailFg(p: number | undefined, max = 23): string {
   if (p == null) return 'inherit'
-  return p / max > 0.45 ? '#fff' : 'inherit'
+  return p / max > 0.5 ? '#1c1917' : 'inherit'
 }
 
 /** 5×5 热力图：行=市值五分位，列=换手五分位。左上/右下是极端格。 */
@@ -206,12 +211,12 @@ function TailGrid({ tail }: { tail: PositionArtTail }) {
   }, [cells])
   return (
     <div className="overflow-x-auto">
-      <table className="border-collapse text-xs">
+      <table className="border-separate border-spacing-[2px] text-[12px]">
         <thead>
           <tr>
-            <th className="px-2 py-1 text-right font-normal text-muted">市值＼换手</th>
+            <th className="pb-1.5 pr-2 text-right text-[11px] font-medium tracking-[0.06em] text-muted">市值＼换手</th>
             {[0, 1, 2, 3, 4].map(tq => (
-              <th key={tq} className="px-2 py-1 text-center font-normal text-muted">
+              <th key={tq} className="pb-1.5 text-center text-[11px] font-medium text-muted">
                 Q{tq + 1}
               </th>
             ))}
@@ -220,13 +225,13 @@ function TailGrid({ tail }: { tail: PositionArtTail }) {
         <tbody>
           {[4, 3, 2, 1, 0].map(mq => (
             <tr key={mq}>
-              <td className="px-2 py-1 text-right text-muted">Q{mq + 1}</td>
+              <td className="pr-2 text-right text-[11px] text-muted">Q{mq + 1}</td>
               {[0, 1, 2, 3, 4].map(tq => {
                 const c = byKey.get(`${mq}-${tq}`)
                 return (
                   <td
                     key={tq}
-                    className="px-2 py-1 text-center tabular-nums"
+                    className="h-9 min-w-[52px] rounded-[2px] text-center tabular-nums"
                     style={{ background: tailBg(c?.p_tail_pct), color: tailFg(c?.p_tail_pct) }}
                     title={c ? `n=${c.n}，中位 ${c.med_pct}%` : '样本不足'}
                   >
@@ -266,7 +271,7 @@ function CompositionBlock() {
       source="GET /api/position-art/tail · docs/structural-edge/2026-duration-review.md · state-timing-audit.md"
       actions={<Cadence kind="experiment" note="读数随接口刷新，结论冻结" />}
     >
-      <p className="text-[13px] leading-relaxed text-secondary">
+      <p className="max-w-[46em] text-[14px] leading-[1.8] text-secondary">
         {t?.year ?? ''} 年 P（20 日内跌超 {t?.cut_pct ?? 20}%）：状态轴最差与最好差{' '}
         {stateRatio} 倍，而换手 × 市值的 25 格差 {t?.ratio ?? '—'} 倍。
         {t?.best && t?.worst
@@ -274,34 +279,34 @@ function CompositionBlock() {
           : ''}
       </p>
 
-      <div className="mt-3 grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-border bg-surface px-3 py-3">
-          <div className="mb-2 text-xs text-muted">换手 × 市值（行=市值，列=换手）</div>
+      <div className="mt-6 grid gap-x-8 gap-y-8 md:grid-cols-2">
+        <div className="border-t border-border pt-3">
+          <div className="mb-3 text-[12px] text-muted">换手 × 市值（行=市值，列=换手）</div>
           {t?.available ? <TailGrid tail={t} /> : <div className="text-xs text-muted">构成轴数据不可用</div>}
         </div>
-        <div className="rounded-lg border border-border bg-surface px-3 py-3">
-          <div className="mb-2 text-xs text-muted">按市场状态</div>
-          <table className="w-full border-collapse text-xs">
+        <div className="border-t border-border pt-3">
+          <div className="mb-3 text-[12px] text-muted">按市场状态</div>
+          <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                <th className="py-1 text-left font-normal text-muted">状态</th>
-                <th className="py-1 text-right font-normal text-muted">P(&lt;−20%)</th>
-                <th className="py-1 text-right font-normal text-muted">20 日中位</th>
+                <th className="border-b border-border pb-2 text-left text-[11px] font-medium tracking-[0.06em] text-muted">状态</th>
+                <th className="border-b border-border pb-2 text-right text-[11px] font-medium tracking-[0.06em] text-muted">P(&lt;−20%)</th>
+                <th className="border-b border-border pb-2 text-right text-[11px] font-medium tracking-[0.06em] text-muted">20 日中位</th>
               </tr>
             </thead>
             <tbody>
               {(t?.by_state ?? []).map(s => (
                 <tr key={s.mkt_state}>
-                  <td className="py-1">
+                  <td className="border-b border-border/60 py-2">
                     {s.mkt_state === 'down' ? '下行' : s.mkt_state === 'up' ? '上行' : '横盘'}
                   </td>
-                  <td className="py-1 text-right tabular-nums">{s.p_tail_pct}%</td>
-                  <td className="py-1 text-right tabular-nums">{s.med_pct}%</td>
+                  <td className="border-b border-border/60 py-2 text-right tabular-nums">{s.p_tail_pct}%</td>
+                  <td className="border-b border-border/60 py-2 text-right tabular-nums">{s.med_pct}%</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="mt-2 text-xs leading-5 text-muted">
+          <div className="mt-3 text-[12px] leading-[1.7] text-muted">
             「横盘」不是安全状态：它是被证伪最彻底的那一格 —— 想等它再进场，等的是全样本里
             左尾最肥的那个状态。
           </div>

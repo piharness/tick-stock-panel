@@ -14,11 +14,12 @@
 import { useMemo } from 'react'
 import type { EChartsOption } from 'echarts'
 import type { EtfWatchPayload, PositionArtPayload } from '@/lib/api'
+import { cn } from '@/lib/cn'
 import { duration, evidenceNote, grade, portfolio, position, shape, sizing } from './data'
 import { CrossLink, TabLayout } from './Shell'
 import { breadthReading, v1Reading } from './live'
 import {
-  Cadence, Callout, Chart, ChartCard, DataTable, type Col, fmtBp, Section, StatGrid, Tag, useAxis,
+  Cadence, Callout, Chart, ChartCard, DataTable, type Col, Empty, fmtBp, Section, StatGrid, Tag, useAxis,
 } from './ui'
 
 const CONFIRM_CHOICES = [0, 3, 5, 10, 15, 20] as const
@@ -80,7 +81,7 @@ function GradeBlock({ payload }: { payload: EtfWatchPayload | null }) {
       actions={<Cadence kind="experiment" />}
     >
       <StatGrid items={cards} />
-      <p className="mt-2 max-w-3xl text-[11.5px] leading-relaxed text-secondary">{grade.note}</p>
+      <p className="mt-4 max-w-[46em] text-[12px] leading-[1.7] text-muted">{grade.note}</p>
       <Callout tone="warn" label="给上面所有结论打折">
         {evidenceNote}
       </Callout>
@@ -95,7 +96,7 @@ function PositionBlock() {
 
   const posOption = useMemo<EChartsOption>(() => ({
     tooltip: { trigger: 'axis', valueFormatter: (v: unknown) => `${v} bp` },
-    grid: { left: 52, right: 16, top: 18, bottom: 46 },
+    grid: { left: 52, right: 16, top: 30, bottom: 46 },
     xAxis: {
       type: 'category', data: position.grad.map(d => d.bin),
       axisLabel: { fontSize: 11, color: axisText, lineHeight: 15 },
@@ -113,7 +114,7 @@ function PositionBlock() {
         // 负值的标签必须落在柱子末端，而不是 0 轴上方（否则读起来像「−103.8 在 0 以上」）。
         label: { position: d.ev >= 0 ? 'top' : 'bottom' },
       })),
-      label: { show: true, formatter: '{c}', fontSize: 10.5, color: axisText },
+      label: { show: true, formatter: '{c}', fontSize: 11, color: axisText },
     }],
   }), [axisText, axisLine, barUp, barDown])
 
@@ -130,9 +131,9 @@ function PositionBlock() {
       axisLabel: { color: axisText }, splitLine: { lineStyle: { color: axisLine } },
     },
     series: [
-      { name: '20 日 EV', type: 'bar', data: shape.bins.map(d => d.ev), barWidth: '32%', itemStyle: { color: barUp }, label: { show: true, position: 'top', formatter: '{c}', fontSize: 10, color: axisText } },
+      { name: '20 日 EV', type: 'bar', data: shape.bins.map(d => d.ev), barWidth: '32%', itemStyle: { color: barUp }, label: { show: true, position: 'top', formatter: '{c}', fontSize: 11, color: axisText } },
       // 三个 p10 标签统一放在柱内底端：ECharts 在柱外没空间时会自动翻进柱内，同一张图里出现两种位置。
-      { name: 'p10（左尾）', type: 'bar', data: shape.bins.map(d => d.p10), barWidth: '32%', itemStyle: { color: barDown }, label: { show: true, position: 'insideBottom', formatter: '{c}', fontSize: 10, color: '#fff' } },
+      { name: 'p10（左尾）', type: 'bar', data: shape.bins.map(d => d.p10), barWidth: '32%', itemStyle: { color: barDown }, label: { show: true, position: 'insideBottom', formatter: '{c}', fontSize: 11, color: '#fff' } },
     ],
   }), [axisText, axisLine, barUp, barDown])
 
@@ -154,7 +155,7 @@ function PositionBlock() {
       source={position.sample}
       actions={<Cadence kind="experiment" />}
     >
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <div className="mt-6 grid gap-x-8 gap-y-8 md:grid-cols-2">
         <ChartCard
           title="位置：距一年高点的回撤 → 20 日 EV（bp）"
           hint="−50%↓ 样本不足"
@@ -197,7 +198,7 @@ function BreadthBlock({ payload }: { payload: EtfWatchPayload | null }) {
     { head: '胜率', render: b => <span className="font-mono tabular-nums">{b.win}%</span>, w: '18%', align: 'right' },
   ]
 
-  const { axisText, axisLine, barAlt, barDown } = useAxis()
+  const { axisText, axisLine, barAlt, barFocus } = useAxis()
 
   const durOption = useMemo<EChartsOption>(() => ({
     tooltip: { trigger: 'axis', valueFormatter: (v: unknown) => `${v}%` },
@@ -217,11 +218,11 @@ function BreadthBlock({ payload }: { payload: EtfWatchPayload | null }) {
       { name: '2017–2025', type: 'bar', data: duration.dur.map(d => d.hist), barWidth: '28%', itemStyle: { color: barAlt } },
       {
         name: '2026', type: 'bar', data: duration.dur.map(d => d.y26), barWidth: '28%',
-        itemStyle: { color: barDown },
+        itemStyle: { color: barFocus },
         label: { show: true, position: 'top', formatter: '{c}%', fontSize: 11, color: axisText },
       },
     ],
-  }), [axisText, axisLine, barAlt, barDown])
+  }), [axisText, axisLine, barAlt, barFocus])
 
   return (
     <Section
@@ -233,9 +234,9 @@ function BreadthBlock({ payload }: { payload: EtfWatchPayload | null }) {
       actions={<Cadence kind="experiment" />}
       asOf={live?.asof}
     >
-      <div className="text-[10.5px] font-medium text-secondary">当日读数（活数据，不写进 data.ts）</div>
+      <div className="text-[11px] font-medium tracking-[0.1em] text-muted">当日读数（活数据，不写进 data.ts）</div>
       {live ? (
-        <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded border border-border bg-base px-3 py-2 text-[11.5px]">
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-y border-border/70 py-2.5 text-[13px]">
           <Tag tone={live.tone}>当日</Tag>
           <span className="font-mono tabular-nums text-foreground">区间内 {live.inBand} 个行业</span>
           <span aria-hidden className="text-muted">·</span>
@@ -243,23 +244,23 @@ function BreadthBlock({ payload }: { payload: EtfWatchPayload | null }) {
           <span className="text-secondary">
             {live.clustersToday > 0 ? `记 ${live.clustersToday} 个事件簇` : '未成簇'}
           </span>
-          <span className="ml-auto font-mono text-[10px] text-secondary">{live.asof}</span>
+          <span className="ml-auto font-mono text-[11px] text-muted">{live.asof}</span>
         </div>
       ) : (
-        <p className="mt-1.5 rounded border border-border bg-base px-3 py-2 text-[11px] text-secondary">
+        <p className="mt-3 border-y border-border/70 py-2.5 text-[13px] text-muted">
           当日读数未就绪：先跑 <code className="font-mono">analysis/etf_watch.py</code>。下表是历史分档，不随当日变化。
         </p>
       )}
 
-      <div className="mt-4 text-[10.5px] font-medium text-secondary">历史分档：当日区间内行业数 → 20 日相对超额</div>
+      <div className="mt-8 text-[11px] font-medium tracking-[0.1em] text-muted">历史分档：当日区间内行业数 → 20 日相对超额</div>
       <DataTable cols={breadthCols} rows={grade.breadth} rowKey={b => b.bin} dense />
-      <p className="mt-2 text-[11px] leading-relaxed text-secondary">{grade.breadthNote}</p>
+      <p className="mt-3 max-w-[46em] text-[12px] leading-[1.7] text-muted">{grade.breadthNote}</p>
 
-      <div id="duration" className="mt-6 scroll-mt-28 border-t border-border pt-5">
-        <div className="text-[10.5px] font-medium text-secondary">久期：仓位上限的第二个来源</div>
-        <p className="mt-1.5 max-w-3xl text-[13px] leading-relaxed text-secondary">{sizing.duration}</p>
+      <div id="duration" className="mt-10 scroll-mt-28 border-t border-border pt-6">
+        <div className="text-[11px] font-medium tracking-[0.1em] text-muted">久期：仓位上限的第二个来源</div>
+        <p className="mt-3 max-w-[46em] text-[14px] leading-[1.8] text-secondary">{sizing.duration}</p>
         <StatGrid items={duration.cards} />
-        <div className="mt-3 grid gap-3 md:grid-cols-[1.08fr_0.92fr]">
+        <div className="mt-6 grid gap-x-8 gap-y-8 md:grid-cols-[1.08fr_0.92fr]">
           <ChartCard
             title="同样的持有窗口，短久期组的大跌概率高一个数量级"
             hint="按 h = 100/换手率 分 5 组"
@@ -267,9 +268,9 @@ function BreadthBlock({ payload }: { payload: EtfWatchPayload | null }) {
           >
             <Chart option={durOption} height={236} />
           </ChartCard>
-          <div className="self-start rounded-lg border border-border bg-surface p-3.5 text-[11.5px] leading-relaxed text-secondary">
-            <div className="text-[11.5px] font-medium text-foreground">这是「有底」唯一站得住的形态</div>
-            <p className="mt-1.5">
+          <div className="self-start border-t border-border pt-3 text-[12px] leading-[1.7] text-muted">
+            <div className="text-[13px] font-medium text-foreground">这是「有底」唯一站得住的形态</div>
+            <p className="mt-2">
               不是价格有支撑，是<b className="text-foreground">久期长的人不会被迫在同一周里卖</b>。
               所以久期只能决定「同一笔钱拿多大仓位」，不能决定「买什么」。
             </p>
@@ -370,70 +371,71 @@ function SizingAuditBlock({
       actions={<Cadence kind="experiment" note="每日登记一行" />}
     >
       {artErr && !art ? (
-        <div className="rounded-lg border border-warning/40 bg-warning/[0.06] px-4 py-3">
-          <div className="text-[12.5px] font-medium text-foreground">仓位规则读数加载失败</div>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-secondary">
+        <div className="border-l-2 border-warning py-0.5 pl-4">
+          <div className="text-[13px] font-medium text-foreground">仓位规则读数加载失败</div>
+          <p className="mt-2 max-w-[42em] text-[13px] leading-[1.75] text-muted">
             接口 /api/position-art 未返回（{artErr}）。确认日线分区可读后重试，其余证据不受影响。
           </p>
           <button
             type="button"
             onClick={onRetry}
-            className="mt-2 rounded-md border border-border px-2.5 py-1 text-xs text-secondary hover:bg-elevated"
+            className="mt-3 rounded border border-border px-3 py-1.5 text-[12px] text-secondary transition-colors hover:border-foreground/30 hover:text-foreground"
           >
             重试
           </button>
         </div>
       ) : !art ? (
-        <div className="rounded-lg border border-dashed border-border bg-surface/40 px-4 py-6 text-center text-[11.5px] text-secondary">
-          正在重算十年等权指数与状态序列（首次约 3 秒）…
-        </div>
+        <Empty text="正在重算十年等权指数与状态序列（首次约 3 秒）…" />
       ) : !art.available ? (
-        <div className="rounded-lg border border-dashed border-border bg-surface/40 px-4 py-6 text-center text-[11.5px] text-secondary">
-          {art.reason ?? '这条规则需要 2016 年以来的等权指数，至少 260 个交易日。'}
-        </div>
+        <Empty text={art.reason ?? '这条规则需要 2016 年以来的等权指数，至少 260 个交易日。'} />
       ) : (
         <>
-          <div className="rounded-lg border-l-4 border-danger bg-danger/10 px-4 py-3">
-            <div className="text-[10px] text-secondary">裁决</div>
-            <div className="mt-1 text-[13px] leading-relaxed text-foreground">
+          <div className="border-l-2 border-danger pl-4">
+            <div className="text-[11px] font-medium tracking-[0.14em] text-muted">裁决</div>
+            <div className="mt-1.5 text-[14px] leading-[1.8] text-foreground">
               状态择时在规则层被证伪：六种实现、十年、扣 20bp，没有一种跑赢「全程持有」；
               空仓的 {flatP?.flat_days ?? 0} 天日均 {flatP?.flat_mean_bp ?? 0}bp，比在场日（
               {flatP?.in_mean_bp ?? 0}bp）还高 —— 它把好日子空掉了。
             </div>
-            <div className="mt-1 text-[10.5px] leading-relaxed text-secondary">
+            <div className="mt-2 text-[12px] leading-[1.7] text-muted">
               十年：本规则 {chosen?.cagr_pct}% / 回撤 {chosen?.mdd_pct}%，全程持有 {bench?.cagr_pct}% /{' '}
               {bench?.mdd_pct}%。验收 {passed}/{total} 通过 —— 这条规则保留下来只为「按日登记结算」，
               不作为加减仓依据。
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-[10.5px] text-secondary">出场确认（下行满 N 日才离场）</span>
-            {CONFIRM_CHOICES.map(n => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => onConfirmDays(n)}
-                className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-                  n === confirmDays
-                    ? 'border-accent bg-accent/10 text-accent'
-                    : 'border-border text-secondary hover:bg-elevated'
-                }`}
-              >
-                {n === 0 ? '每日切换' : `${n} 日`}
-              </button>
-            ))}
-            {artFetching && <span className="text-[10.5px] text-secondary">重算中…</span>}
+          <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="text-[11px] tracking-[0.06em] text-muted">出场确认（下行满 N 日才离场）</span>
+            <span className="inline-flex overflow-hidden rounded border border-border">
+              {CONFIRM_CHOICES.map((n, i) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => onConfirmDays(n)}
+                  aria-pressed={n === confirmDays}
+                  className={cn(
+                    'px-2.5 py-1 text-[12px] leading-5 transition-colors',
+                    i > 0 && 'border-l border-border',
+                    n === confirmDays
+                      ? 'bg-foreground text-base'
+                      : 'text-secondary hover:bg-elevated hover:text-foreground',
+                  )}
+                >
+                  {n === 0 ? '每日切换' : `${n} 日`}
+                </button>
+              ))}
+            </span>
+            {artFetching && <span className="text-[11px] text-muted">重算中…</span>}
           </div>
 
-          <div className="mt-4 text-[10.5px] font-medium text-secondary">六种实现 vs 全程持有</div>
+          <div className="mt-8 text-[11px] font-medium tracking-[0.1em] text-muted">六种实现 vs 全程持有</div>
           <DataTable
             cols={[
               {
                 head: '实现',
                 w: '30%',
                 render: r => (
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
                     <span className="font-medium">{r.confirm_days === 0 ? '每日跟随状态' : `下行满 ${r.confirm_days} 日离场`}</span>
                     {r.is_default && <Tag tone="ok">当前</Tag>}
                   </span>
@@ -450,23 +452,24 @@ function SizingAuditBlock({
             dense
             minWidth={620}
           />
-          <p className="mt-2 text-[10.5px] leading-relaxed text-secondary">
+          <p className="mt-3 max-w-[46em] text-[12px] leading-[1.7] text-muted">
             切换成本按 20bp 单边计；40bp 压测下本规则年化 {art.stress?.cagr_pct}%。分半样本：
             {(art.halves ?? []).map(h => `${h.label} ${h.base_cagr_pct}%→${h.rule_cagr_pct}%`).join('；')}。
             安慰剂 p={placebo?.p_value ?? '—'}（{placebo?.blocks ?? 0} 块）。
           </p>
 
-          <div className="mt-3 rounded-lg border border-border bg-surface px-3 py-3">
-            <div className="mb-1 text-[10.5px] text-secondary">净值：全程持有 vs 本规则（每 20 个交易日取一点）</div>
+          <div className="mt-8 border-t border-border pt-3">
+            <div className="text-[13px] font-medium text-foreground">净值：全程持有 vs 本规则</div>
+            <div className="mt-1 text-[11px] text-muted">每 20 个交易日取一点</div>
             <Chart option={equityOption} height={240} />
           </div>
 
-          <div className="mt-4 text-[10.5px] font-medium text-secondary">验收（证据等级就是这个表）</div>
+          <div className="mt-8 text-[11px] font-medium tracking-[0.1em] text-muted">验收（证据等级就是这个表）</div>
           <DataTable
             cols={[
-              { head: '编号', render: c => <span className="font-mono text-[10px] text-secondary">{c.id}</span>, w: '10%', headCls: 'whitespace-nowrap' },
+              { head: '编号', render: c => <span className="font-mono text-[11px] text-muted">{c.id}</span>, w: '10%', headCls: 'whitespace-nowrap' },
               { head: '项', render: c => <span className="font-medium">{c.name}</span>, w: '24%' },
-              { head: '要求', render: c => <span className="text-[11px] text-secondary">{c.want}</span>, w: '30%' },
+              { head: '要求', render: c => <span className="text-[12px] text-secondary">{c.want}</span>, w: '30%' },
               { head: '实测', render: c => <span className="tabular-nums">{c.got}</span>, w: '28%' },
               {
                 head: '结论',
@@ -481,7 +484,7 @@ function SizingAuditBlock({
             minWidth={640}
           />
 
-          <div className="mt-4 grid gap-2 text-[11px] leading-5 text-secondary md:grid-cols-2">
+          <div className="mt-5 grid gap-x-8 gap-y-2 text-[12px] leading-[1.7] text-muted md:grid-cols-2">
             <div>指数：{art.definition?.index}</div>
             <div>状态：{art.definition?.state}</div>
             <div>规则：{art.definition?.rule}</div>
@@ -494,7 +497,7 @@ function SizingAuditBlock({
             </div>
           </div>
 
-          <Callout tone="danger" label="为什么这张表上全是红">
+          <Callout tone="danger" label="为什么这张表几乎全不通过">
             <p>
               第一版这条规则四个验收项过了三个：年化、分半、压测都好看。它是假的 ——
               当时用「整段总长」当「已持续天数」，等于提前知道这段会跌多少天。
@@ -517,7 +520,7 @@ function SizingAuditBlock({
 function PortfolioBlock() {
   const cols: Col<(typeof portfolio.ladder)[number]>[] = [
     { head: '口径', render: r => <span className="font-medium">{r.name}</span>, w: '32%' },
-    { head: '窗口', render: r => <span className="whitespace-nowrap font-mono text-[10.5px] text-secondary">{r.win}</span>, w: '20%' },
+    { head: '窗口', render: r => <span className="whitespace-nowrap font-mono text-[12px] text-muted">{r.win}</span>, w: '20%' },
     { head: '年化', render: r => <span className="font-mono tabular-nums">{r.cagr}</span>, w: '12%', align: 'right' },
     { head: '最大回撤', render: r => <span className="font-mono tabular-nums">{r.mdd}</span>, w: '14%', align: 'right' },
     { head: '状态', render: r => <Tag tone={r.tone}>{r.status}</Tag>, w: '22%' },
@@ -533,13 +536,13 @@ function PortfolioBlock() {
       actions={<Cadence kind="experiment" />}
     >
       <StatGrid items={portfolio.cards} />
-      <p className="mt-2 max-w-3xl text-[11.5px] leading-relaxed text-secondary">{portfolio.cardsNote}</p>
+      <p className="mt-4 max-w-[46em] text-[12px] leading-[1.7] text-muted">{portfolio.cardsNote}</p>
 
-      <div className="mt-5 text-[10.5px] font-medium text-secondary">基准阶梯（只认最后两行；每行窗口必须一起读）</div>
+      <div className="mt-8 text-[11px] font-medium tracking-[0.1em] text-muted">基准阶梯（只认最后两行；每行窗口必须一起读）</div>
       <DataTable cols={cols} rows={portfolio.ladder} rowKey={r => r.name} minWidth={700} />
 
-      <div className="mt-6 text-[10.5px] font-medium text-secondary">第二条腿：四条候选，只留一条</div>
-      <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-secondary">{portfolio.leg2Lead}</p>
+      <div className="mt-9 text-[11px] font-medium tracking-[0.1em] text-muted">第二条腿：四条候选，只留一条</div>
+      <p className="mt-2 max-w-[46em] text-[13px] leading-[1.8] text-secondary">{portfolio.leg2Lead}</p>
       <DataTable
         cols={[
           { head: '候选', render: r => <span className="font-medium">{r.name}</span>, w: '22%' },
@@ -556,8 +559,8 @@ function PortfolioBlock() {
       <Callout tone="warn" label="满仓逆波动比六格更差，这点和直觉相反">
         {portfolio.policy}
       </Callout>
-      <p className="mt-3 text-[11.5px] leading-relaxed text-secondary">{portfolio.note}</p>
-      <p className="mt-2 text-[10.5px] leading-relaxed text-muted">{portfolio.limits}</p>
+      <p className="mt-4 max-w-[46em] text-[12px] leading-[1.7] text-muted">{portfolio.note}</p>
+      <p className="mt-2 max-w-[46em] text-[12px] leading-[1.7] text-muted/80">{portfolio.limits}</p>
     </Section>
   )
 }
@@ -576,21 +579,21 @@ function WaitBlock() {
       source="docs/structural-edge/theme-etf-entry.md · docs/fed-cut-20d.md"
       actions={<Cadence kind="experiment" />}
     >
-      <div className="rounded-lg border border-border bg-surface p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[12.5px] font-medium text-foreground">{wait.q}</span>
+      <div className="border-t border-border pt-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-[14px] font-medium text-foreground">{wait.q}</span>
           <Tag tone={wait.tone}>条件不存在</Tag>
         </div>
-        <div className="mt-2 space-y-1.5 text-[11.5px] leading-relaxed text-secondary">
-          <p><b className="text-foreground">现在：</b>{wait.now}</p>
-          <p><b className="text-foreground">历史：</b>{wait.hist}</p>
-          <p><b className="text-foreground">本次：</b>{wait.now2}</p>
-          <p className="rounded border-l-2 border-danger bg-danger/[0.07] px-3 py-2 text-foreground">{wait.verdict}</p>
+        <div className="mt-3 max-w-[46em] space-y-2 text-[13px] leading-[1.8] text-secondary">
+          <p><b className="font-medium text-foreground">现在：</b>{wait.now}</p>
+          <p><b className="font-medium text-foreground">历史：</b>{wait.hist}</p>
+          <p><b className="font-medium text-foreground">本次：</b>{wait.now2}</p>
+          <p className="border-l-2 border-danger pl-3 text-foreground">{wait.verdict}</p>
         </div>
       </div>
 
-      <div className="mt-3 rounded-lg border border-border bg-surface p-4">
-        <div className="text-[12.5px] font-medium text-foreground">{grade.narrativeLead}</div>
+      <div className="mt-9 border-t border-border pt-4">
+        <div className="text-[14px] font-medium text-foreground">{grade.narrativeLead}</div>
         <DataTable
           cols={[
             { head: '闸门', render: (x: (typeof grade.narrative)[number]) => <span className="whitespace-nowrap font-medium">{x.q}</span> },
@@ -600,7 +603,7 @@ function WaitBlock() {
           rowKey={x => x.q}
           dense
         />
-        <p className="mt-2 text-[10.5px] leading-relaxed text-secondary">
+        <p className="mt-3 max-w-[46em] text-[12px] leading-[1.7] text-muted">
           闸门条目本身在案卷 D。这里只说结论：叙事定不了方向，也定不了时点——它只能定「这只票属于哪个故事」，
           而故事不构成买点。
         </p>

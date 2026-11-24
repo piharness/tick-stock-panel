@@ -12,7 +12,7 @@ import {
   Database, FileText, FlaskConical, LayoutDashboard,
 } from 'lucide-react'
 import { repro } from './data'
-import { Cadence, Callout, DataTable, type Col, Section } from './ui'
+import { Cadence, Callout, DataTable, type Col, Section, Tile, Tiles } from './ui'
 
 interface CadenceRow {
   what: string
@@ -47,7 +47,7 @@ const CADENCE: CadenceRow[] = [
     check: 'pnpm build + 本页结构测试',
   },
   {
-    what: '动态读数（执行 / 证据 03）',
+    what: '动态读数（机会雷达 / 证据 03）',
     when: '每个交易日盘后（随接口）',
     where: <><Code>live.ts</Code> 把接口字段映射成句子，不落盘、不手抄</>,
     check: <><Code>liveClaims.test.ts</Code> 拦手抄；<Code>python analysis/handbook_audit.py</Code> 按交易日历核对是否覆盖到最近交易日（盘后跑一次）</>,
@@ -112,7 +112,7 @@ const RULES = [
   },
   {
     t: '新增内容先归章',
-    d: '为什么 → 总则；凭什么信 → 证据；什么条件下做 → 规则；今天做什么 → 执行；被否掉 → 反证；用什么做 → 工具。六处不能混，混了页面就退回「一锅粥」。',
+    d: '为什么 → 总则；凭什么信 → 证据；什么条件下做 → 规则；被否掉 → 反证；用什么做 → 工具（以上都在图书馆）；今天做什么 → 机会雷达（/handbook，独立页面）。频率不同就别放同一页 —— 2026-11-24 的拆分就是这条规则的执行。',
   },
   {
     t: '不为了让页面好看而改口径',
@@ -125,8 +125,8 @@ export function MaintSections() {
   const cadenceCols: Col<CadenceRow>[] = [
     { head: '内容', render: r => <span className="font-medium">{r.what}</span>, w: '24%' },
     { head: '多久变一次', render: r => <span className="whitespace-nowrap text-secondary">{r.when}</span>, w: '16%' },
-    { head: '从哪里改', render: r => <span className="text-[11px] text-secondary">{r.where}</span>, w: '34%' },
-    { head: '怎么验收', render: r => <span className="text-[11px] text-secondary">{r.check}</span>, w: '26%' },
+    { head: '从哪里改', render: r => <span className="text-[12px] text-muted">{r.where}</span>, w: '34%' },
+    { head: '怎么验收', render: r => <span className="text-[12px] text-muted">{r.check}</span>, w: '26%' },
   ]
 
   return (
@@ -154,25 +154,25 @@ export function MaintSections() {
         source="analysis/etf_watch.py · etf_watch_account.py · app/services/position_art.py · data.ts"
         actions={<Cadence kind="ondemand" />}
       >
-        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+        <Tiles cols={2} className="mt-6">
           {FLOW.map((f, i) => (
-            <div key={f.k} className="rounded-lg border border-border bg-surface p-3.5">
+            <div key={f.k} className="border-t border-border pt-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-secondary">
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-secondary">
                   <f.Icon className="h-3 w-3 text-muted" />
                   {f.k}
                 </div>
-                <span className="font-mono text-[9.5px] text-muted">{String(i + 1).padStart(2, '0')}</span>
+                <span className="font-mono text-[11px] text-muted">{String(i + 1).padStart(2, '0')}</span>
               </div>
-              <div className="mt-1.5 break-all font-mono text-[10.5px] leading-relaxed text-secondary">{f.v}</div>
+              <div className="mt-2 break-all font-mono text-[11px] leading-[1.7] text-muted">{f.v}</div>
             </div>
           ))}
-        </div>
+        </Tiles>
 
         <Callout tone="ok" label="活数据只有一条来源">
-          「执行」章的四个区块（扫描、账户、现金腿、反例登记）与「证据 03」的当日读数，都来自接口、
+          「机会雷达」页的四个区块（扫描、账户、现金腿、反例登记）与「证据 03」的当日读数，都来自接口、
           经 <Code>live.ts</Code> 映射成句子 —— 页面不内联任何副本，也不在组件里拼第二套文案。
-          证据 04 的验收读数与执行 07 同源同参，不是第二份定义。其余章节是静态结论：读到旧数说明没人重跑实验，不代表市场还在那个状态。
+          证据 04 的验收读数与雷达页的「反例登记」同源同参，不是第二份定义。其余章节是静态结论：读到旧数说明没人重跑实验，不代表市场还在那个状态。
         </Callout>
       </Section>
 
@@ -186,7 +186,7 @@ export function MaintSections() {
       >
         <DataTable
           cols={[
-            { head: '文档', render: d => <span className="font-mono text-[10px] text-secondary">docs/structural-edge/{d.f}</span> },
+            { head: '文档', render: d => <span className="font-mono text-[11px] text-secondary">docs/structural-edge/{d.f}</span> },
             { head: '支撑本页哪一部分', render: d => d.o },
           ]}
           rows={repro.docs}
@@ -194,7 +194,7 @@ export function MaintSections() {
           dense
           minWidth={520}
         />
-        <p className="mt-2 text-[10.5px] leading-relaxed text-secondary">数据来源：{repro.data}</p>
+        <p className="mt-2 text-[11px] leading-relaxed text-secondary">数据来源：{repro.data}</p>
       </Section>
 
       <Section
@@ -205,28 +205,27 @@ export function MaintSections() {
         source="data.ts 文件头 · docs/structural-edge/README.md"
         actions={<Cadence kind="ondemand" />}
       >
-        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+        <Tiles cols={2} className="mt-6">
           {RULES.map((r, i) => (
-            <div key={r.t} className="rounded-lg border border-border bg-surface p-3.5">
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[10px] text-muted">{String(i + 1).padStart(2, '0')}</span>
-                <span className="text-[12.5px] font-medium text-foreground">{r.t}</span>
-              </div>
-              <p className="mt-1 text-[11px] leading-relaxed text-secondary">{r.d}</p>
-            </div>
+            <Tile
+              key={r.t}
+              lead={String(i + 1).padStart(2, '0')}
+              title={r.t}
+              body={r.d}
+            />
           ))}
-        </div>
+        </Tiles>
 
-        <div className="mt-5">
-          <div className="text-[11.5px] font-medium text-foreground">改完至少跑这三条</div>
-          <pre className="mt-1.5 overflow-x-auto rounded-lg border border-border bg-base px-3.5 py-3 font-mono text-[10.5px] leading-relaxed text-secondary">{`cd frontend
+        <div className="mt-9 border-t border-border pt-4">
+          <div className="text-[11px] font-medium tracking-[0.1em] text-muted">改完至少跑这三条</div>
+          <pre className="mt-3 overflow-x-auto rounded border border-border bg-elevated/40 px-4 py-3 font-mono text-[12px] leading-[1.8] text-secondary">{`cd frontend
 pnpm build
 pnpm vitest run src/pages/structural-edge/nav.test.tsx src/pages/structural-edge/liveClaims.test.ts \\
   src/pages/structural-edge/position-sizing.test.tsx
 cd ..
 python analysis/handbook_audit.py     # 产物是否同日、行情有没有缺口
 git diff --check`}</pre>
-          <p className="mt-2 text-[10.5px] leading-relaxed text-secondary">
+          <p className="mt-3 text-[12px] leading-[1.7] text-muted">
             只改视觉、不改数字时，也至少跑一次构建；构建通过不等于页面可读，窄屏与暗色主题要各看一遍。
           </p>
         </div>
@@ -236,5 +235,5 @@ git diff --check`}</pre>
 }
 
 function Code({ children }: { children: ReactNode }) {
-  return <code className="rounded bg-elevated px-1 py-0.5 font-mono text-[10px] text-secondary">{children}</code>
+  return <code className="rounded bg-elevated px-1 py-0.5 font-mono text-[11px] text-secondary">{children}</code>
 }
