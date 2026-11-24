@@ -22,7 +22,11 @@ import stat
 import sys
 from pathlib import Path
 
-#: 钩子内容。`{marker}` 既是"这是我装的"的凭据，也是覆盖时的判据。
+#: 归属前缀。用**前缀**而不是全等来判归属：升级钩子内容时（v1→v2）要能自动覆盖
+#: 旧版，否则每次改模板都得让人 `--force` 一次。
+OWNER_PREFIX = "# tick-stock-panel hook v"
+
+#: 钩子内容。`{marker}` 写在前缀后，标明版本。
 HOOK_TEMPLATE = """#!/bin/sh
 # {marker}
 # 在本仓提交前提示 analysis/ 下未入库的脚本。安装器：scripts/install_git_hooks.py
@@ -34,14 +38,16 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 script="$root/scripts/check_analysis_untracked.py"
 [ -f "$script" ] || exit 0
 for py in "$root/backend/.venv/Scripts/python.exe" "$root/backend/.venv/bin/python" python3 python; do
-    if "$py" "$script" 2>&1; then
-        exit 0
-    fi
+    "$py" "$script" 2>&1
+    status=$?
+    # 0 = 干净；1 = 有残留（拦下，别再试别的解释器）；其它 = 解释器跑不起来，换下一个
+    if [ "$status" = "0" ]; then exit 0; fi
+    if [ "$status" = "1" ]; then exit 1; fi
 done
 exit 0
 """
 
-MARKER = "tick-stock-panel hook v1"
+MARKER = f"{OWNER_PREFIX}2"
 
 
 def hooks_dir(repo_root: Path) -> Path:
@@ -72,7 +78,7 @@ def install(repo_root: Path, *, force: bool = False) -> tuple[bool, str]:
         existing = target.read_text(encoding="utf-8", errors="replace")
         if existing == content:
             return True, "已是最新，无需改动"
-        if MARKER not in existing and not force:
+        if OWNER_PREFIX not in existing and not force:
             return False, (
                 f"{target} 已存在且不是本工具安装的，拒绝覆盖。"
                 "确认要替换请加 --force（原文件建议先备份）。"

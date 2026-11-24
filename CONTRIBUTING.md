@@ -258,9 +258,11 @@ git diff --check
 - For the backend, run at least the tests of the affected module, not just a single newly added test.
 - New files and this change must not introduce Ruff warnings. Do not reformat the whole repository in a feature PR just to clean up historical warnings.
 - Any frontend TypeScript, component, style, or API type change requires at least one `pnpm build`.
-- Run `python scripts/install_git_hooks.py` once per clone. The `pre-commit` hook only
-  **warns** about untracked `.py` files under `analysis/` (either commit them as research
-  provenance or move them to the gitignored `data/.scratch/`); it never blocks a commit.
+- Run `python scripts/install_git_hooks.py` once per clone. The `pre-commit` hook
+  **blocks** a commit while `analysis/` holds untracked `.py` / `.md` / `.json` files:
+  either commit them as research provenance or move them to the gitignored
+  `data/.scratch/`. It fails open when no interpreter is available, so a broken
+  environment never prevents committing.
 - Before committing, run `git diff --check` and confirm the final diff contains no debug code or unrelated files.
 
 ## 10. PR Submission Requirements
@@ -696,9 +698,9 @@ git diff --check
 - 后端至少运行受影响模块的测试，不应只运行新加的单个测试。
 - 新增文件和本次改动不得引入 Ruff 告警。不要为清理历史告警而在功能 PR 中全仓格式化。
 - 前端任何 TypeScript、组件、样式或 API 类型改动至少执行一次 `pnpm build`。
-- 每次 clone 后运行一次 `python scripts/install_git_hooks.py`。`pre-commit` 钩子只**提示**
-  `analysis/` 下未入库的 `.py` 脚本（要么作为研究出处提交，要么移进已忽略的
-  `data/.scratch/`），不会阻断提交。
+- 每次 clone 后运行一次 `python scripts/install_git_hooks.py`。`pre-commit` 钩子会**阻断**
+  `analysis/` 下还有未入库 `.py` / `.md` / `.json` 时的提交：要么作为研究出处提交，
+  要么移进已忽略的 `data/.scratch/`。找不到解释器时它 fail-open，环境问题不会拦住提交。
 - 提交前必须运行 `git diff --check`，并检查最终 diff 不含调试代码和无关文件。
 
 ## 10. PR 提交要求

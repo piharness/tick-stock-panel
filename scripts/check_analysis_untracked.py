@@ -19,16 +19,23 @@
 - **被 `.gitignore` 忽略的**不管 —— 那是作者明确表示"这是临时文件"；
 - 命中的一律提示，并给出两条可执行的路：`git add` 或移进 `data/.scratch/`。
 
-## 默认只提示、不阻断
+## 为什么默认阻断而不是"提示一下"
 
-"该不该交"是判断题，钩子没有资格替人拍板。所以默认 exit 0（打印到 stderr，
-不污染 stdout），需要强制时用 `--strict` 让它 exit 1。
+本仓的提交者只有 AI agent（2026-11-24 明确）。对 agent 来说，"只提示"等于没有：
+一条 stderr 会淹没在几十行工具输出里，而我下一次看到 `git status` 干净就会以为
+没事了 —— 这正是"绿但无感知比红更贵"。
+
+阻断之后，我必须在提交前把话说清楚：是出处就 `git add`，是试算就移进
+`data/.scratch/`。没有第三条路，也没有"下次再说"。
+
+绕过的方式当然存在（`git commit --no-verify`），但它需要一个**明确的、要写出来的
+决定**，而不是一次顺手忽略 —— 这就是这里想要的区别。
 
 ## 用法
 
-    python scripts/check_analysis_untracked.py            # 提示（钩子用这个）
-    python scripts/check_analysis_untracked.py --strict   # 有残留就失败
-    python scripts/check_analysis_untracked.py --quiet    # 安静模式（有残留仍 exit 0）
+    python scripts/check_analysis_untracked.py            # 有残留即 exit 1（钩子用这个）
+    python scripts/check_analysis_untracked.py --warn-only # 只提示、exit 0
+    python scripts/check_analysis_untracked.py --quiet     # 只影响退出码，不打字
 
 安装为 pre-commit 钩子：`python scripts/install_git_hooks.py`
 """
@@ -85,9 +92,12 @@ def untracked_scripts(root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="提示 analysis/ 下未入库的新文件")
-    parser.add_argument("--strict", action="store_true", help="有残留时 exit 1")
-    parser.add_argument("--quiet", action="store_true", help="有残留也不打印（仍影响 --strict）")
+    parser = argparse.ArgumentParser(description="检查 analysis/ 下未入库的新文件")
+    parser.add_argument(
+        "--warn-only", action="store_true",
+        help="有残留只提示、仍 exit 0（默认是 exit 1）",
+    )
+    parser.add_argument("--quiet", action="store_true", help="有残留也不打印，只影响退出码")
     args = parser.parse_args(argv)
 
     root = repo_root()
@@ -110,11 +120,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n  是 → {HINT_ADD}", file=sys.stderr)
         print(f"  否 → {HINT_SCRATCH}", file=sys.stderr)
         print(
-            "\n（本检查只在提交时提示，不阻断；要强制失败用 --strict）\n",
+            "\n提交被拦下：先决定它们是出处还是试算。"
+            "确属误报可 `git commit --no-verify`，但请顺手修掉根因。\n",
             file=sys.stderr,
         )
 
-    return 1 if args.strict else 0
+    if args.warn_only:
+        return 0
+    return 1
 
 
 if __name__ == "__main__":
