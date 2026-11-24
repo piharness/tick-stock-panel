@@ -205,9 +205,29 @@ export function Daily() {
         </section>
       )}
 
-      {/* ------------------------------------------------ 03 账户指令 */}
-      <DailySection id="account" title="账户指令" note="纸面 · 卖出按收盘，买入按次日开盘限价">
+      {/* ------------------------------------------------ 03 明日待办 */}
+      <DailySection id="account" title="明日待办" note="账户指令由脚本生成；无指令时，下面每一条都是「不操作」">
         <AccountCard account={account} err={accountErr} />
+        {payload && payload.counts.candidate > 0 && (
+          <div className="mt-7 border-t border-border pt-4">
+            <div className="text-[11px] font-medium tracking-[0.1em] text-muted">触发预案</div>
+            <p className="mt-2 max-w-[46em] text-[13px] leading-[1.8] text-secondary">
+              {segFirst.length > 0
+                ? `今天已有段首 ${segFirst.length} 个（上面指令里有对应买入），其余 ${ongoing.length} 个候选继续观察 —— 账户只买段首，延续中的信号不加仓。`
+                : `候选 ${payload.counts.candidate} 个全是延续信号：明日无买入。明天收盘若确认新增段首（四条全过且当日未触发），按`}
+              {segFirst.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => openFold('next')}
+                  className="mx-1 inline-flex items-baseline text-accent underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                >
+                  「触发后的四步」
+                </button>
+              )}
+              {segFirst.length === 0 && '执行：确认载体 → 复核不买清单 → 按六格定仓 → 次日开盘限价。'}
+            </p>
+          </div>
+        )}
       </DailySection>
 
       {/* ------------------------------------------------ 04 反例登记 */}
@@ -298,8 +318,10 @@ function Today({ payload }: { payload: EtfWatchPayload }) {
           </div>
           <div className="mt-1.5 text-[13px] leading-[1.6] text-secondary">
             {has
-              ? (newSeg > 0 ? `其中 ${newSeg} 个是段首，可执行` : '均为延续中的信号，等段首再动手')
-              : '区间内不等于可下注 —— 形态或容量不过就不做。'}
+              ? (newSeg > 0
+                  ? `段首 ${newSeg} 个 —— 明日开盘按限价买入，见「明日待办」`
+                  : '全是延续信号 —— 明日无买入，等下一个段首')
+              : '明日无买入。区间内不等于可下注 —— 形态或容量不过就不做。'}
           </div>
         </div>
       </div>
@@ -459,4 +481,12 @@ function Offline({ err }: { err: string }) {
       </div>
     </div>
   )
+}
+
+/** 打开本页折叠并滚动到位（触发预案 → 触发四步）。 */
+function openFold(id: string) {
+  const el = document.getElementById(id) as HTMLDetailsElement | null
+  if (!el) return
+  el.open = true
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }

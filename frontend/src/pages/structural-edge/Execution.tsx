@@ -63,9 +63,13 @@ export function AccountCard({ account, err }: { account: EtfWatchAccount | null;
           ))}
         </ol>
       ) : (
-        <p className="mt-7 border-t border-border pt-3 text-[13px] text-secondary">
-          下一交易日无指令：腿 1 无新信号、无到期；债券已对齐。
-        </p>
+        /* 无指令 ≠ 没有答案。每天要回答的正是「明天什么都不做对不对」，
+         * 所以无指令时把三条腿的「不操作」逐条列出来，而不是一句带过。 */
+        <div className="mt-7 border-t border-border">
+          <TodoRow label="腿 1" action="明日无操作" why={s.leg1.positions.length ? `持仓 ${s.leg1.positions.length} 只，未收到卖出指令` : '空仓 · 无新信号'} />
+          <TodoRow label="债券" action="明日无操作" why={`占比 ${(s.defensive.weight * 100).toFixed(1)}%，已对齐目标`} />
+          <TodoRow label="现金" action="不动" why="货币基金口径计息" />
+        </div>
       )}
       <p className="mt-4 max-w-[46em] text-[12px] leading-[1.7] text-muted">
         {account.meta.entry?.note ?? '买入是次日开盘限价（信号收盘 ×1.03 封顶），未成交即放弃；回测仍按 t+1 收盘（保守口径）。'}
@@ -342,5 +346,17 @@ export function NextSteps() {
         </li>
       ))}
     </ol>
+  )
+}
+
+/** 明日待办行：空复选框 = 明天收盘后逐条核对过的「不做」，不是装饰。 */
+function TodoRow({ label, action, why }: { label: string; action: string; why: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border/60 py-2.5 text-[13px]">
+      <span aria-hidden className="mt-[0.3em] h-3.5 w-3.5 shrink-0 rounded-[3px] border border-border" />
+      <span className="w-8 shrink-0 text-[11px] font-medium tracking-[0.06em] text-muted">{label}</span>
+      <span className="font-medium text-foreground">{action}</span>
+      <span className="text-[12px] text-muted">{why}</span>
+    </div>
   )
 }

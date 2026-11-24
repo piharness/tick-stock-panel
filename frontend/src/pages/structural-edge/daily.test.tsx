@@ -93,7 +93,21 @@ vi.mock('@/lib/api', () => ({
       if (throwWatch) throw new Error('404 Not Found')
       return payload
     },
-    etfWatchAccount: async () => { throw new Error('404 Not Found') },
+    etfWatchAccount: async () => ({
+      meta: {
+        generated_at: '2026-11-20 17:31', policy: '', engine: '', adoption: '2026-11-20', init: 600000,
+        defensive: { symbol: '511010', name: '国债ETF', method: '' }, rules: {},
+      },
+      asof: '2026-11-20',
+      state: {
+        equity: 611801, cash: 0,
+        defensive: { value: 499700, weight: 0.8166 },
+        leg1: { value: 112101, positions: [{ industry: '电子', symbol: '588170.SH', entry: '2026-11-20', exit: null, value: 112101 }] },
+        trades_closed: 0,
+      },
+      instructions: [],
+      equity_tail: [],
+    }),
     watchlistGroups: async () => ({ groups: [{ id: 'g-pool', name: '观察池', color: 'sky' }] }),
     watchlistGroupCreate: async () => { throw new Error('should not create when pool exists') },
     etfWatchCashLeg: async () => { throw new Error('404 Not Found') },
@@ -172,6 +186,12 @@ it('有数据时：日期 + 判定数 + 候选卡 + 三项微指标', async () =
   expect(text).toContain('段首 · 今天首次进入区间')
   expect(text).toContain('延续 · 已在区间内')
   expect(text).toContain('账本内首次触发')
+  // 「明天要干什么」必须一眼可答：hero 结论句 + 明日待办清单 + 触发预案
+  expect(text).toContain('段首 1 个 —— 明日开盘按限价买入')
+  expect(text).toContain('明日待办')
+  expect(text).toContain('明日无操作')
+  expect(text).toContain('触发预案')
+  expect(text).toContain('今天已有段首 1 个')
   expect(text).toContain('区间内')
   expect(text).toContain('12/30')
 })
