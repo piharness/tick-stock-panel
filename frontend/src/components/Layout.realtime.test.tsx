@@ -103,8 +103,8 @@ it('当前源已不可用时不复用旧可用状态开启', async () => {
 })
 
 it.each(['succeeded', 'failed'] as const)('离开数据页后, 分钟补拉 %s 仍刷新体检和分钟缓存', async status => {
-  vi.mocked(api.pipelineJobs).mockResolvedValue({ active_id: null, jobs: [{
-    id: 'repair-job', status, stage: status === 'succeeded' ? 'done' : 'sync_minute', progress: 100,
+  vi.mocked(api.pipelineJobs).mockResolvedValue({ active_id: null, active_kind: null, jobs: [{
+    id: 'repair-job', kind: 'minute', status, stage: status === 'succeeded' ? 'done' : 'sync_minute', progress: 100,
     stage_pct: 100, started_at: null, finished_at: null, duration_s: 1,
     result: status === 'succeeded' ? { minute_rows: 480, universe_size: 2 } : null,
     error: status === 'failed' ? '部分补拉失败' : null,

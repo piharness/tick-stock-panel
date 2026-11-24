@@ -47,20 +47,41 @@ async def trigger_pipeline_job(repo, capset, quote_service=None) -> dict:
     )
 
 
-async def _submit_job(repo, quote_service, make_run) -> dict:
+async def _submit_job(
+    repo, quote_service, make_run, *, kind: str = "pipeline", allow_reuse: bool = True,
+    long_running: bool = False, pause_quotes: bool = True,
+) -> dict:
     """任务化执行公共机制: 单飞 create → 重任务槽 → 行情暂停 → 缓存失效。
 
     make_run(progress) 返回实际执行闭包(阻塞 IO + CPU, 在 executor 里跑)。
     盘后管道与独立除权因子同步共用 —— 两者写同一批 parquet, 必须共享
     单飞与重任务槽防并发覆写。
+
+    kind: 任务类别，页面按它区分历史（清库不能混进盘后同步历史）。
+    allow_reuse: 默认复用活跃任务（拉数据类任务等一等没关系）；破坏性任务
+    （清库）必须传 False —— 复用时返回的是**别人的** job_id，调用方会以为
+    自己的清库跑了，这是最坏的一种“假成功”。
+    long_running: 用长任务停滞阈值（清库要删万级文件）。
+    pause_quotes: 由提交器统一暂停实时行情；任务体自己管暂停的（清库）传 False，
+    避免同一个 owner 暂停两次、内层先恢复造成「外层还认为暂停着」的错觉。
     """
     # 检测卡死的 running job (如 reload 后孤儿 task / 网络读无限阻塞)。
     # reap_stale 会在 /run 和 /jobs/{id} 轮询端点都调用,保证卡死后能自愈。
     job_store.reap_stale()
 
     # 单飞: 复用任何活跃 (pending∨running) 任务, is_new=False 时不再调度新任务
-    job_id, is_new = job_store.create()
+    job_id, is_new = job_store.create(kind=kind, long_running=long_running)
     if not is_new:
+        if not allow_reuse:
+            active = job_store.get(job_id) or {}
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"已有任务在运行（job {job_id} · {active.get('kind') or 'pipeline'} · "
+                    f"{active.get('stage') or 'init'} · {int(active.get('progress') or 0)}%），"
+                    "请等待完成或先取消"
+                ),
+            )
         return {"job_id": job_id, "reused": True}
 
     def progress(stage: str, pct: int, msg: str, stage_pct: int | None = None,
@@ -82,7 +103,7 @@ async def _submit_job(repo, quote_service, make_run) -> dict:
 
             def _run() -> dict:
                 try:
-                    if qs:
+                    if qs and pause_quotes:
                         with qs.paused():
                             return run()
                     return run()
@@ -128,6 +149,7 @@ async def run_adj_factor_now(request: Request) -> dict:
         repo,
         getattr(request.app.state, "quote_service", None),
         lambda progress: (lambda: daily_pipeline.run_adj_factor_sync(repo, capset, on_progress=progress)),
+        kind="adj_factor",
     )
 
 
@@ -156,7 +178,12 @@ def cancel_job(job_id: str) -> dict:
 
 @router.get("/jobs")
 def list_jobs(limit: int = 20) -> dict:
+    active_id = job_store.active_id()
+    active = (job_store.get(active_id) or {}) if active_id else {}
     return {
-        "active_id": job_store.active_id(),
+        "active_id": active_id,
+        # 活跃任务的类别: 页面据此决定把进度挂在「盘后同步」还是「清库」上。
+        # 只在 jobs 列表里找不行 —— pending 任务没有 started_at，会被 limit 截掉。
+        "active_kind": (active.get("kind") or "pipeline") if active_id else None,
         "jobs": job_store.list_recent(limit=limit),
     }

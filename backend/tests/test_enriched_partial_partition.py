@@ -180,6 +180,27 @@ def test_all_halted_partition_does_not_require_active_rows(tmp_path):
     assert _prune_partial_enriched_partitions(daily, enriched) == []
 
 
+def test_verify_window_bounds_the_scan(tmp_path):
+    """覆盖校验只看最近窗口 —— 全历史扫描曾让每日维护在 9p 上静默 30 分钟被 watchdog 杀掉。"""
+    daily = tmp_path / "kline_daily"
+    enriched = tmp_path / "kline_daily_enriched"
+    days = [f"2026-07-{d:02d}" for d in range(1, 31)]
+    for i, day in enumerate(days):
+        _write_partition(daily, day, ["a", "b"])
+        _write_partition(enriched, day, ["a"] if i == 0 else ["a", "b"])
+
+    checked: list[str] = []
+    # 最老的分区不完整, 但在窗口外: 不读盘、不删除
+    assert _prune_partial_enriched_partitions(
+        daily, enriched, max_dates=5, on_check=checked.append
+    ) == []
+    assert checked == days[-5:]  # 心跳回调恰好覆盖窗口内的日期
+    assert (enriched / f"date={days[0]}" / "part.parquet").exists()
+
+    # 显式放宽窗口 (数据修正场景) 时仍能精确识别
+    assert _prune_partial_enriched_partitions(daily, enriched, max_dates=len(days)) == [days[0]]
+
+
 def test_pruned_interior_date_is_rebuilt_without_new_daily_or_factors(tmp_path, monkeypatch):
     daily = tmp_path / "kline_daily"
     enriched = tmp_path / "kline_daily_enriched"

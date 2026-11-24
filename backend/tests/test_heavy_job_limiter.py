@@ -91,6 +91,43 @@ def test_invalid_release_does_not_overfill_capacity() -> None:
     limiter.release("normal")
 
 
+def test_force_release_frees_capacity_once_and_ignores_late_release() -> None:
+    """僵尸线程回不来时按所有权收回；它迟到的 finally 不得二次扣减。"""
+    limiter = HeavyJobLimiter(capacity=2)
+    assert limiter.acquire("exclusive", timeout=0, owner="job-a")
+    assert limiter.in_use == 2
+    assert limiter.holders == ["job-a"]
+
+    assert limiter.force_release("job-a") is True
+    assert limiter.in_use == 0
+    assert limiter.holders == []
+
+    limiter.release("exclusive", owner="job-a")  # 迟到的释放：no-op
+    assert limiter.in_use == 0
+    assert limiter.force_release("job-a") is False
+
+    assert limiter.acquire("normal", timeout=0)
+    limiter.release("normal")
+    assert limiter.in_use == 0
+
+
+def test_same_owner_cannot_hold_capacity_twice() -> None:
+    limiter = HeavyJobLimiter(capacity=2)
+    assert limiter.acquire("normal", timeout=0, owner="job-a")
+    with pytest.raises(RuntimeError, match="已持有"):
+        limiter.acquire("normal", timeout=0, owner="job-a")
+    limiter.release("normal", owner="job-a")
+    assert limiter.in_use == 0
+
+
+def test_slot_with_owner_releases_by_owner() -> None:
+    limiter = HeavyJobLimiter(capacity=2)
+    with limiter.slot("exclusive", timeout=0, owner="job-b"):
+        assert limiter.holders == ["job-b"]
+        assert limiter.in_use == 2
+    assert limiter.in_use == 0
+
+
 def test_module_aliases_share_the_capacity_two_singleton() -> None:
     assert heavy_job_limiter is shared_heavy_job_limiter
     assert shared_heavy_job_limiter.capacity == 2

@@ -1004,7 +1004,7 @@ def launch_integrity_repair(
         try_acquire_run_slot,
     )
 
-    job_id, is_new = job_store.create()
+    job_id, is_new = job_store.create(kind="integrity")
     if not is_new:
         return job_id, False
 

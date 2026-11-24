@@ -17,6 +17,8 @@ from typing import Any, BinaryIO
 import polars as pl
 import psutil
 
+from app.services.job_context import current_job_id, job_context
+
 
 class EnrichedGenerationUnavailableError(RuntimeError):
     """The enriched dataset has no stable generation available for readers."""
@@ -174,22 +176,35 @@ def _try_lock_file(stream: BinaryIO) -> None:
 
 
 @contextmanager
-def _exclusive_generation_lock(data_dir: Path, asset_type: str) -> Iterator[None]:
+def _exclusive_generation_lock(
+    data_dir: Path, asset_type: str, *, timeout: float | None = None,
+) -> Iterator[None]:
+    """进程内写锁 + 跨进程文件锁。
+
+    timeout 只约束进程内那把：它可能被僵尸线程长期持有（卡在 replace 里），
+    terminate 侧的收回必须有上界，拿不到就按「another publication is active」
+    处理。文件锁始终非阻塞 —— 持 flock 睡眠会把对方也堵死。
+    """
     lock_path = Path(data_dir) / f".matrix_generation_{asset_type}.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with (
-        _writer_lock(data_dir, asset_type),
-        lock_path.open("a+b") as stream,
-    ):
-        stream.seek(0, os.SEEK_END)
-        if stream.tell() == 0:
-            stream.write(b"0")
-            stream.flush()
-        _try_lock_file(stream)
-        try:
-            yield
-        finally:
-            _unlock_file(stream)
+    lock = _writer_lock(data_dir, asset_type)
+    if not lock.acquire(timeout=-1 if timeout is None else timeout):
+        raise EnrichedGenerationUnavailableError(
+            "another enriched publication is active"
+        )
+    try:
+        with lock_path.open("a+b") as stream:
+            stream.seek(0, os.SEEK_END)
+            if stream.tell() == 0:
+                stream.write(b"0")
+                stream.flush()
+            _try_lock_file(stream)
+            try:
+                yield
+            finally:
+                _unlock_file(stream)
+    finally:
+        lock.release()
 
 
 def _process_is_alive(pid: Any) -> bool:
@@ -199,6 +214,11 @@ def _process_is_alive(pid: Any) -> bool:
         return True
     # Windows interprets signal 0 as a console event, not a read-only probe.
     return psutil.pid_exists(pid)
+
+
+def _owner_job_payload(job_id: str | None) -> dict[str, str]:
+    """publishing 标记里的 owner_job（没有归属就不写这个键）。"""
+    return {"owner_job": job_id} if job_id else {}
 
 
 def _ready_payload(generation: str) -> dict[str, Any]:
@@ -393,6 +413,82 @@ def bump_enriched_generation(data_dir: Path, asset_type: str = "stock") -> str:
         return generation
 
 
+@contextmanager
+def publication_owned_by(job_id: str | None) -> Iterator[None]:
+    """把这段上下文里创建的发布记在 job_id 名下（None = 不属于任何任务）。
+
+    归属本身由 job_context 统一记账，这里只是发布层的语义化别名：
+    实时行情刷盘、手工脚本不在任何任务上下文里 ⇒ owner_job 缺省 ⇒ terminate 不误收。
+    """
+    with job_context(job_id):
+        yield
+
+
+def abandon_publication_for_job(
+    data_dir: Path,
+    job_id: str,
+    asset_types: tuple[str, ...] = ("stock", "etf"),
+    *,
+    budget_s: float = 2.0,
+) -> list[str]:
+    """按 job 所有权收回 publishing 标记。任务被判卡死 / 手动取消时调用。
+
+    只动 ``owner_job`` 等于该 job 的标记 —— 没有 owner_job 的发布（实时行情刷盘、
+    分析脚本）不属于任何任务，一律不碰。
+
+    两步缺一不可:
+      1. 从 ``_ACTIVE_PUBLICATIONS`` 摘掉：``_publication_claim_is_running`` 只要
+         发现活跃对象就直接返回 True，**心跳超时也救不了**。僵尸线程的对象仍被
+         调用栈引用着 → 不摘就永远是「另一个发布正在进行」，后续任务永远撞
+         "another enriched publication is active"。
+      2. 锁内换新 generation 写回 ready：读取方立刻可读。磁盘可能半新半旧，
+         换代与孤儿恢复同语义（按代缓存整体失效）。
+
+    收回后僵尸线程的下一次写入会在 ``_claim_or_verify`` 里因 publication_id
+    不匹配而失败，不会再落盘；它 ``finally`` 里的 ``abandon()`` 也只在自己的
+    publication_id 仍是当前标记时才写，不会覆盖新标记。
+
+    budget_s 只约束「等锁」：僵尸若正卡在写盘里（持锁），最多等这么久，之后
+    放弃收回 —— 此时它仍在推进，写入方 recover 与心跳超时仍是兜底。
+    """
+    deadline = time.monotonic() + max(0.0, budget_s)
+    released: list[str] = []
+    for asset_type in asset_types:
+        path = _marker_path(data_dir, asset_type)
+        try:
+            payload = _read_marker(path)
+        except EnrichedGenerationUnavailableError:
+            continue
+        if payload is None or _is_ready_payload(payload):
+            continue
+        if str(payload.get("owner_job") or "") != job_id:
+            continue
+        # 先摘活跃对象（不需要锁，也不可能失败）：后面的锁可能被僵尸短暂持有。
+        _ACTIVE_PUBLICATIONS.pop(str(payload.get("publication_id") or ""), None)
+        while True:
+            try:
+                remaining = max(0.0, deadline - time.monotonic())
+                with _exclusive_generation_lock(
+                    data_dir, asset_type, timeout=remaining,
+                ):
+                    current = _read_marker(path)
+                    if (
+                        current is None
+                        or _is_ready_payload(current)
+                        or str(current.get("owner_job") or "") != job_id
+                    ):
+                        break
+                    _ACTIVE_PUBLICATIONS.pop(str(current.get("publication_id") or ""), None)
+                    _write_marker(path, _ready_payload(uuid.uuid4().hex))
+                released.append(asset_type)
+                break
+            except EnrichedGenerationUnavailableError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(_CLAIM_RETRY_BACKOFF_S)
+    return released
+
+
 class EnrichedPublication:
     """Publish one logical enriched write batch under a stable generation token."""
 
@@ -418,6 +514,9 @@ class EnrichedPublication:
         self._changed_from: date | None = None
         self._range_known = True
         self._publication_id = uuid.uuid4().hex
+        # 归属的重任务：写进 publishing 标记，terminate 时据此立刻收回（见
+        # abandon_publication_for_job）。不在任务上下文里创建 ⇒ None。
+        self._owner_job = current_job_id()
 
     def _locked_claim(self, action):
         """在独占锁内认领发布并执行 action; 认领冲突时短暂让出重试。
@@ -618,6 +717,7 @@ class EnrichedPublication:
             "publication_id": self._publication_id,
             "owner_pid": os.getpid(),
             "updated_at_ns": now_ns,
+            **_owner_job_payload(self._owner_job),
             **({"purpose": self.purpose} if self.purpose is not None else {}),
         })
 
@@ -670,6 +770,7 @@ class EnrichedPublication:
             "publication_id": self._publication_id,
             "owner_pid": os.getpid(),
             "updated_at_ns": time.time_ns(),
+            **_owner_job_payload(self._owner_job),
             **({"purpose": self.purpose} if self.purpose is not None else {}),
         })
         self._publishing = True

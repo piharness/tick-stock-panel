@@ -128,15 +128,42 @@ export function Data() {
   const adjGate = useAdjFactorSyncGate()
 
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  // 清库已任务化：POST 只返回 job_id（202），删除进度靠轮询；页面重载后靠 active_kind 恢复横幅。
+  const [clearJobId, setClearJobId] = useState<string | null>(null)
   const clearData = useMutation({
     mutationFn: api.dataClear,
-    onSuccess: () => {
-      // 清库删除全部 parquet + alerts, 各页 (看板/自选/策略/指数/财务/个股/连板/监控) 缓存
-      // 数据均已失效, 故广域失效所有 query 令其重取 —— 数据已清空, 全量刷新是正确行为而非误伤。
-      qc.invalidateQueries()
-      setShowClearConfirm(false)
+    onSuccess: ({ job_id }) => setClearJobId(job_id),
+  })
+  const clearJob = useQuery({
+    queryKey: QK.pipelineJob(clearJobId ?? ''),
+    queryFn: () => api.pipelineJob(clearJobId!),
+    enabled: !!clearJobId,
+    refetchInterval: (q: any) => {
+      const j = q.state.data
+      return j && (j.status === 'succeeded' || j.status === 'failed') ? false : 1_500
     },
   })
+  const clearRunning =
+    !!clearJobId && (clearJob.data?.status === 'running' || clearJob.data?.status === 'pending')
+  const stopClear = useMutation({
+    mutationFn: () => api.pipelineJobCancel(clearJobId!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.pipelineJob(clearJobId!) }),
+  })
+
+  // 清库成功：删除全部 parquet + alerts，各页缓存均已失效 ⇒ 广域失效一次。
+  useEffect(() => {
+    if (!clearJobId || clearJob.data?.status !== 'succeeded') return
+    qc.invalidateQueries()
+    setShowClearConfirm(false)
+    setClearJobId(null)
+  }, [clearJob.data?.status, clearJobId, qc])
+
+  // 任务被清空/过期：404 时复位，别让弹窗永远停在「准备中」
+  useEffect(() => {
+    if (clearJob.isError && /404/.test(String((clearJob.error as any)?.message ?? ''))) {
+      setClearJobId(null)
+    }
+  }, [clearJob.isError, clearJob.error])
 
   const updateSchedule = useMutation({
     mutationFn: ({ hour, minute }: { hour: number; minute: number }) =>
@@ -314,10 +341,14 @@ export function Data() {
   }, [job.isError, job.error])
 
   useEffect(() => {
-    if (!activeJobId && history.data?.active_id) {
-      setActiveJobId(history.data.active_id)
+    if (activeJobId || !history.data?.active_id) return
+    // 清库任务有自己的弹窗/横幅，绝不能挂到盘后同步的进度面板上
+    if (history.data.active_kind === 'clear') {
+      setClearJobId(history.data.active_id)
+      return
     }
-  }, [history.data?.active_id])
+    setActiveJobId(history.data.active_id)
+  }, [activeJobId, history.data?.active_id, history.data?.active_kind])
 
   const s = status.data
   // busy 降级 (预热/同步/修复期间) 且冷启动缓存未热时 storage 为 null — 单独取别名,
@@ -326,6 +357,11 @@ export function Data() {
   const isLoading = status.isLoading
   const isRunning = job.data?.status === 'running' || job.data?.status === 'pending'
   const isStarting = startSync.isPending
+  // 同步历史只展示数据同步类任务；清库是破坏性操作，有自己的弹窗与横幅
+  const historyJobs = (history.data?.jobs ?? []).filter(j => j.kind !== 'clear')
+  const clearStageText = (stage?: string) =>
+    stage?.startsWith('clear:') ? `清除 ${stage.slice('clear:'.length)}`
+      : stage === 'clear' ? '清理缓存与视图' : '准备'
   // 契约 (与 Dashboard/回测页的 stats_pending 同族): busy 降级 (预热/同步/
   // 修复期间) 统计为 null = 未知 → 按有数据对待, 不误禁"修复数据"; 非 busy
   // 的 null = 表确为空 (后端空表返回 null 而非 rows:0) → 显示首装引导。
@@ -686,11 +722,12 @@ export function Data() {
               </Link>
               <button
                 onClick={() => setShowClearConfirm(true)}
-                disabled={isRunning}
+                disabled={isRunning || (!!history.data?.active_id && !clearRunning)}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-btn text-muted hover:text-danger hover:bg-danger/8 text-xs transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none"
+                title={clearRunning ? '清除进行中，点击查看进度' : undefined}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                清除数据
+                {clearRunning ? `清除中 ${clearJob.data?.progress ?? 0}%` : '清除数据'}
               </button>
             </div>
           </div>
@@ -988,9 +1025,9 @@ export function Data() {
                   </div>
                 ))}
               </div>
-            ) : history.data && history.data.jobs.length > 0 ? (
+            ) : historyJobs.length > 0 ? (
               <div className="divide-y divide-border">
-                {history.data.jobs.map((j) => (
+                {historyJobs.map((j) => (
                   <HistoryRow key={j.id} job={j} onClick={() => handleJobClick(j.id)} />
                 ))}
               </div>
@@ -1313,7 +1350,7 @@ export function Data() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
               className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => !clearData.isPending && setShowClearConfirm(false)}
+              onClick={() => !clearRunning && !clearData.isPending && setShowClearConfirm(false)}
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 12 }}
@@ -1327,39 +1364,111 @@ export function Data() {
                   <AlertTriangle className="h-5 w-5 text-danger" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-foreground mb-1.5">确认清除本地数据？</h3>
-                  <p className="text-xs text-secondary leading-relaxed">
-                    此操作将<span className="text-danger font-medium">永久删除</span>所有已同步的本地数据，包括：
-                  </p>
-                  <ul className="mt-2 text-[11px] text-muted leading-relaxed space-y-0.5">
-                    <li>· 个股维表、日 K、除权因子</li>
-                    <li>· Enriched 指标数据、分钟 K</li>
-                    <li>· 财务数据、指数、ETF</li>
-                  </ul>
-                  <p className="mt-2 text-[11px] text-danger/90">
-                    操作不可恢复，需重新执行同步才能恢复数据。
-                  </p>
-                  <div className="mt-2 flex items-start gap-1.5 text-[11px] text-warning">
-                    <Info className="h-3.5 w-3.5 shrink-0 mt-px text-warning" />
-                    <span>此操作不会清除扩展数据，如需删除请在扩展数据设置中单独操作。</span>
-                  </div>
+                  <h3 className="text-sm font-semibold text-foreground mb-1.5">
+                    {clearRunning ? '正在清除本地数据…'
+                      : clearJob.data?.status === 'failed' ? '清除未完成'
+                        : '确认清除本地数据？'}
+                  </h3>
+                  {clearRunning ? (
+                    <div>
+                      <p className="text-xs text-secondary leading-relaxed">
+                        正在逐个目录删除本地文件，请保持服务运行。
+                      </p>
+                      <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-elevated">
+                        <div
+                          className="h-full rounded-full bg-danger transition-[width] duration-500"
+                          style={{ width: `${Math.max(2, clearJob.data?.progress ?? 0)}%` }}
+                        />
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between gap-2 text-[10.5px] text-secondary">
+                        <span className="truncate">
+                          {clearStageText(clearJob.data?.stage)}
+                          {clearJob.data?.log?.length ? ` · ${clearJob.data.log[clearJob.data.log.length - 1].msg}` : ''}
+                        </span>
+                        <span className="shrink-0 font-mono tabular-nums">{clearJob.data?.progress ?? 0}%</span>
+                      </div>
+                      <p className="mt-2 text-[11px] text-warning leading-relaxed">
+                        中途停止不会回滚：已删除的文件无法恢复，数据会处于不完整状态。
+                      </p>
+                    </div>
+                  ) : clearJob.data?.status === 'failed' ? (
+                    <div>
+                      <div className="rounded-btn border border-danger/40 bg-danger/5 px-3 py-2 text-[11px] text-danger leading-relaxed break-words">
+                        {clearJob.data.error ?? '清除失败'}
+                      </div>
+                      <p className="mt-2 text-[11px] text-secondary leading-relaxed">
+                        清库不可回滚；若已删除部分文件，请重新执行同步补齐，或再次清除后从头同步。
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-secondary leading-relaxed">
+                        此操作将<span className="text-danger font-medium">永久删除</span>所有已同步的本地数据，包括：
+                      </p>
+                      <ul className="mt-2 text-[11px] text-muted leading-relaxed space-y-0.5">
+                        <li>· 个股维表、日 K、除权因子</li>
+                        <li>· Enriched 指标数据、分钟 K</li>
+                        <li>· 财务数据、指数、ETF</li>
+                      </ul>
+                      <p className="mt-2 text-[11px] text-danger/90">
+                        操作不可恢复，需重新执行同步才能恢复数据。
+                      </p>
+                      <div className="mt-2 flex items-start gap-1.5 text-[11px] text-warning">
+                        <Info className="h-3.5 w-3.5 shrink-0 mt-px text-warning" />
+                        <span>此操作不会清除扩展数据，如需删除请在扩展数据设置中单独操作。</span>
+                      </div>
+                      {clearData.isError && (
+                        <div className="mt-2 rounded-btn border border-danger/40 bg-danger/5 px-3 py-2 text-[11px] text-danger leading-relaxed break-words">
+                          无法启动清除：{String((clearData.error as any)?.message ?? clearData.error)}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
               <div className="flex items-center justify-end gap-2 mt-5">
-                <button
-                  onClick={() => setShowClearConfirm(false)}
-                  disabled={clearData.isPending}
-                  className="px-3 py-1.5 rounded-btn bg-elevated text-secondary hover:bg-elevated/80 text-sm transition-colors disabled:opacity-50"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => clearData.mutate()}
-                  disabled={clearData.isPending}
-                  className="px-3 py-1.5 rounded-btn bg-danger/90 text-white text-sm font-medium hover:bg-danger disabled:opacity-50 transition-colors"
-                >
-                  {clearData.isPending ? '清除中…' : '清除数据'}
-                </button>
+                {clearRunning ? (
+                  <button
+                    onClick={() => stopClear.mutate()}
+                    disabled={stopClear.isPending}
+                    className="px-3 py-1.5 rounded-btn bg-danger/90 text-white text-sm font-medium hover:bg-danger disabled:opacity-50 transition-colors"
+                  >
+                    {stopClear.isPending ? '停止中…' : '停止清除'}
+                  </button>
+                ) : clearJob.data?.status === 'failed' ? (
+                  <>
+                    <button
+                      onClick={() => { setClearJobId(null); setShowClearConfirm(false) }}
+                      className="px-3 py-1.5 rounded-btn bg-elevated text-secondary hover:bg-elevated/80 text-sm transition-colors"
+                    >
+                      关闭
+                    </button>
+                    <button
+                      onClick={() => { setClearJobId(null); clearData.mutate() }}
+                      disabled={clearData.isPending}
+                      className="px-3 py-1.5 rounded-btn bg-danger/90 text-white text-sm font-medium hover:bg-danger disabled:opacity-50 transition-colors"
+                    >
+                      重试
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setShowClearConfirm(false)}
+                      disabled={clearData.isPending}
+                      className="px-3 py-1.5 rounded-btn bg-elevated text-secondary hover:bg-elevated/80 text-sm transition-colors disabled:opacity-50"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => clearData.mutate()}
+                      disabled={clearData.isPending}
+                      className="px-3 py-1.5 rounded-btn bg-danger/90 text-white text-sm font-medium hover:bg-danger disabled:opacity-50 transition-colors"
+                    >
+                      {clearData.isPending ? '提交中…' : '清除数据'}
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           </div>

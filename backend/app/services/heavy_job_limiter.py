@@ -47,7 +47,14 @@ class HeavyJobCancelledError(RuntimeError):
 
 
 class HeavyJobLimiter:
-    """FIFO weighted capacity; exclusive jobs reserve the entire process budget."""
+    """FIFO weighted capacity; exclusive jobs reserve the entire process budget.
+
+    所有权（owner）: 可选。带 owner 的申请会记在 ``_owners`` 里，供 ``force_release``
+    收回 —— 被 reap 的任务线程可能永远卡在阻塞调用里，回不来执行 finally；容量
+    不收回的话，后续每次点击都排在「等待其他计算任务完成…」上直到超时，只能重启
+    进程。收回后该 owner 迟到的 ``release`` 会被识别为「已收回」并忽略，不会二次
+    扣减。
+    """
 
     _WEIGHTS: ClassVar[dict[HeavyJobKind, int]] = {"normal": 1, "mining": 2}
 
@@ -60,6 +67,7 @@ class HeavyJobLimiter:
         self._cancel_poll_interval = cancel_poll_interval
         self._used = 0
         self._acquired = {"normal": 0, "mining": 0, "exclusive": 0}
+        self._owners: dict[str, tuple[HeavyJobKind, int]] = {}
         self._condition = threading.Condition()
         self._waiters: deque[object] = deque()
         self._local = threading.local()
@@ -74,12 +82,19 @@ class HeavyJobLimiter:
         with self._condition:
             return self.capacity - self._used
 
+    @property
+    def holders(self) -> list[str]:
+        """当前带 owner 的持有者（诊断用）。"""
+        with self._condition:
+            return list(self._owners)
+
     def acquire(
         self,
         kind: HeavyJobKind = "normal",
         *,
         timeout: float | None = None,
         cancel_event: threading.Event | None = None,
+        owner: str | None = None,
     ) -> bool:
         """Wait for capacity and return ``False`` on cancellation or timeout."""
         weight = self._weight(kind)
@@ -90,6 +105,8 @@ class HeavyJobLimiter:
 
         deadline = None if timeout is None else time.monotonic() + timeout
         with self._condition:
+            if owner is not None and owner in self._owners:
+                raise RuntimeError(f"owner {owner!r} 已持有重任务容量")
             ticket = object()
             self._waiters.append(ticket)
             try:
@@ -103,6 +120,8 @@ class HeavyJobLimiter:
                     ):
                         self._used += weight
                         self._acquired[kind] += 1
+                        if owner is not None:
+                            self._owners[owner] = (kind, weight)
                         return True
 
                     remaining = None if deadline is None else deadline - time.monotonic()
@@ -121,15 +140,37 @@ class HeavyJobLimiter:
                 self._waiters.remove(ticket)
                 self._condition.notify_all()
 
-    def release(self, kind: HeavyJobKind = "normal") -> None:
-        """Return capacity previously acquired for ``kind``."""
-        weight = self._weight(kind)
+    def release(self, kind: HeavyJobKind = "normal", *, owner: str | None = None) -> None:
+        """Return capacity previously acquired for ``kind``.
+
+        owner 非空时按 owner 记账：已被 ``force_release`` 收回的，迟到的释放是
+        no-op（僵尸线程的 finally 不得再扣一次）。
+        """
         with self._condition:
+            if owner is not None:
+                held = self._owners.pop(owner, None)
+                if held is None:
+                    return
+                kind, weight = held
+            else:
+                weight = self._weight(kind)
             if self._acquired[kind] == 0:
                 raise RuntimeError(f"cannot release unacquired {kind} capacity")
             self._acquired[kind] -= 1
             self._used -= weight
             self._condition.notify_all()
+
+    def force_release(self, owner: str) -> bool:
+        """收回指定 owner 的容量（线程卡在阻塞调用里回不来时）。返回是否收回。"""
+        with self._condition:
+            held = self._owners.pop(owner, None)
+            if held is None:
+                return False
+            kind, weight = held
+            self._acquired[kind] = max(0, self._acquired[kind] - 1)
+            self._used = max(0, self._used - weight)
+            self._condition.notify_all()
+            return True
 
     @contextmanager
     def slot(
@@ -138,6 +179,7 @@ class HeavyJobLimiter:
         *,
         timeout: float | None = None,
         cancel_event: threading.Event | None = None,
+        owner: str | None = None,
     ) -> Iterator[HeavyJobLimiter]:
         """Reserve capacity in the executing thread, reusing an outer reservation."""
         weight = self._weight(kind)
@@ -149,7 +191,9 @@ class HeavyJobLimiter:
                 raise HeavyJobCancelledError(f"{kind} job was cancelled")
             yield self
             return
-        acquired = self.acquire(kind, timeout=timeout, cancel_event=cancel_event)
+        acquired = self.acquire(
+            kind, timeout=timeout, cancel_event=cancel_event, owner=owner,
+        )
         if not acquired:
             if cancel_event is not None and cancel_event.is_set():
                 raise HeavyJobCancelledError(f"{kind} job was cancelled while waiting")
@@ -159,7 +203,7 @@ class HeavyJobLimiter:
             yield self
         finally:
             self._local.weight = 0
-            self.release(kind)
+            self.release(kind, owner=owner)
 
     def _weight(self, kind: HeavyJobKind) -> int:
         if kind == "exclusive":

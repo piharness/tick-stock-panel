@@ -1482,7 +1482,7 @@ async def trigger_minute_sync(
             raise HTTPException(status_code=403, detail="当前分钟数据源不可用, 请先在设置中配置可用数据源")
         raise HTTPException(status_code=403, detail="需要 Pro+ 权限")
     # 分钟K全市场同步是长任务(数据量是日K的 ~240 倍),用更宽松的卡死阈值
-    job_id, is_new = job_store.create(long_running=True)
+    job_id, is_new = job_store.create(long_running=True, kind="minute")
     if not is_new:
         if repair_symbols is not None:
             raise HTTPException(status_code=409, detail="已有数据任务正在运行, 请等待完成后再批量补拉")
@@ -1768,7 +1768,7 @@ async def extend_history(request: Request):
             try_acquire_run_slot,
         )
 
-        job_id, is_new = job_store.create()
+        job_id, is_new = job_store.create(kind="extend")
         if not is_new:
             return {"status": "reused", "job_id": job_id}
 
@@ -1855,7 +1855,7 @@ async def repair_daily(request: Request):
         )
         from app.services.repair_daily import run_repair_daily
 
-        job_id, is_new = job_store.create()
+        job_id, is_new = job_store.create(kind="repair")
         if not is_new:
             return {"status": "reused", "job_id": job_id}
 
@@ -1923,7 +1923,7 @@ async def rebuild_enriched(request: Request):
             try_acquire_run_slot,
         )
 
-        job_id, is_new = job_store.create()
+        job_id, is_new = job_store.create(kind="rebuild")
         if not is_new:
             return {"status": "reused", "job_id": job_id}
 

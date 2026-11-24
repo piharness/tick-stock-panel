@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -66,6 +67,55 @@ def test_audit_unavailable_fails_closed():
         assert "无法判断" in st["domains"][0]["detail"]
 
 
+def test_kline_asof_takes_pipeline_products_not_just_daily(tmp_path: Path, monkeypatch):
+    """行情域 asof = 日K / enriched / ETF / 指数 的最小值。
+
+    2026-11-24 的现场：日K 已到当日、enriched 与 ETF 停在昨天，维护入口却判
+    「行情最新」，于是只跑手册、不补数据，手册拿着旧 ETF 必然报错，点多少次都一样。
+    """
+    import polars as pl
+
+    from app.services import preferences
+
+    def _write(table: str, part: str, days: list[str]) -> None:
+        path = tmp_path / table / part
+        path.mkdir(parents=True, exist_ok=True)
+        pl.DataFrame({"date": days, "symbol": ["a"] * len(days)}).write_parquet(path / "part.parquet")
+
+    _write("kline_daily", "date=2026-11", ["2026-11-23", "2026-11-24"])
+    _write("kline_daily_enriched", "date=2026-11-23", ["2026-11-23"])
+    _write("kline_etf_daily", "date=2026-11", ["2026-11-24"])
+    _write("kline_index_daily", "date=2026-11", ["2026-11-24"])
+    monkeypatch.setattr(preferences, "get_pipeline_pull_etf", lambda: True)
+    monkeypatch.setattr(preferences, "get_pipeline_pull_index", lambda: True)
+    monkeypatch.setattr(svc, "_market_parts_cache", (0.0, {}))
+
+    # enriched 与 ETF 都落后 → 取最早的那个
+    assert svc._kline_last(tmp_path) == "2026-11-23"
+
+    # 关掉 ETF 拉取后不再拿 ETF 当落后依据（否则永远提示更新）
+    _write("kline_daily_enriched", "date=2026-11-24", ["2026-11-24"])
+    _write("kline_etf_daily", "date=2026-11", ["2026-11-23"])
+    monkeypatch.setattr(preferences, "get_pipeline_pull_etf", lambda: False)
+    monkeypatch.setattr(svc, "_market_parts_cache", (0.0, {}))
+    assert svc._kline_last(tmp_path) == "2026-11-24"
+
+    # 产物缺失时 fail-closed：判不了按落后处理
+    only_stock = tmp_path / "only_stock"
+    (only_stock / "kline_daily" / "date=2026-11").mkdir(parents=True)
+    pl.DataFrame({"date": ["2026-11-24"], "symbol": ["a"]}).write_parquet(
+        only_stock / "kline_daily" / "date=2026-11" / "part.parquet"
+    )
+    (only_stock / "kline_daily_enriched" / "date=2026-11-24").mkdir(parents=True)
+    pl.DataFrame({"date": ["2026-11-24"], "symbol": ["a"]}).write_parquet(
+        only_stock / "kline_daily_enriched" / "date=2026-11-24" / "part.parquet"
+    )
+    monkeypatch.setattr(preferences, "get_pipeline_pull_etf", lambda: True)
+    monkeypatch.setattr(preferences, "get_pipeline_pull_index", lambda: True)
+    monkeypatch.setattr(svc, "_market_parts_cache", (0.0, {}))
+    assert svc._kline_last(only_stock) is None
+
+
 def test_active_job_is_surfaced_for_takeover(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(svc, "audit_snapshot", lambda **_k: _audit(replay_end="2026-11-20"))
     monkeypatch.setattr(svc, "_kline_last", lambda _d: "2026-11-23")
@@ -119,7 +169,7 @@ def test_scheduled_refresh_skips_when_already_current(monkeypatch):
 
     monkeypatch.setattr(svc, "status", lambda _d: {"stale": False, "expected": "2026-11-23"})
     called: list[str] = []
-    monkeypatch.setattr(dp, "_run_tracked", lambda fn, label: called.append(label) or True)
+    monkeypatch.setattr(dp, "_run_tracked", lambda fn, label, **kw: called.append(label) or True)
 
     class _Store:
         data_dir = Path(".")
@@ -136,7 +186,7 @@ def test_scheduled_refresh_runs_tracked_when_stale(monkeypatch):
 
     monkeypatch.setattr(svc, "status", lambda _d: {"stale": True, "expected": "2026-11-23"})
     called: list[str] = []
-    monkeypatch.setattr(dp, "_run_tracked", lambda fn, label: called.append(label) or True)
+    monkeypatch.setattr(dp, "_run_tracked", lambda fn, label, **kw: called.append(label) or True)
 
     class _Store:
         data_dir = Path(".")
@@ -148,6 +198,25 @@ def test_scheduled_refresh_runs_tracked_when_stale(monkeypatch):
     assert called == ["handbook_refresh"]
 
 
+def test_scheduled_refresh_reaps_stalled_job_before_deciding(monkeypatch):
+    """阶梯不能被人挡在门外：上一次任务卡死时，调度这一刻先回收再判断。"""
+    from app.jobs import daily_pipeline as dp
+    from app.services import pipeline_jobs
+
+    reaped: list[str] = []
+    monkeypatch.setattr(pipeline_jobs.job_store, "reap_stale", lambda: reaped.append("reap"))
+    monkeypatch.setattr(svc, "status", lambda _d: {"stale": False, "expected": "2026-11-24"})
+
+    class _Store:
+        data_dir = Path(".")
+
+    class _Repo:
+        store = _Store()
+
+    assert dp._run_handbook_refresh(_Repo()) is False
+    assert reaped == ["reap"]
+
+
 def test_run_skips_without_creating_a_job(tmp_path: Path, monkeypatch):
     """全最新时不建空任务：空任务会占住单飞槽，让真正的更新排不上。"""
     monkeypatch.setattr(svc, "audit_snapshot", lambda **_k: _audit())
@@ -156,3 +225,110 @@ def test_run_skips_without_creating_a_job(tmp_path: Path, monkeypatch):
     body = _client(tmp_path).post("/api/maintenance/run").json()
     assert body["skipped"] is True
     assert "job_id" not in body
+
+
+# ---------------------------------------------------------------- 自愈：计划 + 复核
+
+
+def _domain_status(
+    *, kline_stale: bool, handbook_stale: bool, phase: str = "closed",
+    expected: str = "2026-11-24",
+) -> dict:
+    return {
+        "phase": phase,
+        "expected": expected,
+        "stale": kline_stale or handbook_stale,
+        "domains": [
+            {"id": "kline", "label": "行情数据", "asof": "2026-11-23", "stale": kline_stale,
+             "detail": "落后：增强 2026-11-23、ETF 2026-11-23", "parts": []},
+            {"id": "handbook", "label": "投资手册", "asof": "2026-11-23", "stale": handbook_stale,
+             "detail": "落后：回放", "parts": []},
+        ],
+    }
+
+
+def _run_all(monkeypatch, snapshots: list[dict]) -> list[str]:
+    """按顺序喂状态快照，记录实际执行了哪几条链。"""
+    from app.jobs import daily_pipeline as dp
+
+    seq = iter(snapshots)
+    monkeypatch.setattr(svc, "_snapshot", lambda _d: next(seq))
+    monkeypatch.setattr(svc, "reset_cache", lambda: None)
+    calls: list[str] = []
+    monkeypatch.setattr(dp, "run_now", lambda *a, **k: calls.append("pipeline") or {})
+    monkeypatch.setattr(
+        svc, "_handbook", lambda progress, base=60: calls.append("handbook") or {"exit": 0},
+    )
+    return calls
+
+
+def test_plan_puts_pipeline_before_handbook():
+    plan = svc.build_plan(_domain_status(kline_stale=True, handbook_stale=True))
+    assert [p["action"] for p in plan] == ["pipeline", "handbook"]
+    assert "增强" in plan[0]["reason"]  # 说清缺哪张表，不是笼统「行情落后」
+
+
+def test_run_all_runs_pipeline_then_handbook_and_verifies(monkeypatch):
+    calls = _run_all(monkeypatch, [
+        _domain_status(kline_stale=True, handbook_stale=True),
+        _domain_status(kline_stale=False, handbook_stale=True),
+        _domain_status(kline_stale=False, handbook_stale=False),
+    ])
+
+    out = svc.run_all(None, None, Path("."), lambda *a, **k: None)
+
+    assert calls == ["pipeline", "handbook"]
+    assert out["executed"] == ["pipeline", "handbook"]
+    assert out["converged"] is True
+
+
+def test_run_all_reruns_handbook_when_pipeline_moves_etf_forward(monkeypatch):
+    """跑之前的计划不算数：行情推进一天会让手册立刻落后，必须当场重新判定。"""
+    calls = _run_all(monkeypatch, [
+        _domain_status(kline_stale=True, handbook_stale=False),
+        _domain_status(kline_stale=False, handbook_stale=True),
+        _domain_status(kline_stale=False, handbook_stale=False),
+    ])
+
+    out = svc.run_all(None, None, Path("."), lambda *a, **k: None)
+
+    assert calls == ["pipeline", "handbook"]
+    assert out["executed"] == ["pipeline", "handbook"]
+
+
+def test_run_all_stops_before_handbook_when_market_not_converged(monkeypatch):
+    """管道「没抛异常」不等于每张产物都到了 expected（供应迟交时 ETF 写 0 行）。"""
+    calls = _run_all(monkeypatch, [
+        _domain_status(kline_stale=True, handbook_stale=True),
+        _domain_status(kline_stale=True, handbook_stale=True),  # 管道跑完 ETF 仍缺
+    ])
+
+    with pytest.raises(svc.MaintenanceNotConverged) as exc:
+        svc.run_all(None, None, Path("."), lambda *a, **k: None)
+
+    assert calls == ["pipeline"]          # 不能拿旧 ETF 去跑手册
+    assert "行情链未补齐" in str(exc.value)
+    assert "ETF 2026-11-23" in str(exc.value)
+
+
+def test_run_all_skips_when_nothing_stale(monkeypatch):
+    calls = _run_all(monkeypatch, [_domain_status(kline_stale=False, handbook_stale=False)])
+
+    out = svc.run_all(None, None, Path("."), lambda *a, **k: None)
+
+    assert calls == []
+    assert out["skipped"] is True and out["converged"] is True
+
+
+def test_run_all_marks_unknown_when_the_day_rolls_over_mid_run(monkeypatch):
+    """跑到一半跨过收盘+10 分钟：期望日变了，不能拿新期望判这一轮（否则天天假失败）。"""
+    calls = _run_all(monkeypatch, [
+        _domain_status(kline_stale=False, handbook_stale=True, expected="2026-11-24"),
+        _domain_status(kline_stale=False, handbook_stale=True, expected="2026-11-25"),
+    ])
+
+    out = svc.run_all(None, None, Path("."), lambda *a, **k: None)
+
+    assert calls == ["handbook"]
+    assert out["converged"] is None
+    assert "2026-11-25" in out["note"]

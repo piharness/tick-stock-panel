@@ -40,7 +40,7 @@ def _start_integrity_job(request: Request, operation: Callable, *, repair: bool)
         try_acquire_run_slot,
     )
 
-    job_id, is_new = job_store.create()
+    job_id, is_new = job_store.create(kind="integrity")
     if not is_new:
         raise HTTPException(status_code=409, detail="已有数据任务正在运行, 请等待完成后再自检或修补")
 
@@ -995,50 +995,121 @@ def status(request: Request) -> dict:
     }
 
 
-@router.post("/clear")
-def clear_data(request: Request):
-    """清除所有本地 Parquet 数据（保留 capabilities.json 和目录结构）。
+#: 因清库而停止的全量分钟增量线程，按 job 记账。
+#: 它独立写 kline_minute/adj_factor，不占 run slot，必须单独暂停；但只靠 finally
+#: 恢复的话，清库线程卡死就永久停摆。terminate 钩子按 job 收回复原。
+_MINUTE_REFRESH_STOPPED: dict[str, object] = {}
+_MINUTE_REFRESH_LOCK = threading.Lock()
 
-    互斥保护 (与其他破坏性路径 pipeline/repair/rebuild 一致):
-    - 重任务执行槽: 有数据任务在运行 (或上次任务卡死未结束) 时 fail-closed
-      拒绝清空 — 一边删除一边写入会让终态既非"已清空"也非"完整同步";
-    - 清空期间暂停实时行情取数, 防止轮询线程覆写同一批 parquet。
+
+def restore_minute_refresh(job_id: str) -> bool:
+    """terminate 钩子：清库任务被终止时把全量分钟增量线程恢复回去。"""
+    with _MINUTE_REFRESH_LOCK:
+        mrs = _MINUTE_REFRESH_STOPPED.pop(job_id, None)
+    if mrs is None:
+        return False
+    try:
+        mrs.start()
+    except Exception:  # noqa: BLE001
+        logger.exception("terminate: 恢复分钟增量失败 job=%s", job_id)
+        return False
+    logger.warning("terminate: 已恢复 job %s 停止的全量分钟增量", job_id)
+    return True
+
+
+@router.post("/clear", status_code=202)
+async def clear_data(request: Request):
+    """清除所有本地 Parquet 数据 —— 任务化（202 + job_id + 轮询）。
+
+    为什么不再同步：要删万级文件（9p 挂载上几分钟），同步请求既看不到进度也无法
+    取消；客户端断开后线程照跑，卡死还会把 run slot 与行情暂停一起永久占住。
+    改走与盘后管道同一条任务通道：单飞 + 重任务槽 + 按 job 收回资源。
+
+    互斥 fail-closed（破坏性操作绝不复用别人的任务）:
+      - 任何活跃任务 → 409；
+      - 重任务槽被非任务入口占用 → 409。
+    复用会返回别人的 job_id，调用方会以为自己的清库跑了 —— 这是最坏的“假成功”。
     """
-    from app.services.pipeline_jobs import release_run_slot, try_acquire_run_slot
+    from app.services.pipeline_jobs import job_store, run_slot_owner
 
-    if not try_acquire_run_slot("data_clear"):
+    state = request.app.state
+    if job_store.active_id() or run_slot_owner():
         raise HTTPException(
             status_code=409,
             detail="有数据任务在运行（或上一次任务卡死未结束），请先停止任务或稍后再试",
         )
-    qs = getattr(request.app.state, "quote_service", None)
-    # 全量分钟增量线程独立写 kline_minute/adj_factor 分区, 不占 run slot —
-    # 清空期间必须一并暂停, 否则"清完又被写回部分今日数据"(终态不完整)。
-    mrs = getattr(request.app.state, "minute_refresh", None)
-    mrs_was_running = False
+
+    from app.api.pipeline import _submit_job  # 局部导入: api.pipeline 反向依赖本模块
+
+    return await _submit_job(
+        state.repo,
+        getattr(state, "quote_service", None),
+        lambda progress: (lambda: _run_clear(state, progress)),
+        kind="clear",
+        allow_reuse=False,
+        long_running=True,   # 万级文件删除, 用长任务停滞阈值
+        pause_quotes=False,  # 任务体自己按 job 暂停/恢复, 不叠第二层
+    )
+
+
+def _run_clear(state, progress) -> dict:
+    """清库任务体：暂停分钟增量与实时行情 → 删除 → 恢复。
+
+    两个外部线程都按 job 记账：行情暂停走 quote_service 的所有者记账，分钟增量走
+    `_MINUTE_REFRESH_STOPPED` + terminate 钩子。不能只靠 finally —— 线程卡死时
+    finally 永远不执行，实时行情与分钟增量会一起永久停摆。
+    """
+    from app.services.job_context import current_job_id
+
+    qs = getattr(state, "quote_service", None)
+    mrs = getattr(state, "minute_refresh", None)
+    job_id = current_job_id()
+    stopped = False
+    if mrs is not None:
+        with contextlib.suppress(Exception):
+            running = bool(mrs.status().get("running"))
+            # 无条件 stop: 从 status() 到 stop() 之间它可能刚好启动
+            mrs.stop()
+            if running:
+                stopped = True
+                if job_id:
+                    with _MINUTE_REFRESH_LOCK:
+                        _MINUTE_REFRESH_STOPPED[job_id] = mrs
+    progress("clear", 1, "暂停实时行情与全量分钟增量…")
     try:
-        if mrs is not None:
-            with contextlib.suppress(Exception):
-                mrs_was_running = bool(mrs.status().get("running"))
-                mrs.stop()
         if qs is not None:
             with qs.paused():
-                return _clear_data_impl(request)
-        return _clear_data_impl(request)
+                return _clear_data_impl(state, progress)
+        return _clear_data_impl(state, progress)
     finally:
-        if mrs is not None and mrs_was_running:
+        if stopped:
+            if job_id:
+                with _MINUTE_REFRESH_LOCK:
+                    _MINUTE_REFRESH_STOPPED.pop(job_id, None)
             with contextlib.suppress(Exception):
                 mrs.start()
-        release_run_slot("data_clear")
 
 
-def _clear_data_impl(request: Request):
+def _clear_data_impl(state, progress=None):
     import shutil
 
-    repo = request.app.state.repo
+    from app.services.job_context import current_job_id
+    from app.services.pipeline_jobs import JobCancelledError, is_cancelled
+
+    emit = progress or (lambda *a, **k: None)
+    repo = state.repo
     data_dir = repo.store.data_dir
+    job_id = current_job_id()
+
+    def check_cancel() -> None:
+        # 逐文件检查: 只在每 200 个文件上报进度，取消信号不能等到下一次心跳
+        if job_id and is_cancelled(job_id):
+            raise JobCancelledError(job_id)
+
     from app.services.daily_health import clear_assets
     deleted = 0
+    cleared: list[str] = []
+    skipped: list[str] = []
     # recover=True: 清空语义就是接管一切 — 外部进程(崩掉的脚本/中断的管道)
     # 残留的 publishing 标记(owner pid 已死)不应永久阻塞清空; 活进程的发布
     # 仍会被拦(another publication is active), 写盘竞态保护不受影响。
@@ -1054,80 +1125,105 @@ def _clear_data_impl(request: Request):
     #     更新的 500 天, 清空时丢掉的那段永远消失。
     # 要连归档一起清, 按 `scripts/archive_intraday_periods.py` 的目录手动处理 ——
     # 那是不可逆操作, 不该混在「清空本地数据重来」这种日常动作里。
-    for sub in (
+    directories = (
         "kline_daily", "kline_daily_enriched", "kline_index_daily", "kline_index_enriched",
         "kline_etf_daily", "kline_etf_enriched", "kline_etf_minute", "kline_minute",
         "adj_factor", "adj_factor_etf", "instruments", "instruments_index", "instruments_etf", "pools", "financials",
         "backtest_results", "screener_results", "ai_cache",
-    ):
-        d = data_dir / sub
-        if not d.exists():
-            continue
-        publication = publications.get(sub)
-        parquet_files = list(d.rglob("*.parquet"))
-        if publication is not None and parquet_files:
-            publication.begin()
-        try:
-            for f in parquet_files:
-                f.unlink()
-                deleted += 1
+    )
+    total_dirs = len(directories)
+    try:
+        for index, sub in enumerate(directories):
+            d = data_dir / sub
+            if not d.exists():
+                skipped.append(sub)
+                continue
+            check_cancel()
+            stage = f"clear:{sub}"
+            base_pct = 5 + int(80 * index / total_dirs)
+            emit(stage, base_pct, f"清除 {sub}…")
+            publication = publications.get(sub)
+            parquet_files = list(d.rglob("*.parquet"))
+            if publication is not None and parquet_files:
+                publication.begin()
+            try:
+                for n, f in enumerate(parquet_files, 1):
+                    check_cancel()
+                    f.unlink()
+                    deleted += 1
+                    if publication is not None:
+                        publication.mark_changed()
+                    if n % 200 == 0:
+                        # 万级文件在 9p 上可能删十几分钟: 心跳只走 log, 进度条按目录推进
+                        emit(stage, base_pct, f"清除 {sub} {n}/{len(parquet_files)}",
+                             stage_pct=int(100 * n / len(parquet_files)))
+                for child in list(d.iterdir()):
+                    if child.is_dir():
+                        shutil.rmtree(child, ignore_errors=True)
                 if publication is not None:
-                    publication.mark_changed()
-            for child in list(d.iterdir()):
-                if child.is_dir():
-                    shutil.rmtree(child, ignore_errors=True)
-            if publication is not None:
-                publication.commit()
-        except BaseException:
-            if publication is not None:
-                publication.abandon()
-            raise
+                    publication.commit()
+            except BaseException:
+                if publication is not None:
+                    publication.abandon()
+                raise
+            cleared.append(sub)
+            emit(stage, 5 + int(80 * (index + 1) / total_dirs), f"{sub} 已清除")
 
-    clear_assets(data_dir, {"stock", "etf", "index"})
-    (data_dir / "user_data" / "integrity_report.json").unlink(missing_ok=True)
-    # 清除同步历史（内存 + 磁盘 job_store/ 文件夹）
-    from app.services.pipeline_jobs import job_store
-    job_store.clear()
+        emit("clear", 86, "清理缓存与运行产物…")
+        clear_assets(data_dir, {"stock", "etf", "index"})
+        (data_dir / "user_data" / "integrity_report.json").unlink(missing_ok=True)
+        # 清除同步历史（内存 + 磁盘 job_store/ 文件夹）。
+        # keep=当前任务: 否则清库跑到一半会把自己的记录、_active_id 与取消标志一起删掉，
+        # 页面随即 404，而且从此没有任何入口能取消它。
+        from app.services.pipeline_jobs import job_store
+        job_store.clear(keep=job_id)
 
-    # 清除财务数据
-    fin_dir = data_dir / "financials"
-    for sub in ("metrics", "income", "balance_sheet", "cash_flow"):
-        fp = fin_dir / sub / "part.parquet"
-        if fp.exists():
-            fp.unlink()
-            deleted += 1
+        # 清除财务数据
+        fin_dir = data_dir / "financials"
+        for sub in ("metrics", "income", "balance_sheet", "cash_flow"):
+            fp = fin_dir / sub / "part.parquet"
+            if fp.exists():
+                fp.unlink()
+                deleted += 1
 
-    # 清除监控运行数据 (user_data 下仅清运行产物, 不动 monitor_rules/preferences/secrets 等用户配置)
-    # - 触发记录 alerts.jsonl
-    from app.services import alert_store
-    alert_store.clear(data_dir)
-    # - 待推送的实时通知队列 (进程内存)
-    qs = getattr(request.app.state, "quote_service", None)
-    if qs is not None:
-        qs.clear_pending_alerts()
+        # 清除监控运行数据 (user_data 下仅清运行产物, 不动 monitor_rules/preferences/secrets 等用户配置)
+        # - 触发记录 alerts.jsonl
+        from app.services import alert_store
+        alert_store.clear(data_dir)
+        # - 待推送的实时通知队列 (进程内存)
+        qs = getattr(state, "quote_service", None)
+        if qs is not None:
+            qs.clear_pending_alerts()
 
-    # 清除 Polars 缓存
-    # 先 clear_cache 无条件清空内存 (refresh_cache 在磁盘无数据时会提前 return,
-    # 导致 _enriched_cache 等旧数据残留 —— 清数据后看板仍显示旧数据的根因),
-    # 再 refresh_cache 尝试重载 (磁盘有数据则重建缓存)。
-    repo.clear_cache()
-    repo.refresh_cache()
+        # 清除 Polars 缓存
+        # 先 clear_cache 无条件清空内存 (refresh_cache 在磁盘无数据时会提前 return,
+        # 导致 _enriched_cache 等旧数据残留 —— 清数据后看板仍显示旧数据的根因),
+        # 再 refresh_cache 尝试重载 (磁盘有数据则重建缓存)。
+        repo.clear_cache()
+        repo.refresh_cache()
 
-    # 清除 Screener 进程级 _history_cache (TTL 缓存)
-    from app.services.screener import ScreenerService
-    ScreenerService.clear_history_cache()
+        # 清除 Screener 进程级 _history_cache (TTL 缓存)
+        from app.services.screener import ScreenerService
+        ScreenerService.clear_history_cache()
 
-    # 清除 Overview 总览聚合结果缓存 (5s TTL)
-    from app.api.overview import invalidate_overview_cache
-    invalidate_overview_cache()
+        # 清除 Overview 总览聚合结果缓存 (5s TTL)
+        from app.api.overview import invalidate_overview_cache
+        invalidate_overview_cache()
 
-    # 刷新 DuckDB 视图（空 parquet 目录也需要重新挂载）——
-    # 委托给 repository 的唯一权威实现, 覆盖全部视图 (此前这里内联的副本漏了几张)。
-    repo.rebuild_views()
+        # 刷新 DuckDB 视图（空 parquet 目录也需要重新挂载）——
+        # 委托给 repository 的唯一权威实现, 覆盖全部视图 (此前这里内联的副本漏了几张)。
+        emit("clear", 94, "重建 DuckDB 视图…")
+        repo.rebuild_views()
+    except JobCancelledError:
+        raise
+    except BaseException as exc:
+        # 部分删除无法回滚: 必须把「已经删了多少」写进失败原因，
+        # 否则用户分不清是「一个都没删」还是「删了一半」。
+        raise RuntimeError(f"清除中断（已删除 {deleted} 个文件）：{exc}") from exc
 
     logger.info("数据已清除: 删除 %d 个 parquet 文件", deleted)
     invalidate_data_cache(None)
-    return {"deleted_files": deleted}
+    return {"deleted_files": deleted, "cleared": cleared, "skipped": skipped}
 
 
 # 各表字段说明

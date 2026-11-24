@@ -102,7 +102,7 @@ it('自检任务失败时在弹窗中显示原因, 运行期间禁用重复操�
   await render()
   await click('开始自检')
   const job: PipelineJob = {
-    id: 'scan-job', status: 'running', stage: 'integrity_check', progress: 10, stage_pct: 10,
+    id: 'scan-job', kind: 'integrity', status: 'running', stage: 'integrity_check', progress: 10, stage_pct: 10,
     log: [], started_at: null, finished_at: null, duration_s: null, result: null, error: null,
   }
   await render(job)

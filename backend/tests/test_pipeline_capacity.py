@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
+import polars as pl
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -85,7 +87,14 @@ def test_queued_pipeline_is_cancellable_and_reaped_when_stalled(capacity):
     assert limiter.in_use == 0
 
 
-def test_cancel_does_not_release_running_worker_capacity(capacity):
+def test_terminate_releases_running_worker_capacity(capacity):
+    """终止时容量必须一起收回，否则下一位只能等到排队超时。
+
+    2026-11-24 的现场：任务被 reap 后线程卡在 9p 长 I/O 里回不来，run slot 已强放、
+    limiter 没放 ⇒ 后续每次点击都排在「等待其他计算任务完成…」上，1200s 后报
+    「排队等待重任务执行槽超时」，只能重启后端。线程 join 不了，容量只能按所有权收回；
+    迟到的 finally 由 limiter 识别为「已收回」忽略，不会二次扣减。
+    """
     store, limiter = capacity
     jid, _ = store.create()
     entered, finish = threading.Event(), threading.Event()
@@ -99,15 +108,69 @@ def test_cancel_does_not_release_running_worker_capacity(capacity):
         future = pool.submit(run_with_capacity, jid, work)
         try:
             assert entered.wait(1)
+            assert limiter.in_use == 2
             store.terminate(jid, "cancelled while computing")
             assert store.get(jid)["status"] == "failed"
-            assert limiter.in_use == 2
-            assert not limiter.acquire("normal", timeout=0)
+            # 容量立即可用：不必等僵尸线程退出
+            assert limiter.in_use == 0
+            assert limiter.acquire("normal", timeout=0)
+            limiter.release("normal")
         finally:
             finish.set()
         with pytest.raises(JobCancelledError):
             future.result(timeout=1)
+    # 僵尸线程迟到的 finally 不得把容量扣成负数
     assert limiter.in_use == 0
+
+
+def test_new_publication_can_start_after_a_stuck_job_is_terminated(capacity, tmp_path):
+    """完整现场：任务卡在发布里 → terminate → 新任务立刻能发布。
+
+    只放容量不够：publishing 标记的 publication_id 还在 _ACTIVE_PUBLICATIONS 里时，
+    _publication_claim_is_running 永远返回 True（心跳超时也不生效），新任务第一次
+    写 enriched 就撞 "another enriched publication is active"。
+    """
+    from app import enriched_generation as eg
+
+    store, _limiter = capacity
+    jid, _ = store.create()
+    entered, release = threading.Event(), threading.Event()
+    stuck: dict[str, eg.EnrichedPublication] = {}
+
+    def work():
+        publication = eg.EnrichedPublication(tmp_path, "stock", recover=True)
+        publication.begin()
+        stuck["publication"] = publication
+        entered.set()
+        assert release.wait(5)
+        publication.abandon()
+
+    def marker() -> dict:
+        return json.loads(
+            (tmp_path / ".matrix_generation_stock.json").read_text(encoding="utf-8")
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(run_with_capacity, jid, work)
+        assert entered.wait(2)
+        assert marker()["state"] == "publishing"
+        assert marker()["owner_job"] == jid
+
+        store.terminate(jid, "stuck while publishing")
+
+        assert marker()["state"] == "ready"  # 不用等 600s 心跳超时
+        with eg.publication_owned_by("job-b"):
+            fresh = eg.EnrichedPublication(tmp_path, "stock", recover=True)
+            fresh.begin()
+            out = tmp_path / "kline_daily_enriched" / "date=2026-11-24" / "part.parquet"
+            fresh.write_parquet(pl.DataFrame({"symbol": ["a"]}), out)
+            fresh.commit()
+        assert out.exists()
+
+        release.set()
+        future.result(timeout=5)
+    # 僵尸迟到的 abandon 不会覆盖新一轮的 ready 标记
+    assert marker()["state"] == "ready"
 
 
 def test_cache_refresh_queues_and_can_nest_in_pipeline(capacity, monkeypatch):

@@ -81,3 +81,18 @@ def test_daily_partition_missing_left_alone(tmp_path) -> None:
 
     assert _prune_stale_price_partitions(tmp_path / "kline_daily", enriched) == []
     assert (enriched / "date=2026-09-04" / "part.parquet").exists()
+
+
+def test_only_recent_dates_are_compared(tmp_path) -> None:
+    # 每天都是过期价, 但只比对最近 max_dates 个分区: 候选集不再遍历全历史逐个 stat
+    daily = tmp_path / "kline_daily"
+    enriched = tmp_path / "kline_daily_enriched"
+    days = [f"2026-09-{d:02d}" for d in range(1, 9)]
+    for day in days:
+        _write_partition(daily, day, ["002084.SZ"], [7.10], "close")
+        _write_partition(enriched, day, ["002084.SZ"], [7.07], "raw_close")
+
+    pruned = _prune_stale_price_partitions(daily, enriched, max_dates=3)
+
+    assert sorted(pruned) == days[-3:]
+    assert (enriched / f"date={days[0]}" / "part.parquet").exists()

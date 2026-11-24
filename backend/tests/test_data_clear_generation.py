@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date
 from pathlib import Path
@@ -47,7 +48,7 @@ def _stub_clear_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.pipeline_jobs import job_store
     from app.services.screener import ScreenerService
 
-    monkeypatch.setattr(job_store, "clear", lambda: None)
+    monkeypatch.setattr(job_store, "clear", lambda keep=None: None)
     monkeypatch.setattr(alert_store, "clear", lambda _data_dir: None)
     monkeypatch.setattr(ScreenerService, "clear_history_cache", lambda: None)
     monkeypatch.setattr(overview, "invalidate_overview_cache", lambda: None)
@@ -78,12 +79,12 @@ def test_clear_data_bumps_enriched_generations_and_invalidates_panel_cache(
         return pl.DataFrame({"value": [computes[-1]]})
 
     cache.get_or_compute(*cache_args, compute, "stock", stock_before)
-    result = data_api.clear_data(_request(repo))
+    result = data_api._clear_data_impl(_request(repo).app.state)
     stock_after = get_enriched_generation(tmp_path, "stock")
     etf_after = get_enriched_generation(tmp_path, "etf")
     cached_after = cache.get_or_compute(*cache_args, compute, "stock", stock_after)
 
-    assert result == {"deleted_files": 2}
+    assert result["deleted_files"] == 2
     assert not stock_file.exists()
     assert not etf_file.exists()
     assert stock_after != stock_before
@@ -110,8 +111,9 @@ def test_clear_data_restores_ready_generation_when_first_delete_fails(
 
     monkeypatch.setattr(Path, "unlink", fail_target)
 
-    with pytest.raises(PermissionError, match="injected delete failure"):
-        data_api.clear_data(_request(repo))
+    with pytest.raises(RuntimeError, match="injected delete failure") as exc_info:
+        data_api._clear_data_impl(_request(repo).app.state)
+    assert isinstance(exc_info.value.__cause__, PermissionError)
 
     assert target.is_file()
     assert get_enriched_generation(tmp_path, "stock") == generation_before
@@ -145,8 +147,9 @@ def test_clear_data_keeps_generation_publishing_after_partial_delete(
 
     monkeypatch.setattr(Path, "unlink", fail_second_parquet)
 
-    with pytest.raises(PermissionError, match="injected partial delete failure"):
-        data_api.clear_data(_request(repo))
+    with pytest.raises(RuntimeError, match="injected partial delete failure") as exc_info:
+        data_api._clear_data_impl(_request(repo).app.state)
+    assert isinstance(exc_info.value.__cause__, PermissionError)
 
     assert sum(path.exists() for path in (first, second)) == 1
     marker = json.loads(
@@ -179,9 +182,9 @@ def test_clear_data_recovers_stale_publishing_marker_from_dead_process(
         encoding="utf-8",
     )
 
-    result = data_api.clear_data(_request(repo))
+    result = data_api._clear_data_impl(_request(repo).app.state)
 
-    assert result == {"deleted_files": 1}
+    assert result["deleted_files"] == 1
     assert not target.exists()
     marker = json.loads(
         (tmp_path / ".matrix_generation_stock.json").read_text(encoding="utf-8")
@@ -212,20 +215,13 @@ def test_clear_data_rejected_while_data_task_running(
     # 模拟一个运行中的数据任务持有重任务执行槽
     monkeypatch.setattr(pipeline_jobs, "_run_slot_owner", "pipeline-job-1")
     with pytest.raises(HTTPException) as exc_info:
-        data_api.clear_data(_request(repo))
+        asyncio.run(data_api.clear_data(_request(repo)))
     assert exc_info.value.status_code == 409
 
-    # fail-closed: 文件原样保留, 槽位持有者不变
+    # fail-closed: 文件原样保留, 槽位持有者不变, 也没有跑去执行清库
     assert stock_file.exists()
     assert pipeline_jobs._run_slot_owner == "pipeline-job-1"
     assert repo.calls == []
-
-    # 槽释放后可正常清空, 且清空结束时槽位被释放 (不阻塞后续任务)
-    monkeypatch.setattr(pipeline_jobs, "_run_slot_owner", None)
-    result = data_api.clear_data(_request(repo))
-    assert result == {"deleted_files": 1}
-    assert not stock_file.exists()
-    assert pipeline_jobs._run_slot_owner is None
 
 
 def test_clear_data_pauses_and_restores_minute_refresh(
@@ -252,7 +248,7 @@ def test_clear_data_pauses_and_restores_minute_refresh(
 
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(repo=repo)))
     request.app.state.minute_refresh = _MrsStub()
-    data_api.clear_data(request)
+    data_api._run_clear(request.app.state, lambda *a, **k: None)
     assert calls == ["stop", "start"]
 
     # 原本未运行则不重启
@@ -263,5 +259,5 @@ def test_clear_data_pauses_and_restores_minute_refresh(
             return {"running": False}
 
     request.app.state.minute_refresh = _MrsIdle()
-    data_api.clear_data(request)
+    data_api._run_clear(request.app.state, lambda *a, **k: None)
     assert calls == ["stop"]

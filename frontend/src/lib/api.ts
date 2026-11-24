@@ -5757,7 +5757,7 @@ export const api = {
   pipelineJobCancel: (id: string) =>
     request<{ cancelled: string }>(`/api/pipeline/jobs/${id}/cancel`, { method: 'POST' }),
   pipelineJobs: (limit = 20) =>
-    request<{ active_id: string | null; jobs: PipelineJobSummary[] }>(
+    request<{ active_id: string | null; active_kind: JobKind | null; jobs: PipelineJobSummary[] }>(
       `/api/pipeline/jobs?limit=${limit}`,
     ),
 
@@ -5787,7 +5787,8 @@ export const api = {
     request<{ job_id: string }>('/api/data/integrity/repair', {
       method: 'POST', body: JSON.stringify({ report_id: reportId }),
     }),
-  dataClear: () => request<{ deleted_files: number }>('/api/data/clear', { method: 'POST' }),
+  /** 清库已任务化：返回 job_id，轮询 /pipeline/jobs/{id} 拿阶段与进度，可取消。 */
+  dataClear: () => request<{ job_id: string }>('/api/data/clear', { method: 'POST' }),
   refreshCache: () => request<{ ok: boolean }>('/api/data/refresh-cache', { method: 'POST' }),
   enrichedSchema: (table: string) => request<EnrichedField[]>(`/api/data/schema/${table}`),
 
@@ -7067,8 +7068,14 @@ export interface MaintenanceStatus {
   last?: { id: string; status: 'succeeded' | 'failed'; error: string | null; finished_at: string | null } | null
 }
 
+export type JobKind =
+  | 'pipeline' | 'adj_factor' | 'instruments' | 'handbook'
+  | 'clear' | 'integrity' | 'minute' | 'extend' | 'repair' | 'rebuild' | 'slate'
+
 export interface PipelineJob {
   id: string
+  /** 任务类别：历史列表与进度面板按它分流（清库不能挂在盘后同步上）。 */
+  kind: JobKind
   status: 'pending' | 'running' | 'succeeded' | 'failed'
   stage: string
   progress: number          // 0-100 整体进度

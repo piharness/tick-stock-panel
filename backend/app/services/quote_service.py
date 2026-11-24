@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
@@ -39,8 +40,12 @@ from app.market_time import CN_TZ, cn_now, cn_today
 from app.parquet import scan_daily_parquet
 from app.polars_guard import guarded_collect
 from app.services.index_const import CORE_INDEX_SYMBOLS
+from app.services.job_context import current_job_id
 from app.strategy.intraday_signals import IntradaySignalEvaluator
 from app.strategy.monitor import format_alert_quote
+
+# 没有显式 owner 的暂停（老调用）共用一个键：仍保持旧的布尔语义。
+_ANON_PAUSE_OWNER = "anonymous"
 
 # 告警来源 → 中文标签 (webhook 标题 / 系统通知标题共用)
 SOURCE_LABELS = {
@@ -263,9 +268,12 @@ class QuoteService:
         self._running = False
         self._enabled = False      # 全局开关 (持久化到 preferences)
         # 暂停态: 盘后管道/数据修正运行期间临时暂停取数, 防止与管道写同一批 parquet 竞态。
-        # 与 _enabled 不同 — pause 不改 preferences、不 stop 线程, 仅让轮询循环跳过取数;
-        # 进程重启后 _paused 归零, 从 preferences 恢复真实开关态, 无"假关闭"副作用。
-        self._paused = False
+        # 与 _enabled 不同 — pause 不改 preferences、不 stop 线程, 仅让轮询循环跳过取数。
+        # 按持有者记账而不是一个布尔: 任务卡死时 finally 不会执行, 布尔会永久停在
+        # True, 实时行情静默停摆且没有任何恢复入口。记了所有者, terminate 就能
+        # 按 job_id 收回 (force_resume)。
+        self._pause_owners: set[str] = set()
+        self._pause_lock = threading.Lock()
         self._interval = self.DEFAULT_INTERVAL
         self._thread: threading.Thread | None = None
         self._repo = None          # 延迟注入, 避免循环导入
@@ -379,39 +387,64 @@ class QuoteService:
     # 临时暂停 (盘后管道/数据修正期间, 防止写盘竞态)
     # ================================================================
 
-    def pause(self) -> None:
+    def pause(self, owner: str | None = None) -> None:
         """临时暂停行情轮询取数 (不关闭线程、不改 preferences)。
 
         用于盘后管道/数据修正运行期间, 防止实时行情覆写管道正在写的 parquet。
         与 stop() 的区别: 线程继续存活但跳过 _fetch_quotes; preferences 开关态不变,
-        管道结束调用 resume() 即恢复。线程级检查, 即时生效, 无 join 等待。
+        退出暂停即恢复。按 owner 记账: 多个持有者互不覆盖，先退出的不会把仍在
+        运行的那个的暂停解除。
         """
-        self._paused = True
-        logger.info("行情轮询已临时暂停 (管道/修正运行中)")
+        key = owner or _ANON_PAUSE_OWNER
+        with self._pause_lock:
+            first = not self._pause_owners
+            self._pause_owners.add(key)
+        if first:
+            logger.info("行情轮询已临时暂停 (管道/修正运行中, owner=%s)", key)
 
-    def resume(self) -> None:
-        """恢复暂停的行情轮询取数 (对应 pause)。"""
-        self._paused = False
-        logger.info("行情轮询已恢复")
+    def resume(self, owner: str | None = None) -> None:
+        """解除自己的暂停 (对应 pause)；还有别的持有者时保持暂停。"""
+        key = owner or _ANON_PAUSE_OWNER
+        with self._pause_lock:
+            if key not in self._pause_owners:
+                return
+            self._pause_owners.discard(key)
+            still_paused = bool(self._pause_owners)
+        if not still_paused:
+            logger.info("行情轮询已恢复")
+
+    def force_resume(self, owner: str) -> bool:
+        """按所有者强制解除暂停（任务被终止时用，线程可能永远回不来执行 finally）。"""
+        with self._pause_lock:
+            if owner not in self._pause_owners:
+                return False
+            self._pause_owners.discard(owner)
+            still_paused = bool(self._pause_owners)
+        if not still_paused:
+            logger.warning("行情轮询已强制恢复: 持有者 job=%s 被终止", owner)
+        return True
 
     def is_paused(self) -> bool:
         """是否处于临时暂停态 (管道运行期间)。"""
-        return self._paused
+        with self._pause_lock:
+            return bool(self._pause_owners)
 
     @contextmanager
-    def paused(self):
+    def paused(self, owner: str | None = None):
         """上下文管理器: 进入时暂停轮询取数, 退出时(含异常)自动恢复。
 
         供盘后管道/数据修正复用:
             with quote_service.paused():
                 run_pipeline(...)
-        无论正常结束还是异常/crash, finally 都会 resume (除非进程直接被 kill)。
+        没显式给 owner 时用当前任务 id（任务里调用）或一次性令牌（普通请求）。
+        一次性令牌让并发/嵌套的暂停变成计数语义，不再互相踩。
         """
-        self.pause()
+        key = owner or current_job_id() or f"anon-{uuid.uuid4().hex}"
+        self.pause(key)
         try:
             yield
         finally:
-            self.resume()
+            self.resume(key)
 
     def boot_check(self) -> None:
         """启动时检查 preferences，若 enabled 则自动启动。
@@ -634,7 +667,7 @@ class QuoteService:
         return {
             "enabled": self._enabled,
             "running": self._running,
-            "paused": self._paused,
+            "paused": self.is_paused(),
             "mode": mode,
             "realtime_allowed": mode != "none",
             "interval_s": self._interval,
@@ -677,7 +710,7 @@ class QuoteService:
             try:
                 # 管道/数据修正运行期间临时暂停取数, 防止与管道写同一批 parquet 竞态。
                 # 线程继续存活 + 分片 sleep, resume() 后即时恢复, 无需重启线程。
-                if not self._paused:
+                if not self.is_paused():
                     phase = self._market_phase()
                     if self._should_fetch_for_phase(phase):
                         is_final = phase in {"morning_final", "close_final"}

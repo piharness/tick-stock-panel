@@ -315,6 +315,7 @@ class JobStore:
         timeout_s: int | None = None,
         *,
         long_running: bool = False,
+        kind: str = "pipeline",
     ) -> tuple[str, bool]:
         """单飞创建任务。返回 (job_id, is_new)。
 
@@ -328,6 +329,8 @@ class JobStore:
         timeout_s: reap_stale 判定「进度停滞卡死」的阈值。None 时读取用户配置。
         long_running: timeout_s 为 None 时,是否读取长任务配置;普通任务默认
             1200s,分钟K全市场同步等长任务默认 1800s。
+        kind: 任务类别 (pipeline/adj_factor/instruments/handbook/clear/integrity...)。
+            页面的同步历史只展示自己那一类;清库这种破坏性任务绝不能混进盘后历史。
         """
         if timeout_s is None:
             from app.services import preferences
@@ -348,6 +351,7 @@ class JobStore:
             created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
             job = {
                 "id": job_id,
+                "kind": kind,
                 "status": "pending",
                 "stage": "init",
                 "progress": 0,
@@ -557,7 +561,8 @@ class JobStore:
                 self.terminate(
                     jid,
                     f"超时自动取消: 排队等待重任务执行槽 {int(stalled_s)}s 超过阈值 {timeout_s}s — "
-                    "槽位可能被长回测或未正常退出的残留任务占用, 请稍后重试; 若持续出现请重启后端")
+                    "槽位被更早的重任务(长回测/全市场同步)占用; 该任务被取消时容量会自动收回, "
+                    "请在其结束后重试")
             else:
                 logger.warning(
                     "reap_stale: 强制取消卡死 job %s (进度停滞 %.0fs > 阈值 %ss, 总运行 %.0fs)",
@@ -570,9 +575,14 @@ class JobStore:
             self.terminate(jid, f"超时自动取消: 总运行 {int(total_s)}s 超过硬上限,已请求终止")
 
     def terminate(self, job_id: str, message: str) -> None:
-        """标记失败 + 请求协作式终止 + 强制释放执行槽(带所有权)。
+        """标记失败 + 请求协作式终止 + 强制释放执行槽与重任务容量(带所有权)。
 
         reap_stale(判定卡死)与手动取消端点共用。
+
+        容量必须一起收回: 线程可能永远卡在阻塞调用里(网络读、9p 上的长 I/O),
+        回不来执行 ``slot()`` 的 finally。只有 run slot 收回、limiter 不收回时,
+        下一次点击能过 run slot 却仍排在「等待其他计算任务完成…」上, 直到排队
+        超时再失败 —— 2026-11-24 的现场就是「点多少次都是同一个错, 只能重启」。
         """
         # 先置 cancel flag 再标失败: fail() 弹出记录后,僵尸线程的 progress()
         # 依赖 flag(而非记录)感知取消。
@@ -582,24 +592,45 @@ class JobStore:
         # job 已标记 failed 且已请求终止; 僵尸线程即使后续短暂写盘,
         # 也会在下一个分块回调处自行退出, 下次拉取会覆盖, 安全。
         release_run_slot(job_id)
+        release_heavy_slot(job_id)
+        # 发布标记也要收回: 标记里的 owner_job 就是 job_id。不收回时即使容量放开了,
+        # 新任务第一次写 enriched 仍会撞 "another enriched publication is active"
+        # ——活跃对象还在，心跳超时都救不了（详见 enriched_generation）。
+        release_publications(self._store_dir.parent, job_id)
+        # 其余「任务持有、只在 finally 释放」的资源（行情暂停、手册链子进程）。
+        _run_terminate_hooks(job_id)
 
-    def clear(self) -> None:
-        """清空所有任务（内存 + 磁盘文件 + 取消标志）。"""
+    def clear(self, keep: str | None = None) -> None:
+        """清空任务历史（内存 + 磁盘文件 + 取消标志）。
+
+        keep: 保留这一个任务（正在跑的清库任务自己）。不保留的话清库跑到一半
+        会把自己的记录、`_active_id`、取消标志一起删掉 —— 页面随即 404，
+        而且从此没有任何入口能取消它。
+        """
         with self._lock:
-            self._active_jobs.clear()
-            self._active_id = None
+            for job_id in list(self._active_jobs):
+                if job_id != keep:
+                    self._active_jobs.pop(job_id, None)
+            if self._active_id != keep:
+                self._active_id = None
             for f in self._store_dir.glob("*.json"):
+                if keep is not None and f.stem == keep:
+                    continue
                 try:
                     f.unlink()
                 except Exception:
                     pass
         with _CANCEL_FLAGS_LOCK:
-            _CANCEL_FLAGS.clear()
+            for job_id in list(_CANCEL_FLAGS):
+                if job_id != keep:
+                    _CANCEL_FLAGS.pop(job_id, None)
 
 
 def _summary(j: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": j["id"],
+        # 旧记录没有 kind: 一律按 pipeline 读, 不能让历史面板把清库当成盘后同步
+        "kind": j.get("kind") or "pipeline",
         "status": j["status"],
         "stage": j["stage"],
         "progress": j["progress"],
@@ -686,11 +717,19 @@ def run_with_capacity(job_id: str, fn: Callable[[], _Result]) -> _Result:
         if isinstance(configured, (int, float)) and configured > 0:
             wait_s = configured
     try:
-        with shared_heavy_job_limiter.slot("exclusive", timeout=wait_s, cancel_event=cancel_event):
+        with shared_heavy_job_limiter.slot(
+            "exclusive", timeout=wait_s, cancel_event=cancel_event, owner=job_id,
+        ):
             if is_cancelled(job_id):
                 raise JobCancelledError(job_id)
             job_store.start(job_id)
-            return fn()
+            # 资源归属：这段上下文里创建的可归属资源（enriched 发布标记、实时行情
+            # 暂停、手册链子进程）都记在 job_id 名下，terminate 时按此收回。
+            # 否则线程卡死时 finally 永不执行 → 发布标记挂着、行情永久暂停。
+            from app.services.job_context import job_context
+
+            with job_context(job_id):
+                return fn()
     except HeavyJobCancelledError as exc:
         raise JobCancelledError(job_id) from exc
     except HeavyJobLimitTimeoutError:
@@ -698,9 +737,33 @@ def run_with_capacity(job_id: str, fn: Callable[[], _Result]) -> _Result:
         # API 层的 except JobCancelledError 分支无需(也无法)再改写状态。
         job_store.fail(
             job_id,
-            f"排队等待重任务执行槽超时({int(wait_s)}s): 槽位可能被长回测或未正常退出的"
-            "残留任务占用, 请稍后重试; 若持续出现请重启后端")
+            f"排队等待重任务执行槽超时({int(wait_s)}s): 槽位被更早的重任务占用; "
+            "该任务被取消/超时时容量会自动收回, 请稍后重试")
         raise JobCancelledError(job_id)
+
+
+# ================================================================
+# 终止钩子 — 收回「不在 job_store 记账、却由任务持有」的资源
+# ================================================================
+# 能力边界: pipeline_jobs 只认识 job 与执行槽，不认识行情服务、子进程。
+# 这些资源同样是「创建在任务里、只在 finally 释放」，线程卡死就永久泄漏：
+#   - 实时行情临时暂停 (QuoteService._paused)：不收回 ⇒ 实时行情静默停止；
+#   - 手册链子进程 (Popen)：不收回 ⇒ 子进程成孤儿，线程阻塞在 stdout 读上。
+# 用注册表做倒置依赖，由 main 启动时接线；回收失败只记日志，不阻断 terminate。
+_TERMINATE_HOOKS: dict[str, Callable[[str], None]] = {}
+
+
+def register_terminate_hook(name: str, hook: Callable[[str], None]) -> None:
+    """注册 terminate 钩子（同名覆盖，避免重复启动时堆积）。"""
+    _TERMINATE_HOOKS[name] = hook
+
+
+def _run_terminate_hooks(job_id: str) -> None:
+    for name, hook in list(_TERMINATE_HOOKS.items()):
+        try:
+            hook(job_id)
+        except Exception:  # noqa: BLE001 —— 收回失败不能阻碍 terminate 主职责
+            logger.exception("terminate hook %s 失败: job=%s", name, job_id)
 
 
 # ================================================================
@@ -749,6 +812,58 @@ def release_run_slot(owner: str | None = None) -> None:
         if owner is not None and _run_slot_owner is not None and _run_slot_owner != owner:
             return
         _run_slot_owner = None
+
+
+def run_slot_owner() -> str | None:
+    """当前重任务执行槽的持有者（None = 空闲）。
+
+    破坏性入口（清库）用它做 fail-closed 预检：槽被非任务入口（如旧版的
+    "data_clear"）占着时，create() 挡不住，只有这里能提前 409。
+    """
+    with _run_slot_lock:
+        return _run_slot_owner
+
+
+def release_heavy_slot(owner: str) -> bool:
+    """收回 owner 占着的重任务容量(同 release_run_slot 的所有权语义)。
+
+    与 run slot 的区别: 容量是 limiter 里的计数, 不收回的话排队者会一直等到
+    超时; 收回后 owner 线程迟到的 finally 会被 limiter 识别为「已收回」并忽略。
+
+    已知边界: 僵尸线程若停在 enriched 发布的中间, 会留下一个心跳仍新鲜的
+    publishing 标记, 新任务写 enriched 时可能撞上 "another enriched publication
+    is active" 直到标记超时(CLAIM_STALE_SECONDS=600s)。这只影响「立刻重试」,
+    定时阶梯(16:20/18:20/20:20)会自愈; 换来的收益是排队不再被僵尸卡死。
+    """
+    from app.services.heavy_job_limiter import shared_heavy_job_limiter
+
+    released = shared_heavy_job_limiter.force_release(owner)
+    if released:
+        logger.warning(
+            "terminate: 收回 job %s 的重任务容量(执行线程可能仍卡在阻塞调用里)", owner,
+        )
+    return released
+
+
+def release_publications(data_dir: Path, owner: str) -> list[str]:
+    """收回 owner 名下的 enriched 发布标记（见 enriched_generation 的同名函数）。
+
+    terminate 之后线程可能仍停在「发布进行中」：标记不收回，后续发布一直撞
+    "another enriched publication is active"，读取方也一直 fail-closed。
+    只认 owner_job 匹配的标记；实时行情刷盘没有 owner，一律不碰。
+    """
+    from app.enriched_generation import abandon_publication_for_job
+
+    try:
+        released = abandon_publication_for_job(Path(data_dir), owner)
+    except Exception:  # noqa: BLE001 —— 收回失败不能阻碍 terminate 的主职责
+        logger.exception("terminate: 收回 job %s 的发布标记失败", owner)
+        return []
+    if released:
+        logger.warning(
+            "terminate: 收回 job %s 的 enriched 发布标记 %s", owner, "、".join(released),
+        )
+    return released
 
 
 def _parse_utc(ts: str) -> datetime:

@@ -340,6 +340,20 @@ async def _application_lifespan(app: FastAPI):
     qs.set_repo(repo)
     qs.boot_check()
 
+    # 任务被 terminate 时要收回「不在 job_store 记账、只在 finally 释放」的资源：
+    # 行情暂停（不收回 ⇒ 实时行情静默停摆）与手册链子进程（不收回 ⇒ 孤儿进程）。
+    from app.services.pipeline_jobs import register_terminate_hook
+
+    register_terminate_hook("quote-pause", qs.force_resume)
+    from app.services.maintenance import kill_handbook_child
+
+    register_terminate_hook("handbook-child", kill_handbook_child)
+    # 清库会临时停掉全量分钟增量线程（独立写 kline_minute，不占 run slot）。
+    # 清库任务被判死时 finally 不执行，必须由钩子恢复，否则它永久停摆。
+    from app.api.data import restore_minute_refresh
+
+    register_terminate_hook("minute-refresh", restore_minute_refresh)
+
     # QuoteService 需要访问 strategy_monitor 等单例
     # 先创建 strategy_monitor，再注入 app.state
     from app.strategy.monitor import StrategyMonitorService

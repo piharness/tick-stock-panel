@@ -36,8 +36,43 @@ logger = logging.getLogger(__name__)
 
 ProgressCb = Callable[..., None]
 
+#: enriched 覆盖校验 / 收盘价比对只看最近多少个日期分区。
+#:
+#: 2026-11-19 起每日维护固定在 sync_adj 之后被 watchdog 杀掉, 原因就是这件事:
+#: 覆盖校验逐个遍历全部 5,315 个历史分区, 每个分区要开两个 parquet (daily 月分区
+#: + enriched 日分区)。宿主机 9p 挂载冷读实测 ~0.34s/分区 ⇒ 30 分钟静默 I/O,
+#: 超过 1200s 停滞阈值, 任务在 compute_enriched 之前就判死, 后面的指数/ETF 同步
+#: 与手册链全都没跑 —— 页面表现是「每日维护一直报错 + 手册数据停在昨天」。
+#:
+#: 窗口 30 个交易日 (≈6 周) 足够, 因为异常分区只诞生在前沿: 实时 flush 只写「今天」
+#: 那一个分区, 历史分区由当日管道按官方日线重算。更早的历史缺口属于「数据修正」
+#: (override_start_date 全量重算) 的职责, 不该让每日链路重复付这个成本。
+_ENRICHED_VERIFY_WINDOW = 30
 
-def _prune_partial_enriched_partitions(daily_dir: Path, enriched_dir: Path) -> list[str]:
+
+def _recent_enriched_partitions(enriched_dir: Path, max_dates: int) -> list[Path]:
+    """取最近 max_dates 个 enriched 日期分区, 升序。
+
+    分区名是 ISO 日期 (date=YYYY-MM-DD), 字符串序即时间序, 不需要读 parquet。
+    """
+    parts: list[Path] = []
+    for part in enriched_dir.glob("date=*"):
+        try:
+            date.fromisoformat(part.stem.split("=", 1)[1])
+        except ValueError:
+            continue
+        parts.append(part)
+    parts.sort(key=lambda p: p.name)
+    return parts[-max_dates:] if max_dates > 0 else parts
+
+
+def _prune_partial_enriched_partitions(
+    daily_dir: Path,
+    enriched_dir: Path,
+    *,
+    max_dates: int = _ENRICHED_VERIFY_WINDOW,
+    on_check: Callable[[str], None] | None = None,
+) -> list[str]:
     """删除 symbol 覆盖不完整的 enriched 日期分区, 返回被删的日期 (#223)。
 
     自选实时路径会在全市场 enriched 生成前提前创建当日分区 (只有几只自选),
@@ -46,13 +81,20 @@ def _prune_partial_enriched_partitions(daily_dir: Path, enriched_dir: Path) -> l
     行数: 正常剔除停牌记录会让 enriched 少行, 导致每次管道都删除重算。
     删除后 run_pipeline(new_dates_only=True) 会把它们当"新日期"全市场补齐。
     daily 同日分区不存在 (今日日K尚未同步) 时不处理, 留给当日正常流程。
+
+    max_dates / on_check: 只校验最近 max_dates 个分区 (见 _ENRICHED_VERIFY_WINDOW),
+    并逐个回调 on_check(日期) —— 调用方用它发进度心跳, 否则慢盘上的长时间 I/O
+    会被 1200s 停滞阈值误杀。
     """
     import shutil
 
     pruned: list[str] = []
-    for part in enriched_dir.glob("date=*"):
+    for part in _recent_enriched_partitions(enriched_dir, max_dates):
+        day_iso = part.stem.split("=", 1)[1]
+        if on_check is not None:
+            on_check(day_iso)
         try:
-            day = date.fromisoformat(part.stem.split("=")[1])
+            day = date.fromisoformat(day_iso)
         except ValueError:
             continue
         # kline_daily 月分区: 定位到日所在的月分区 (缺席回退日分区), 数据再按 date 过滤到当日。
@@ -93,18 +135,21 @@ def _prune_stale_price_partitions(
     股票当日收盘价与官方日线不符), #223 的行数校验识别不到。对最近若干交易日
     做值级比对: enriched.raw_close 与 daily.close 任一标的差超过半个最小报价
     单位即删分区, 由后续增量重算按官方日线全市场重建。
+
+    候选集合直接从最近 max_dates 个 enriched 分区取, 不再遍历全历史分区逐个
+    stat —— 这里本来只比对最新几天, 却要为 5,315 个历史分区做 locate_partition_dir。
     """
     import shutil
 
     candidates: list[str] = []
-    for p in enriched_dir.glob("date=*"):
+    for part in reversed(_recent_enriched_partitions(enriched_dir, max_dates)):
         try:
-            day = date.fromisoformat(p.stem.split("=", 1)[1])
+            day = date.fromisoformat(part.stem.split("=", 1)[1])
         except ValueError:
             continue
         if locate_partition_dir(daily_dir, "kline_daily", day).exists():
             candidates.append(day.isoformat())
-    common = sorted(candidates, reverse=True)[:max_dates]
+    common = candidates[:max_dates]
     pruned: list[str] = []
     for ds in common:
         try:
@@ -490,14 +535,25 @@ def run_now(
     daily_dir = repo.store.data_dir / "kline_daily"
     # 月分区后目录数是月数而非天数; 这里与 enriched 目录数比较判方向,
     # 必须用真实日期数 (月分区读 date 列), 否则 121 < 367 会把增量检测关死。
-    daily_days = len(list_partition_dates(daily_dir)) if daily_dir.exists() else 0
+    # 读一次复用两处: 每个分区一次读盘, 重复调用在 9p 上是 18s 级开销。
+    daily_date_list = list_partition_dates(daily_dir) if daily_dir.exists() else []
+    daily_days = len(daily_date_list)
     prev_enriched_days = len(list(enriched_dir.glob("date=*"))) if enriched_exists else 0
 
     # 部分分区修复 (#223) + 收盘价过期分区修复: 删除被实时合并提前创建、覆盖不全
     # 或收盘价停留在竞价前快照的 enriched 分区, 让下方计数比较与增量计算把它们
     # 重新当新日期处理 (值级比对以官方日线为准, 实时源不纠错也能自愈)
     if enriched_exists:
-        partial_pruned = _prune_partial_enriched_partitions(daily_dir, enriched_dir)
+        # 进度心跳: 校验与比对要读盘, 慢盘上数分钟无输出会被 reap_stale 判成卡死。
+        emit("compute_enriched", 62,
+             f"校验最近 {_ENRICHED_VERIFY_WINDOW} 个 enriched 分区…")
+
+        def _verify_progress(day_iso: str) -> None:
+            emit("compute_enriched", 63, f"校验 enriched 分区 {day_iso}", skip_log=True)
+
+        partial_pruned = _prune_partial_enriched_partitions(
+            daily_dir, enriched_dir, on_check=_verify_progress,
+        )
         stale_pruned = _prune_stale_price_partitions(daily_dir, enriched_dir)
         pruned_dates = sorted(set(partial_pruned) | set(stale_pruned))
         if pruned_dates:
@@ -517,7 +573,7 @@ def run_now(
     if daily_days > prev_enriched_days and enriched_exists:
         # kline_daily 月分区的真实日期从数据 date 列读; enriched 保持日分区,
         # 目录名即日期。
-        daily_dates = sorted(list_partition_dates(daily_dir))
+        daily_dates = sorted(daily_date_list)
         enriched_dates = sorted(
             date.fromisoformat(d.stem.split("=")[1]) for d in enriched_dir.glob("date=*")
         )
@@ -1162,7 +1218,7 @@ def _push_phase_change_alert(data_dir) -> None:
     logger.info("phase change alert: %s (severity=%s)", msg, severity)
 
 
-def _run_tracked(fn, job_label: str) -> bool:
+def _run_tracked(fn, job_label: str, *, kind: str = "pipeline") -> bool:
     """调度触发时包装 JobStore 跟踪，确保同步历史有记录。
 
     单飞: 若已有活跃(pending∨running)任务(手动同步中), 本次调度直接跳过, 不并发。
@@ -1177,7 +1233,7 @@ def _run_tracked(fn, job_label: str) -> bool:
         try_acquire_run_slot,
     )
 
-    job_id, is_new = job_store.create()
+    job_id, is_new = job_store.create(kind=kind)
     if not is_new:
         logger.info("scheduled %s 跳过: 已有活跃任务在运行 (job_id=%s)", job_label, job_id)
         return False
@@ -1199,9 +1255,11 @@ def _run_tracked(fn, job_label: str) -> bool:
     except JobCancelledError:
         # 已由 terminate() 标记失败(卡死/手动取消), 拉取线程在分块回调处自行退出
         logger.warning("scheduled %s cancelled: job_id=%s", job_label, job_id)
-    except Exception:
+    except Exception as e:  # noqa: BLE001
         logger.exception("scheduled %s failed: job_id=%s", job_label, job_id)
-        job_store.fail(job_id, f"scheduled {job_label} failed")
+        # 带上异常文本：run_all 的「未补齐（ETF 2026-11-23）」这类结论就写在里面，
+        # 只写 "scheduled X failed" 会让页面重新变成「只有失败、没有原因」。
+        job_store.fail(job_id, f"scheduled {job_label} failed: {e}")
     finally:
         release_run_slot(job_id)
     return succeeded
@@ -1497,6 +1555,7 @@ def _register_shortline_audit_jobs(scheduler, repo) -> None:
 HANDBOOK_REFRESH_SLOTS = (
     ("handbook_refresh", 16, 20),
     ("handbook_refresh_retry", 18, 20),
+    ("handbook_refresh_late", 20, 20),
 )
 
 
@@ -1513,22 +1572,42 @@ def _run_handbook_refresh(repo) -> bool:
     """已覆盖最近交易日就什么都不做；否则走 _run_tracked（单飞 + 重任务槽）。
 
     为什么不等页面：手册链只在有人打开数据页时才补，等于把「自动维护」绑在浏览器上。
-    16:20 给盘后管道留 45 分钟；18:20 兜「管道仍在跑」与供应商迟交 —— 与名单定稿
-    的两次时点同一思路：幂等阶段多跑一次，代价远小于当天永久缺一天。
+    16:20 给盘后管道留 45 分钟；18:20 兜「管道仍在跑」与供应商迟交；20:20 再兜一次
+    —— 三次都幂等（`run_all` 先算缺口，全最新就只写一条日志），代价远小于当天永久
+    缺一天。这条阶梯就是「维护入口自愈」：任一次失败，下一次自己补，不需要人记住点哪。
     """
     from app.services import maintenance
+
+    # 阶梯要在「没人开页面」时也生效：卡死的上一次任务不会自己消失，不先回收就会
+    # 永远被单飞挡在门外（16:20/18:20/20:20 三次全跳过，当天彻底缺一天）。
+    # reap 本身幂等：任务在正常跑且进度在推进时不会被动。
+    try:
+        from app.services.pipeline_jobs import job_store
+
+        job_store.reap_stale()
+    except Exception:  # noqa: BLE001 —— 回收失败不该阻断本轮判断
+        logger.exception("handbook refresh: 回收卡死任务失败")
 
     try:
         st = maintenance.status(repo.store.data_dir)
     except Exception:  # noqa: BLE001 — 状态读不到就按需要更新处理，不能在调度器里抛
         logger.exception("handbook refresh: 状态读取失败，按需要更新处理")
-        st = {"stale": True}
+        st = {"stale": True, "domains": []}
     if not st.get("stale"):
         logger.info("handbook refresh skipped: 已覆盖最近交易日 (%s)", st.get("expected"))
         return False
+    if st.get("domains"):
+        logger.info(
+            "handbook refresh plan: %s",
+            " → ".join(
+                f"{d['id']}({'落后' if d['stale'] else 'ok'}: {d['detail']})"
+                for d in st["domains"]
+            ),
+        )
     return _run_tracked(
         lambda on_progress=None: _handbook_refresh_job(repo, on_progress),
         "handbook_refresh",
+        kind="handbook",
     )
 
 
@@ -1603,7 +1682,7 @@ def _register_slate_finalize_jobs(scheduler, repo) -> None:
             # 都报成最后一个 id，任务列表里从此分不清是谁跑失败了。
             # `on_progress` 必须接住：`_run_tracked` 用关键字传它。
             lambda job_id=job_id, on_progress=None: _run_tracked(
-                lambda on_progress=None: _run_slate_finalize(repo), job_id),
+                lambda on_progress=None: _run_slate_finalize(repo), job_id, kind="slate"),
             trigger=CronTrigger(day_of_week="mon-fri",
                                 hour=hour, minute=minute,
                                 timezone="Asia/Shanghai"),
@@ -1719,7 +1798,7 @@ def start_scheduler(repo: KlineRepository, capset: CapabilitySet) -> AsyncIOSche
         return result
 
     scheduler.add_job(
-        lambda: _run_tracked(_instruments_task, "instruments_sync"),
+        lambda: _run_tracked(_instruments_task, "instruments_sync", kind="instruments"),
         trigger=CronTrigger(day_of_week="mon-fri",
                             hour=inst_sched["hour"], minute=inst_sched["minute"],
                             timezone="Asia/Shanghai"),
