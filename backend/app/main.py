@@ -142,6 +142,29 @@ def _start_trading_days_warmup(data_dir) -> None:
     threading.Thread(target=_run, name="trading-days-warm", daemon=True).start()
 
 
+def _start_crowding_warmup(repo) -> None:
+    """后台预热「拥挤度判决」—— 全史 5316 个 enriched 分区、1530 万行、实测 30.8s。
+
+    该结论本身是 stale-while-revalidate（数据写入时打脏标记、下一次读后台重算），
+    读路径永不阻塞。但**进程内还没有值**时第一个读会同步算一次，而那正好是
+    「重启后第一次打开市场常识页」。这里抢在那个请求之前把它算完。
+
+    daemon 线程，失败只记日志：预热不改变任何判定，只是把成本挪到没人等的时刻。
+    """
+    def _run() -> None:
+        try:
+            from app.services.market_percentiles import build_crowding_verdict
+
+            verdict = build_crowding_verdict(repo)
+            logger.info("crowding verdict warmup: n=%s", verdict.get("n"))
+        except Exception as exc:  # noqa: BLE001 — 预热失败不影响任何功能
+            logger.warning("crowding verdict warmup failed: %s", exc)
+
+    import threading
+
+    threading.Thread(target=_run, name="crowding-warm", daemon=True).start()
+
+
 def _start_provider_warmup() -> None:
     """后台预热行情客户端 —— 免费档的**第一次真实请求**要付 ~100s。
 
@@ -290,6 +313,17 @@ async def _application_lifespan(app: FastAPI):
     # 交易日历预热 — kline_daily 的 246 个月分区逐个读 date 列要 19.5s,
     # 冷启动后首次打开龙虎榜/博弈链路会卡在它上面。与上面两个预热互不阻塞。
     _start_trading_days_warmup(repo.store.data_dir)
+
+    # 拥挤度判决预热 — 全史 5316 个 enriched 分区、1530 万行、实测 30.8s。
+    # 它本身是 stale-while-revalidate(写入时打脏、下一读后台重算), 但**进程内
+    # 还没有值**时第一个读会同步算 —— 那正好是「重启后第一次打开常识页」。
+    # 放到后台线程里抢在这个请求之前算完, 失败只记日志。
+    _start_crowding_warmup(repo)
+
+    # 视图按需挂载后的补充预热: 只有首屏真正用到的那几张 (kline_index_daily
+    # 257 个分区 3.75s + 四张字典表各 0.01s) 值得抢在用户前面挂;
+    # 贵的 kline_daily(14.7s)/kline_enriched(40.0s) 故意不预热 —— 见其 docstring。
+    repo.store.warm_common_views()
 
     # 行情客户端预热 — 免费档每个进程的第一次真实请求要付 ~100s 握手成本。
     # 个股分析的「上游前复权补齐」正好长在这条冷路径上，挪到后台线程。

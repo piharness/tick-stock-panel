@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import threading
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -301,6 +303,76 @@ def get_card(data_dir: Path, card_id: str) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+# ── 读取缓存：账本是只追加的，按文件签名复用解析结果 ──────────────────
+#
+# 为什么需要：`/api/decision/overview` 首屏会把同一批文件读好几遍 ——
+# `load_cards` 被它自己与 `ledger_health` 各调一次，settlements 被
+# `outstanding` / `load_settlements` / `ledger_health` 各扫一次。容器内实测
+# 42.7 + 49.3 + 57.1ms，其中绝大部分是同一份 283KB 文件的重复解析。
+#
+# 判据是**文件签名**而不是时间窗口：cards 用一次 `os.scandir` 取 (名字, mtime,
+# 大小)，settlements 一次 `stat`。写入方都是本进程的 `save_card` /
+# `append_settlements`（临时文件 + 原子替换 / 只追加），签名必然变化。
+#
+# **不缓存异常**：账本损坏时要每次重新读、重新抛，绝不把 `LedgerCorruptError`
+# 变成一个"记住的结论"。
+_LEDGER_CACHE_LOCK = threading.Lock()
+_CARDS_CACHE: dict[str, tuple[tuple[tuple[str, int, int], ...], list[dict[str, Any]]]] = {}
+_SETTLE_CACHE: dict[str, tuple[tuple[int, int], list[dict[str, Any]], list[str]]] = {}
+
+
+def _cards_signature(directory: Path) -> tuple[tuple[str, int, int], ...]:
+    sig: list[tuple[str, int, int]] = []
+    try:
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if not (entry.name.startswith("dc-") and entry.name.endswith(".json")):
+                    continue
+                try:
+                    st = entry.stat()
+                except OSError:
+                    continue
+                sig.append((entry.name, st.st_mtime_ns, st.st_size))
+    except OSError:
+        return ()
+    sig.sort()
+    return tuple(sig)
+
+
+def _scan_settlements_cached(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    """`_scan_settlements` 的带签名缓存版本（签名不变就不重读 283KB）。"""
+    try:
+        st = path.stat()
+    except OSError:
+        return [], []
+    sig = (st.st_mtime_ns, st.st_size)
+    key = str(path)
+    with _LEDGER_CACHE_LOCK:
+        hit = _SETTLE_CACHE.get(key)
+    if hit is not None and hit[0] == sig:
+        return hit[1], hit[2]
+
+    rows, problems = _scan_settlements(path)
+    with _LEDGER_CACHE_LOCK:
+        _SETTLE_CACHE[key] = (sig, rows, problems)
+    return rows, problems
+
+
+def invalidate_ledger_cache(data_dir: Path | None = None) -> None:
+    """显式失效（写完后立刻要读到新值、或测试隔离时用）。
+
+    正常情况下不需要调用：签名会自己发现变化。这里只为"同一秒内同尺寸改写"
+    这种极端情形留一个手动入口。
+    """
+    with _LEDGER_CACHE_LOCK:
+        if data_dir is None:
+            _CARDS_CACHE.clear()
+            _SETTLE_CACHE.clear()
+            return
+        _CARDS_CACHE.pop(str(cards_dir(data_dir)), None)
+        _SETTLE_CACHE.pop(str(settlements_path(data_dir)), None)
+
+
 def load_cards(data_dir: Path) -> list[dict[str, Any]]:
     """全部决策卡，按 as_of 升序（同一天按 created_at）。
 
@@ -308,10 +380,21 @@ def load_cards(data_dir: Path) -> list[dict[str, Any]]:
     `LedgerCorruptError` 并列出全部问题文件——fail-closed，不静默跳过。
     cards 目录只有 `save_card` 一个写入方，`dc-*.json` 里出现非决策卡
     就是损坏或外部污染，不存在合法的跳过理由。
+
+    返回的是**新的 list**（行 dict 仍是共享的只读快照）：调用方会 `[-5:]` /
+    排序 / 切片，共享同一个 list 对象迟早被就地改坏。全仓没有任何调用方
+    就地修改卡片行（`build_card` 改的是正在构造的新卡）。
     """
     directory = cards_dir(data_dir)
     if not directory.is_dir():
         return []
+    sig = _cards_signature(directory)
+    key = str(directory)
+    with _LEDGER_CACHE_LOCK:
+        hit = _CARDS_CACHE.get(key)
+    if hit is not None and hit[0] == sig:
+        return list(hit[1])
+
     out: list[dict[str, Any]] = []
     bad: list[str] = []
     for path in sorted(directory.glob("dc-*.json")):
@@ -330,7 +413,9 @@ def load_cards(data_dir: Path) -> list[dict[str, Any]]:
             f"（fail-closed）：{'; '.join(bad)}"
         )
     out.sort(key=lambda c: (str(c.get("as_of")), str(c.get("created_at"))))
-    return out
+    with _LEDGER_CACHE_LOCK:
+        _CARDS_CACHE[key] = (sig, out)
+    return list(out)
 
 
 def append_settlements(data_dir: Path, rows: list[dict[str, Any]]) -> int:
@@ -405,14 +490,15 @@ def load_settlements(data_dir: Path) -> list[dict[str, Any]]:
     path = settlements_path(data_dir)
     if not path.exists():
         return []
-    rows, problems = _scan_settlements(path)
+    rows, problems = _scan_settlements_cached(path)
     if problems:
         more = "" if len(problems) <= 10 else f"；…共 {len(problems)} 处"
         raise LedgerCorruptError(
             f"结算流水有 {len(problems)} 处损坏，拒绝在残缺账本上继续"
             f"（fail-closed）：" + "；".join(problems[:10]) + more
         )
-    return rows
+    # 复制外层 list：缓存里那份不许被调用方的 sort/切片改坏（行 dict 仍是共享只读）
+    return list(rows)
 
 
 #: `ledger_health()` 的四态。它不是 `load_*` 的返回值，是**解释**：
@@ -470,11 +556,13 @@ def ledger_health(data_dir: Path) -> dict[str, Any]:
         "median_missing": 0,
     }
     if spath.exists():
-        rows, problems = _scan_settlements(spath)
-        text = spath.read_text(encoding="utf-8")
-        settle_info["lines"] = sum(1 for line in text.splitlines() if line.strip())
+        rows, problems = _scan_settlements_cached(spath)
+        # 非空行数 = 记录数 + 问题数：`_scan_settlements` 对每个非空行要么收进
+        # rows、要么记一条 problem，二者一一对应。旧实现为此把整份文件
+        # `read_text` 再 splitlines 一遍（同一份 283KB 的第二次全量读）。
+        settle_info["lines"] = len(rows) + len(problems)
         settle_info["rows"] = len(rows)
-        settle_info["problems"] = problems
+        settle_info["problems"] = list(problems)
         settle_info["filled_without_outcome"] = sum(
             1 for r in rows
             if (r.get("fill") or {}).get("status") == "FILLED" and r.get("outcome") is None)

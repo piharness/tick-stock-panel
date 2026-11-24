@@ -24,7 +24,6 @@ import polars as pl
 from app.tickflow.partitions import (
     is_monthly_daily_table,
     iter_partition_dirs,
-    list_partition_dates,
     locate_partition_dir,
     parse_partition_range,
     partition_dates,
@@ -124,14 +123,20 @@ def sessions(data_dir: Path, table: str = "kline_daily") -> list[str]:
 
     用分区目录名而不是"今天减一天"：节假日、停机、只补了一半的数据都在这里
     如实体现。**没有数据的那天不是交易日**——这是本层对"新鲜度"的唯一判据来源。
+
+    月分区表走 `kline_trading_days`（仓库声明的唯一日历取数点）：直接
+    `list_partition_dates` 对 590 个月分区逐个 `scan_parquet`，容器内实测
+    18,943ms，而本函数有 8 个调用方、其中一个在 `/api/decision/*` 的首屏路径上。
+    缓存源返回的是同一个集合（它内部就是 `list_partition_dates` 的结果 + 写入方
+    增量通知），不引入第二套口径。
     """
     base = Path(data_dir) / table
     if not base.is_dir():
         return []
     if is_monthly_daily_table(table):
-        # 月分区目录名只有月份，真实交易日必须从数据的 date 列读；混存旧日分区
-        # 时助手会同时枚举两种布局。
-        return sorted(d.isoformat() for d in list_partition_dates(base))
+        from app.services.trading_days import kline_trading_days
+
+        return [d.isoformat() for d in kline_trading_days(Path(data_dir))]
     out: list[str] = []
     for child in base.iterdir():
         if not child.is_dir() or not child.name.startswith("date="):

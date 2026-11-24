@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from datetime import date as date_cls
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
+from app.api.kline import _client_accepts_gzip
 from app.services import citizenship, shortline_audit
 
 router = APIRouter(prefix="/api/shortline-radar", tags=["shortline-radar"])
@@ -36,13 +37,33 @@ def _parse_date(value: str | None) -> date_cls | None:
         raise HTTPException(400, f"as_of 格式应为 YYYY-MM-DD，收到: {value}") from exc
 
 
+def _radar_response(request: Request, as_of: str | None) -> Response:
+    """预序列化 + 按客户端能力选压缩形态。
+
+    载荷是**全市场 ~5000 只**的分类结果（实测 5.3MB → gzip 1.1MB）。dict 缓存
+    命中后计算是 0ms，但每次请求仍要 dumps 84ms + gzip 68ms；这一段已经由
+    `citizenship.get_citizenship_serialized` 按 (data_dir, as_of) 缓存住，
+    这里只做「选哪一份字节」。
+
+    不返回 dict 让 FastAPI 再序列化一遍：那会把刚省掉的 84ms 又付回去。
+    """
+    target = _parse_date(as_of)
+    raw, packed = citizenship.get_citizenship_serialized(_data_dir(request), target)
+    if _client_accepts_gzip(request):
+        return Response(
+            content=packed,
+            media_type="application/json",
+            headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+        )
+    return Response(content=raw, media_type="application/json")
+
+
 @router.get("")
 def get_shortline_radar(
     request: Request,
     as_of: str | None = Query(default=None, description="交易日（YYYY-MM-DD），默认取最新"),
 ):
-    target = _parse_date(as_of)
-    return citizenship.get_citizenship(_data_dir(request), target)
+    return _radar_response(request, as_of)
 
 
 @router.get("/levels")

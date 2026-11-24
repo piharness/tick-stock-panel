@@ -24,12 +24,50 @@ def _get_quote_service(request: Request):
     return getattr(request.app.state, "quote_service", None)
 
 
+def _index_daily_tail_source(repo, keep: int = 6) -> str | None:
+    """把 `kline_index_daily` 的**尾部若干分区**拼成一个可查的 parquet 源。
+
+    为什么不让 DuckDB 直接查视图: 视图是 `read_parquet('<dir>/**/*.parquet')`,
+    要拿「每只指数最近两根收盘价」必须先把 257 个分区文件的 footer 全读一遍才能
+    裁剪 —— 容器内实测 **2.16s/次**, 而数据本身只有 6.1MB、四只指数。它挂在
+    `/api/intraday/indices` 上, 一周被轮询 3782 次 (账本), 等于整个下午每 2s
+    钟就烧掉一次全表元数据。
+
+    尾部 6 个分区足够覆盖「最近两根」: 指数日K每个交易日都有行, 只有在标的
+    长期停牌时才会跨过 6 个分区找不到 —— 那种情况由调用方回退到全表查询。
+    """
+    from app.tickflow.partitions import iter_partition_dirs
+
+    base = repo.store.data_dir / "kline_index_daily"
+    parts = iter_partition_dirs(base)[-keep:]
+    files = [str(p / "part.parquet") for p in parts if (p / "part.parquet").is_file()]
+    if not files:
+        return None
+    # 路径来自本机数据目录, 仍按 SQL 字面量转义后再拼接
+    quoted = ", ".join("'" + f.replace("'", "''") + "'" for f in files)
+    return f"read_parquet([{quoted}])"
+
+
 def _fallback_index_quotes_from_daily(request: Request, symbols: list[str] | None = None) -> list[dict]:
     """实时指数缓存为空时，从本地指数日 K 取最近收盘价作为兜底。"""
     repo = getattr(request.app.state, "repo", None)
     if not repo:
         return []
 
+    source = _index_daily_tail_source(repo) or "kline_index_daily"
+    rows = _index_latest_two(repo, source, symbols)
+    if rows is None:
+        return []
+    if symbols and len(rows) < len(symbols):
+        # 尾部窗口没覆盖到全部标的(如长期停牌) → 退回全表, 宁可慢也不给错价
+        rows = _index_latest_two(repo, "kline_index_daily", symbols) or []
+    return rows
+
+
+def _index_latest_two(
+    repo, source: str, symbols: list[str] | None,
+) -> list[dict] | None:
+    """从 `source` 取每只指数的最近两根收盘价。失败返回 None。"""
     params: list[str] = []
     symbol_filter = ""
     if symbols:
@@ -43,7 +81,7 @@ def _fallback_index_quotes_from_daily(request: Request, symbols: list[str] | Non
             WITH ranked AS (
                 SELECT symbol, date, close,
                        row_number() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
-                FROM kline_index_daily
+                FROM {source}
                 {symbol_filter}
             ), latest AS (
                 SELECT symbol,
@@ -61,7 +99,7 @@ def _fallback_index_quotes_from_daily(request: Request, symbols: list[str] | Non
             params,
         )
     except Exception:  # noqa: BLE001
-        return []
+        return None
 
     out: list[dict] = []
     for symbol, dt, last_price, prev_close in rows:

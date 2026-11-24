@@ -23,10 +23,20 @@ from app.price_limits import (
     price_limit_pct,
 )
 from app.services import kline_sync, minute_adjust, trading_day
+from app.services.ttl_cache import TtlCache
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/kline", tags=["kline"])
+
+#: 历史日分钟图的整份响应缓存（详见 `get_minute` 里的调用点）。
+#:
+#: 上限 256 条 × 每条约 39KB 未压缩 ≈ 10MB 上限；TTL 10 分钟是为了兜住
+#: 「补数/修数改写历史分区」与「更名」这类低频变化，不是最终一致性的借口。
+#: 当日数据永远不进这个缓存（盘中每分钟都在变）。
+_MINUTE_PAYLOAD_CACHE = TtlCache(
+    max_entries=256, ttl_s=600.0, name="minute-payload",
+)
 
 # 批量端点 (daily-batch / minute-batch) 单次 symbols 上限: 千只级自选整表直发
 # 会在服务端构造百万行级的 Python dict 峰值 (内存暴涨主因之一)。上限值是可配置
@@ -1259,6 +1269,19 @@ def get_minute(
             pref_key="minute_batch_compress",
         )
 
+    # 历史日的分钟图是**不可变快照** —— 当天分钟K每分钟都在变，绝不缓存；
+    # 历史日只有在补数/修数时才会被重写，用 TTL 兜住那点滞后。
+    #
+    # 为什么整份响应缓存而不是逐个缓存依赖: 端到端实测 210ms，其中可归因到
+    # `repo.get_minute` 的读盘只有 18.7ms，其余分散在标的信息/昨收/涨跌停价/
+    # 序列化这些各自只有几毫秒的派生查询上——逐个猜不如整体缓存这个单元。
+    minute_cache_key: tuple | None = None
+    if not live and trade_date < cn_today():
+        minute_cache_key = (symbol, trade_date.isoformat(), asset_type)
+        cached_payload = _MINUTE_PAYLOAD_CACHE.get(minute_cache_key)
+        if cached_payload is not None:
+            return _gzip_payload(request, cached_payload, pref_key="minute_batch_compress")
+
     prev_close = _get_previous_closes(
         repo, symbol, [trade_date], asset_type,
     ).get(trade_date)
@@ -1311,17 +1334,16 @@ def get_minute(
     is_complete = not df.is_empty() and len(df) >= expected * 0.9  # 允许 10% 容差
 
     if is_complete:
-        return _gzip_payload(
-            request,
-            {
-                "symbol": symbol, "name": stock_name, "stock_info": stock_info,
-                "date": str(trade_date), "rows": df.to_dicts(), "source": "local",
-                "asset_type": asset_type,
-                "price_limit": price_limit,
-                "prev_close": prev_close,
-            },
-            pref_key="minute_batch_compress",
-        )
+        payload = {
+            "symbol": symbol, "name": stock_name, "stock_info": stock_info,
+            "date": str(trade_date), "rows": df.to_dicts(), "source": "local",
+            "asset_type": asset_type,
+            "price_limit": price_limit,
+            "prev_close": prev_close,
+        }
+        if minute_cache_key is not None:
+            _MINUTE_PAYLOAD_CACHE.put(minute_cache_key, payload)
+        return _gzip_payload(request, payload, pref_key="minute_batch_compress")
 
     # 历史日期本地有数据但不完整: 优先返回已有行, 不再丢弃去问一个给不出
     # 历史分钟的源。历史上这里把 171 根当「无数据」→ 补拉历史日期恒为空 →
@@ -1329,19 +1351,18 @@ def get_minute(
     # 当日盘中不适用: 盘中本地落后于实时源是常态, 仍应走下方补拉 (见
     # test_minute_lunch_break_still_pulls_when_morning_incomplete)。
     if not df.is_empty() and trade_date != cn_today():
-        return _gzip_payload(
-            request,
-            {
-                "symbol": symbol, "name": stock_name, "stock_info": stock_info,
-                "date": str(trade_date), "rows": df.to_dicts(),
-                "source": "local_partial",
-                "expected": expected, "actual": len(df),
-                "asset_type": asset_type,
-                "price_limit": price_limit,
-                "prev_close": prev_close,
-            },
-            pref_key="minute_batch_compress",
-        )
+        payload = {
+            "symbol": symbol, "name": stock_name, "stock_info": stock_info,
+            "date": str(trade_date), "rows": df.to_dicts(),
+            "source": "local_partial",
+            "expected": expected, "actual": len(df),
+            "asset_type": asset_type,
+            "price_limit": price_limit,
+            "prev_close": prev_close,
+        }
+        if minute_cache_key is not None:
+            _MINUTE_PAYLOAD_CACHE.put(minute_cache_key, payload)
+        return _gzip_payload(request, payload, pref_key="minute_batch_compress")
 
     # 本地无数据 (或当日盘中数据落后) → 从当前有效分钟源实时拉取
     # reason 出参把「拉空」拆成两档: 源确实没有这一天 / 这次没拉到。二者都以

@@ -15,12 +15,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
 import uuid
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -56,6 +56,7 @@ from app.tickflow.delisted import (
 )
 from app.tickflow.partitions import (
     is_monthly_daily_table,
+    iter_partition_dirs,
     list_partition_dates,
     locate_partition_dir,
     parse_partition_range,
@@ -69,7 +70,13 @@ logger = logging.getLogger(__name__)
 # 并发能把 21 条的墙钟时间从「条数 × 单条」压到「约等于最慢的一条」。
 # 下限 4: 低核机器上 IO 等待照样能叠; 上限 8: 再多只会争抢同一块磁盘/9p 通道
 # (本机实测 8 与 16 无差别)。
-_VIEW_REGISTRATION_WORKERS = min(8, max(4, os.cpu_count() or 4))
+#: 从 `CREATE OR REPLACE VIEW <name> AS ...` 里取视图名。
+#:
+#: 视图清单只有这一份来源：`_register_views` 用它把 DDL 登记成待办，
+#: 不再维护第二份手写名单（两份名单一定会漂移）。
+_VIEW_DDL_NAME_RE = re.compile(
+    r"^\s*CREATE\s+OR\s+REPLACE\s+VIEW\s+([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE,
+)
 
 # GH #480: 后台 warmup 因世代漂移被丢弃时的有界重建上限。compute 窗口长达
 # 数十秒, 启动期与 quote 实时刷新的 commit 撞车后若不重建, 历史缓存长期
@@ -116,6 +123,11 @@ def daily_dirname(asset_type: str) -> str:
 
 # 盘中递推状态的最长窗口 (交易日): MA60 部分和 tail(59)、60 日动量 tail(60)
 _LIVE_AGG_WINDOW_BARS = 60
+
+#: `latest_minute_date` 从最新分区往回探的上限。取 15 个交易日 (约三周):
+#: 正常标的 1~2 个文件就命中; 停牌两三周的仍能在窗口内找到; 再长就走全表回退,
+#: 避免为了极少数的长期停牌把每次请求都拖成 15 次文件读。
+_MINUTE_TAIL_PROBE = 15
 
 
 def _live_agg_window_start(dates: pl.Series, latest: date, calendar_start: date) -> date:
@@ -228,6 +240,11 @@ class DataStore:
         # 根连接只作连接工厂: 跨线程共用一个 Connection 对象没有契约保证,
         # 并发注册视图时各线程用 cursor (同一内存库实例的独立连接)。
         self._cursor_lock = threading.Lock()
+        # 视图 DDL 互斥：并发 CREATE OR REPLACE 同名视图会抛 write-write conflict
+        self._ddl_lock = threading.RLock()
+        # 视图改为**按需挂载**（见 _ensure_views）：启动时只登记名字与 DDL
+        self._pending_views: dict[str, str] = {}
+        self._pending_view_re: re.Pattern[str] | None = None
         self._register_views()
 
     def _migrate_legacy_data_dir(self) -> None:
@@ -308,16 +325,37 @@ class DataStore:
             return self.db.cursor()
 
     def _register_views(self) -> None:
-        """把 Parquet 目录挂载为 DuckDB 视图(§7.3)。
+        """登记视图定义为**按需挂载**（§7.3）。
 
-        并发下发而非逐条串行: 每条 ``CREATE VIEW`` 的 binder 都要把
-        ``<dir>/**/*.parquet`` 展开一遍 (DuckDB 在 CREATE 时就绑定, 不是懒绑定),
-        data/ 有 300+ 个分区目录时单条就要 2~3s。串行 21 条曾是容器启动的
-        主要阻塞 (2026-11-08: 25.6s/整个启动 32s, 占 84%)。视图之间互不引用,
-        DuckDB 只对同名 DDL 报 write-write conflict, 不同名可并行。
+        ## 为什么不再在启动时全部 CREATE
 
-        失败一律降级为 debug: 空数据目录(首次启动)/权限问题/空 glob 都会抛
-        IOException, 缺视图不影响启动 (后续同步写入数据由 refresh_view 补挂)。
+        DuckDB 的 `CREATE VIEW` 是**当就绑定**，不是懒绑定：要把
+        `<dir>/**/*.parquet` 展开、并读每个文件的 schema（`union_by_name=true`
+        逼它读全部）。2026-11-24 容器内逐张实测：
+
+            kline_daily_enriched   5316 文件   40.0s   ← 全仓无任何查询引用
+            kline_daily            5240 文件   14.7s
+            kline_5min              536 文件    4.1s   ← 无引用
+            kline_etf_daily/enriched/index_enriched  各 257 文件  各 ~2.0s  ← 无引用
+            其余 21 个合计                        ~13s
+
+        23 条串行/并发注册合计 56.5s，占整个启动（64s）的 **88%**；而统计全仓
+        `FROM/JOIN <view>` 引用后，**只有 7 个视图被真实使用**，其中
+        `kline_enriched` 仅出现在注释里。也就是说启动期有一半以上的时间在挂载
+        没人查询的视图。
+
+        ## 现在怎么做
+
+        启动只登记 `name → DDL`；`execute_one/execute_all` 在跑 SQL 前扫一遍
+        名字，命中尚未挂载的才真正 CREATE（见 `_ensure_views`）。待办清空后，
+        热路径只剩一次 `if not self._pending_views` 判断。
+
+        为什么可以安全延迟：视图只是把目录挂成表名，创建失败（空目录/权限）本来
+        就降级为 debug，缺视图不影响启动；而按需挂载意味着"谁用谁付"，并且
+        **不再为永远不用的表付费**。
+
+        并发性：早期用 8 线程并发注册是因为串行 21 条要 25.6s。按需路径上是单张
+        创建、由 `_ddl_lock` 串行化，不存在 write-write conflict。
         """
         d = self.data_dir.as_posix()
         statements = [
@@ -367,21 +405,102 @@ class DataStore:
                 SELECT * FROM read_parquet('{d}/depth5/**/*.parquet', union_by_name=true)""",
         ]
         statements.extend(self._all_sample_view_sqls())
-        workers = max(1, min(len(statements), _VIEW_REGISTRATION_WORKERS))
-        started = time.perf_counter()
-        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="duckdb-view") as pool:
-            # 单条失败已在 _create_view 内降级, map 只用于等待全部完成
-            list(pool.map(self._create_view, statements))
 
-        # 全样本视图（主表 + 306 只缺口股）已随 statements 并行创建；它们
-        # 直读 parquet 而不是引用 kline_enriched，原因见 _all_sample_view_sqls。
-
-        # 启动诊断的唯一入口: 视图挂载是启动链路里唯一与 data/ 体积成正比的
-        # 环节, 绑定挂载变慢 (9p/NFS/杀软扫描) 时这里会先变红。
-        logger.info(
-            "duckdb views registered: %d statements in %.2fs (workers=%d)",
-            len(statements), time.perf_counter() - started, workers,
+        # 只登记不执行：名字从 DDL 里取，避免第二份"视图清单"随代码漂移。
+        pending: dict[str, str] = {}
+        for ddl in statements:
+            match = _VIEW_DDL_NAME_RE.search(ddl)
+            if match:
+                pending[match.group(1)] = ddl
+            else:
+                logger.warning("view DDL 无法解析出名字，跳过登记: %s", ddl[:80])
+        self._pending_views = pending
+        # 待办为空时 _ensure_views 直接返回；用长名优先做交替，避免
+        # `kline_daily` 抢先匹配 `kline_daily_enriched` 的前缀。
+        self._pending_view_re = (
+            re.compile(
+                r"\b(" + "|".join(map(re.escape, sorted(pending, key=len, reverse=True))) + r")\b",
+                re.IGNORECASE,
+            )
+            if pending else None
         )
+
+        # 启动诊断的入口：这里报的是**待挂载数**而不是耗时——耗时已经不在启动
+        # 链路上，第一次真正引用时会逐张记 "view mounted on demand ... (Ns)"。
+        logger.info(
+            "duckdb views: %d 个登记为按需挂载（启动不再阻塞；首次引用时创建）",
+            len(pending),
+        )
+
+    def warm_common_views(self) -> None:
+        """后台预热「确定会被用到、且挂载便宜」的几张视图。
+
+        依据是实测而不是猜：把 36 个界面端点全跑一遍后，只有 5 张视图被真正
+        挂载过 —— `kline_index_daily` 3.75s，其余四张各 0.01~0.02s；而
+        `kline_daily`（14.7s）、`kline_enriched`（40.0s）、`kline_5min`（4.1s）
+        全程没人碰。
+
+        为什么只预热这几张：`kline_index_daily` 挂在首屏仪表盘上，冷进程第一次
+        打开会愣 3.75s；它便宜（257 个分区），挪到启动后台正好。贵的那些**故意
+        不预热**——它们要么没人用，要么真被用到时也该由使用者付费，而不是让
+        每次重启都先烧掉 55s。
+
+        放在 daemon 线程里：失败只记日志，缺视图仍会在首次引用时按需挂载。
+        """
+        names = ("instruments", "instruments_index", "instruments_etf",
+                 "adj_factor", "kline_index_daily")
+
+        def _run() -> None:
+            mounted: list[str] = []
+            started = time.perf_counter()
+            for name in names:
+                ddl = self._pending_views.get(name)
+                if ddl is None:
+                    continue
+                with self._ddl_lock:
+                    if name not in self._pending_views:
+                        continue
+                    if not self._create_view(ddl):
+                        continue
+                    self._pending_views.pop(name, None)
+                    mounted.append(name)
+            if mounted:
+                logger.info(
+                    "views warmed in background: %d 张 (%.2fs) —— %s",
+                    len(mounted), time.perf_counter() - started, ", ".join(mounted),
+                )
+
+        threading.Thread(target=_run, name="duckdb-view-warm", daemon=True).start()
+
+    def _ensure_views(self, sql: str) -> None:
+        """SQL 里出现尚未挂载的视图 → 现挂（并记录成本）。热路径零成本。
+
+        必须在拿 `_read_limiter` **之前**调用：挂载一张 5316 文件的视图要 40s，
+        占着读额度会把其它读请求一起堵住。
+        """
+        pending = self._pending_views
+        if not pending or self._pending_view_re is None:
+            return
+        names = {m.group(1).lower() for m in self._pending_view_re.finditer(sql)}
+        if not names:
+            return
+        for name in sorted(names):
+            ddl = pending.get(name)
+            if ddl is None:
+                continue
+            started = time.perf_counter()
+            with self._ddl_lock:
+                if name not in self._pending_views:
+                    continue  # 并发请求已经挂上了
+                ddl = self._pending_views[name]
+                if not self._create_view(ddl):
+                    continue  # 建不出来（空目录）→ 留在待办，下次再试
+                self._pending_views.pop(name, None)
+            logger.info(
+                "view mounted on demand: %s (%.2fs)", name, time.perf_counter() - started,
+            )
+        if not self._pending_views:
+            self._pending_view_re = None
 
     def _all_sample_view_sqls(self) -> list[str]:
         """全样本视图的 DDL；补全包不存在时返回空列表。
@@ -429,16 +548,23 @@ class DataStore:
                 {common_tail}""",
         ]
 
-    def _create_view(self, sql: str) -> None:
-        """挂载单张视图; 空目录等失败降级为 debug (视图缺省不影响启动)。"""
+    def _create_view(self, sql: str) -> bool:
+        """挂载单张视图; 空目录等失败降级为 debug (视图缺省不影响启动)。
+
+        返回是否真的建成了：**失败要留在待办里**。空目录建不出视图时若把它从
+        待办摘掉，等数据落盘后这条 SQL 就会直接报"表不存在"，而不是像以前
+        那样由下一次 refresh_view 兜住。
+        """
         cursor = self._new_cursor()
         try:
             cursor.execute(sql)
+            return True
         except Exception:  # noqa: BLE001
             # 空数据目录(首次启动)或权限问题时 DuckDB 会抛 IOException;
             # 跨版本/平台也可能抛 CatalogException 等。空目录缺视图不影响启动
             # (后续同步写入数据后会重新刷新视图),这里一律降级为 debug 日志。
             logger.debug("view registration skipped (no parquet yet): %s", sql[:60])
+            return False
         finally:
             cursor.close()
 
@@ -556,6 +682,8 @@ class KlineRepository:
         cursor 是同一库实例的独立连接: 读与读并发、读与视图重建并发 (MVCC,
         运行中的查询继续用旧定义) 均安全; _read_limiter 只限制同时扫描数。
         """
+        # 挂载必须在拿读额度之前：单张视图可能要 40s，占着额度会堵住其它读
+        self.store._ensure_views(sql)
         with self._read_limiter:
             cursor = self._new_cursor()
             try:
@@ -565,6 +693,7 @@ class KlineRepository:
 
     def execute_one(self, sql: str, params: list | None = None) -> tuple | None:
         """并发安全的 SELECT → fetchone。"""
+        self.store._ensure_views(sql)
         with self._read_limiter:
             cursor = self._new_cursor()
             try:
@@ -590,6 +719,8 @@ class KlineRepository:
                     f"CREATE OR REPLACE VIEW {name} AS "
                     f"SELECT * FROM read_parquet('{glob}', union_by_name=true)"
                 )
+                # 已经挂上了，从待办里摘掉，免得按需路径又建一遍
+                self.store._pending_views.pop(name, None)
                 return True
             except Exception as e:  # noqa: BLE001 — 空目录/权限问题降级为警告, 与既有刷新行为一致
                 logger.warning("refresh view %s failed: %s", name, e)
@@ -2488,6 +2619,44 @@ class KlineRepository:
     # ================================================================
 
     def latest_minute_date(self, symbol: str, asset_type: str = "stock") -> date | None:
+        """某只标的最近一个有分钟K的交易日。
+
+        旧实现是 `SELECT max(datetime) FROM kline_minute WHERE symbol = ?` ——
+        在日分区视图上这是**全表**聚合, 536 个分区文件的 footer 都要读, 容器内
+        实测约 19s。它挂在 `/api/kline/minute` 的日期解析上: 不传 date 且当日
+        落盘数据还没到时(周末、盘前、节假日)每次打开个股图都要等这一次全扫。
+
+        改成从最新分区往回探: 分钟K是日分区, 目录名即日期, 只需确认该日文件里
+        真有这只标的的行(停牌股会缺行, 不能只看目录在不在)。命中即停, 通常
+        1~2 个文件、几十毫秒。探到上限仍没有才回退全表 —— 那是换码/长期停牌
+        一类的少数情况, 慢一次可以接受。
+        """
+        base = Path(self._minute_glob_for(asset_type, "1m")).parent.parent
+        try:
+            dirs = iter_partition_dirs(base)
+        except Exception:  # noqa: BLE001
+            dirs = []
+        for part in reversed(dirs[-_MINUTE_TAIL_PROBE:]):
+            f = part / "part.parquet"
+            if not f.is_file():
+                continue
+            try:
+                n = (
+                    pl.scan_parquet(str(f))
+                    .filter(pl.col("symbol") == symbol)
+                    .select(pl.len())
+                    .collect()[0, 0]
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug("minute tail probe failed at %s: %s", part.name, e)
+                continue
+            if n:
+                try:
+                    return date.fromisoformat(part.name.removeprefix("date="))
+                except ValueError:
+                    continue
+
+        # 尾部窗口没命中 → 回退全表
         # 注意: 必须走 execute_one (cursor+close)。直连 self.db.execute(...).fetchone()
         # 的未消费结果集会把首个分区 parquet 的句柄钉在共享连接上, Windows 下阻塞
         # 同步写入的 os.replace → 个股分时"补齐数据"500。
@@ -2504,15 +2673,27 @@ class KlineRepository:
         return None
 
     def latest_minute_date_global(self) -> date | None:
-        """全市场最近分钟K日期 (不分 symbol)。用于非交易日回退到上一交易日。"""
+        """全市场最近分钟K日期 (不分 symbol)。用于非交易日回退到上一交易日。
+
+        分区目录名即日期, 有分区就说明那天落过盘 —— 旧实现对 536 个分区做
+        `max(CAST(datetime AS DATE))` 全表聚合, 实测约 19s; 这里只读目录名。
+        """
         try:
-            row = self.execute_one(
-                "SELECT max(CAST(datetime AS DATE)) FROM kline_minute",
-            )
-            if row and row[0]:
-                return row[0] if isinstance(row[0], date) else date.fromisoformat(str(row[0]))
-        except Exception:  # noqa: BLE001
-            return None
+            base = Path(self._minute_glob).parent.parent
+            for part in reversed(iter_partition_dirs(base)):
+                f = part / "part.parquet"
+                try:
+                    if not f.is_file() or f.stat().st_size == 0:
+                        continue
+                except OSError:
+                    continue
+                try:
+                    return date.fromisoformat(part.name.removeprefix("date="))
+                except ValueError:
+                    continue
+        except Exception as e:  # noqa: BLE001
+            logger.debug("latest_minute_date_global failed: %s", e)
+        return None
 
     def earliest_daily_date(self) -> date | None:
         """本地日K数据的最早日期。"""
@@ -2564,13 +2745,26 @@ class KlineRepository:
         return out
 
     def latest_daily_date(self) -> date | None:
-        """本地日K数据的最新日期。走分区目录名, 不展开 parquet 元数据。"""
+        """本地日K数据的最新日期。
+
+        旧实现走 `list_partition_dates(kline_daily)`: 月分区布局下要对 590 个
+        分区逐个 `scan_parquet` 读 `date` 列, 容器内实测 **19.0s/次**。它挂在
+        `/api/kline/minute` 的日期解析上 —— 不传 `date` 时(图表默认)每次都要
+        先问「最新日K是哪天」, 于是单只股票分时请求要 19s, 而显式传 `date`
+        只要 0.17s。
+
+        改用仓库唯一的交易日取数点: `kline_trading_days` 的语义就是
+        「kline_daily 覆盖的交易日」, 自带进程内缓存 + 磁盘快照 + 内容指纹
+        (稳态 0.02s), 与本函数原本要的答案同一个集合。
+        """
         try:
-            dates = list_partition_dates(self.store.data_dir / "kline_daily")
-            if dates:
-                return max(dates)
-        except Exception:  # noqa: BLE001
-            pass
+            from app.services.trading_days import kline_trading_days
+
+            days = kline_trading_days(self.store.data_dir)
+            if days:
+                return days[-1]
+        except Exception as e:  # noqa: BLE001
+            logger.debug("latest_daily_date failed: %s", e)
         return None
 
     def latest_enriched_date(self, asset_type: str = "stock") -> date | None:
@@ -3045,6 +3239,38 @@ class KlineRepository:
             except BaseException:
                 publication.abandon()
                 raise
+        self._note_dates_written(out, merged)
+
+    def _note_dates_written(self, out: Path, frame: pl.DataFrame) -> None:
+        """把「这次写了哪些交易日」告诉日历缓存，避免它重扫全表。
+
+        只有月分区表需要（`kline_daily`）：它的日期集合读不出来，得扫 parquet，
+        而写入方手上就有 `date` 列。日分区表的日期就是目录名，通知无用。
+        成本：一次 readdir + 几个 stat（实测 ~4ms），且只在该表真正写入时发生
+        （日K 每个交易分区一次），不在读路径上。
+
+        顺带通知「依赖全史横截面的展示型结论」（拥挤度判决）失效：它要扫 5316 个
+        enriched 分区、30.8s，靠 TTL 过期会让每半小时有一个请求同步等 35s；
+        改成写入时打脏标记 + 下一读后台重算，读路径就永不阻塞。
+        """
+        table = out.parent.parent.name
+        if is_monthly_daily_table(table) and "date" in frame.columns:
+            try:
+                from app.services.trading_days import note_partition_dates
+
+                note_partition_dates(
+                    self.store.data_dir, table, frame["date"].unique().to_list(),
+                )
+            except Exception as e:  # noqa: BLE001 —— 索引失修只影响性能, 不影响写入
+                logger.debug("note_partition_dates failed: %s", e)
+
+        if table == enriched_dirname("stock"):
+            try:
+                from app.services.market_percentiles import mark_crowding_stale
+
+                mark_crowding_stale(self.store.data_dir)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("mark_crowding_stale failed: %s", e)
 
     def merge_live_daily_asset(self, asset_type: str, df: pl.DataFrame) -> None:
         """按 symbol 合并当天指定资产日K分区。用于少量自选实时，不覆盖全市场。"""

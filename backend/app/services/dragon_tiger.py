@@ -25,10 +25,21 @@ import polars as pl
 
 from app.market_time import cn_today
 from app.services.trading_days import kline_trading_days
+from app.services.ttl_cache import TtlCache
 
 logger = logging.getLogger(__name__)
 
 _BOARDS = ("all", "org", "hot_money")
+
+#: 当日榜单的进程内缓存（当日不落盘，见 `_fetch_online` 的注释）。
+#:
+#: TTL 单独成常量：测试要用它断言"过期后必须重新拉"，而不是猜一个数字。
+#: 60 秒足够吸收 15s 级轮询的重复，又短到不会让"刚发布"被长时间遮蔽。
+_ONLINE_CACHE_TTL_S = 60.0
+
+_ONLINE_CACHE: TtlCache = TtlCache(
+    max_entries=8, ttl_s=_ONLINE_CACHE_TTL_S, name="dragon-tiger-online",
+)
 
 
 def _local_trading_days(data_dir: Path) -> list[date_cls]:
@@ -40,18 +51,24 @@ def _local_trading_days(data_dir: Path) -> list[date_cls]:
     return kline_trading_days(data_dir)
 
 
-def resolve_trade_date(data_dir: Path, target: date_cls | None) -> date_cls | None:
+def resolve_trade_date(
+    data_dir: Path, target: date_cls | None, *, days: list[date_cls] | None = None,
+) -> date_cls | None:
     """目标日 → ≤目标日的最近本地交易日。None 或本地无更早分区 → None (由 fuyao 默认)。
 
     目标日早于全部本地分区 (极老的历史复盘) → 原样返回, 由调用方试显式日期,
     失败如实报 no_data, 不静默给错日期的数据。
+
+    `days` 允许调用方传入已取好的交易日列表：`get_dragon_tiger` 为了解析
+    `target=None` 已经取过一次，再让本函数自己取一次就是同一份日历算两遍
+    （`kline_trading_days` 每次仍要 readdir + 指纹，实测 9~31ms）。
     """
     if target is None:
         return None
-    days = _local_trading_days(data_dir)
-    if not days:
+    local = days if days is not None else _local_trading_days(data_dir)
+    if not local:
         return target
-    candidates = [d for d in days if d <= target]
+    candidates = [d for d in local if d <= target]
     return max(candidates) if candidates else target
 
 
@@ -194,17 +211,27 @@ def _store_cache(path: Path, payload: dict) -> None:
     tmp.replace(path)
 
 
+#: 当日榜单的进程内缓存。
+#:
+#: 历史日走磁盘缓存（`_cache_path`），但**当日不落盘**——盘中回退、盘后补充都以
+#: 现拉为准（`actual < today` 才写盘）。于是从收盘到 `pull_latest` 增量任务跑完
+#: 这段窗口里，每个请求都要实时问 provider：容器内实测 **158ms/次**，而账本上
+#: 这个端点一周被调 113 次、页面是 15s 级轮询。
+#:
+#: 60 秒的窗口足够吸收轮询重复，又短到不会让"刚发布"被长时间遮蔽。当日榜单本身
+#: 在发布后就不再变，所以这里担心的只是"发布时刻"的可见延迟。
+
 def get_dragon_tiger(data_dir: Path, target: date_cls | None = None) -> dict:
     """取龙虎榜 (三榜)。返回给前端的统一容器。
 
     state: ok (正常) | fallback_prev (当日未发布, 已回退上一期并带上一期数据)
           | source_unavailable (未配置 fuyao) | no_data (拉取失败)
     """
+    days = _local_trading_days(data_dir)
     # 无目标日 → 最近本地交易日 (走缓存判定; 本地无任何分区才让 fuyao 自取默认)
     if target is None:
-        days = _local_trading_days(data_dir)
         target = max(days) if days else None
-    trade_date = resolve_trade_date(data_dir, target)
+    trade_date = resolve_trade_date(data_dir, target, days=days)
     today = cn_today()
 
     # 历史日缓存优先 (纯本地, 不触发插件注册表加载)
@@ -213,6 +240,17 @@ def get_dragon_tiger(data_dir: Path, target: date_cls | None = None) -> dict:
         if cached is not None:
             return cached
 
+    key = (str(data_dir), trade_date.isoformat() if trade_date is not None else "")
+    hit = _ONLINE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    payload = _fetch_online(data_dir, trade_date, today)
+    _ONLINE_CACHE.put(key, payload)
+    return payload
+
+
+def _fetch_online(data_dir: Path, trade_date: date_cls | None, today: date_cls) -> dict:
+    """实时拉取三榜（含当日未发布时回退上一交易日一次）。"""
     provider = _provider()
     if provider is None:
         return {"state": "source_unavailable"}

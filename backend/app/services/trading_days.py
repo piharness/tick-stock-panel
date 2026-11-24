@@ -38,11 +38,12 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
 
 from app.market_time import cn_now
-from app.tickflow.partitions import iter_partition_dirs, list_partition_dates
+from app.tickflow.partitions import MONTHLY_DAILY_TABLES, iter_partition_dirs, list_partition_dates
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,58 @@ def _write_snapshot(path: Path, fp: dict, days: list[date]) -> None:
         os.replace(tmp, path)
     except OSError as exc:
         logger.warning("交易日历快照写入失败(不影响结果): %s", exc)
+
+
+def note_partition_dates(data_dir: Path | str, table: str, days: Iterable[date]) -> bool:
+    """写入方通知：这张表刚写入了这些交易日的行。
+
+    为什么必须有这条通道：本模块的指纹包含「最新月分区 + 尾部 3 个分区的
+    mtime」，而盘后管道**每个交易日**都会重写当月月分区 ⇒ 指纹必变 ⇒ 下一次
+    `kline_trading_days` 全量重扫 590 个分区（19.5s）。这笔成本会落在写入之后
+    **第一个读请求**上（首页 / 数据页 / 图表），而且天天发生 —— 启动预热只能
+    救「进程刚起来」那一次。
+
+    写入方本来就知道自己写了哪些日期（`merged["date"]`），没有理由让它再去猜。
+    这里把已知日期并进缓存，并用**当前目录状态**重算指纹（一次 readdir + 几个
+    stat，实测 ~4ms），使下一次读校验能直接命中，不再触发全量重扫。
+
+    保守边界：
+      - 只处理月分区表（`MONTHLY_DAILY_TABLES`），其余表的日期就是目录名，本来
+        就便宜，没必要维护第二份；
+      - **没有内存基线就不合并**（返回 False）：进程刚起、预热还没跑完时，缓存里
+        没有可用的底稿，合并会造出一个来历不明的集合。交给正常路径（快照/全扫）
+        去建立基线更安全；
+      - 只做并集，不做删除。目录被删（清库/迁移）会改变目录集合 ⇒ 指纹不匹配 ⇒
+        自动全量重算，删除不需要单独通知。
+    """
+    if table not in MONTHLY_DAILY_TABLES:
+        return False
+    fresh = {d for d in days if isinstance(d, date)}
+    if not fresh:
+        return False
+
+    base = Path(data_dir) / table
+    parts = iter_partition_dirs(base)
+    if not parts:
+        return False
+    key = str(Path(data_dir))
+    with _DAYS_LOCK:
+        hit = _DAYS_CACHE.get(key)
+    if hit is None:
+        return False  # 无底稿，交给正常路径
+
+    merged = sorted(set(hit[1]) | fresh)
+    if merged == hit[1]:
+        return False  # 没有新日期，指纹也不用动
+    fp = _fingerprint(parts)
+    with _DAYS_LOCK:
+        _DAYS_CACHE[key] = (fp, merged)
+    # 同步落盘：这是一次 ~75KB 的**原子替换**（os.replace），不是全量扫描，
+    # 每个交易日只发生一次；换成后台线程反而会引入「旧快照覆盖新快照」的竞态
+    # （两次写入交错时后写完的那份 fp 可能是旧的），代价大于收益。
+    _write_snapshot(snapshot_path(Path(data_dir)), fp, merged)
+    logger.debug("trading_days: 增量合并 %d 天 (table=%s)", len(fresh), table)
+    return True
 
 
 def kline_trading_days(data_dir: Path) -> list[date]:

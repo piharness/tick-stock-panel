@@ -48,6 +48,8 @@ from pathlib import Path
 
 import polars as pl
 
+from app.services.ttl_cache import TtlCache
+
 # ===== 参数 =====
 
 # 主场窗口：20 个交易日。把「当日截面」压成「结构性身份」。
@@ -1254,3 +1256,66 @@ def get_citizenship(data_dir: Path, as_of: date_cls | None = None) -> dict:
             _CACHE.clear()
         _CACHE[key] = result
     return result
+
+
+#: 预序列化字节缓存。
+#:
+#: 为什么 dict 缓存不够: `get_citizenship` 命中后计算是 0ms，但**每次请求仍要**
+#: `json.dumps` 84ms + gzip 68ms（实测 5.3MB → 1.1MB）。全市场分类的载荷在一个
+#: 交易日内不变，这两笔就是纯重复；它挂在页面上就是「点开常识页白等半秒」。
+#: 缓存按 (data_dir, as_of) 分键，与 dict 缓存同粒度，不会出现"dict 是新的、
+#: 字节是旧的"这种分叉 —— 两者都由同一个 as_of 决定。
+_SERIALIZED_CACHE = TtlCache(max_entries=6, ttl_s=1800.0, name="citizenship-serialized")
+_GZIP_LEVEL = 6  # 与 api/kline._gzip_payload 一致: level 9 在 5MB 量级要秒级
+
+
+def _dump(payload: dict) -> bytes:
+    import json
+
+    return json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+        default=lambda o: o.isoformat() if hasattr(o, "isoformat") else str(o),
+    ).encode("utf-8")
+
+
+def _sanitize_nan(obj):
+    """NaN/inf 不是合法 JSON。只在 dumps 抛 ValueError 时走这条路，代价可接受。"""
+    import math
+
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _sanitize_nan(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_nan(v) for v in obj]
+    return obj
+
+
+def get_citizenship_serialized(
+    data_dir: Path, as_of: date_cls | None = None,
+) -> tuple[bytes, bytes]:
+    """返回 (未压缩 JSON, gzip 后的 JSON)，按 (data_dir, as_of) 缓存。
+
+    两个都缓存是因为压缩与否取决于客户端的 `Accept-Encoding`：只缓存压缩版会让
+    不接受 gzip 的客户端走一次现压，只缓存原版就等于没省 gzip 那 68ms。
+    """
+    import gzip
+
+    key = (str(data_dir), as_of.isoformat() if as_of else None)
+
+    def _build() -> tuple[bytes, bytes]:
+        payload = get_citizenship(data_dir, as_of)
+        try:
+            raw = _dump(payload)
+        except ValueError:
+            raw = _dump(_sanitize_nan(payload))
+        return raw, gzip.compress(raw, _GZIP_LEVEL)
+
+    return _SERIALIZED_CACHE.get_or_compute(key, _build)
+
+
+def clear_citizenship_cache() -> None:
+    """写入/刷新后调用：dict 缓存与字节缓存必须一起清，否则两者会分叉。"""
+    with _CACHE_LOCK:
+        _CACHE.clear()
+    _SERIALIZED_CACHE.clear()

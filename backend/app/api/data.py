@@ -365,6 +365,29 @@ def _safe_aggregate(repo, view: str) -> dict | None:
     }
 
 
+def _kline_coverage_days(data_dir: Path) -> list[date]:
+    """kline_daily 覆盖的交易日 (升序) —— 走仓库唯一的日历取数点。
+
+    为什么不在这里直接 `list_partition_dates(kline_daily)`: 月分区布局下
+    该函数要对 590 个分区逐个 `scan_parquet` 读 `date` 列, 容器内实测
+    **19.0s/次**, 而 `/status` 里 `daily` 与 `adj_factor` 各调一次 ⇒ 冷态
+    38s (单飞后仍是单个请求 25s+, 顶穿前端 30s 超时, 页面表现为"数据页一直
+    转圈")。
+
+    `kline_trading_days` 声明的语义就是「kline_daily 分区覆盖的交易日」,
+    且自带三层缓存 (进程内 + 磁盘快照 + 内容指纹, 稳态 0.02s), 与本函数
+    原本要从 `list_partition_dates` 拿的东西是同一个集合 —— 不引入第二套
+    口径, 只换取数路径。
+    """
+    from app.services.trading_days import kline_trading_days
+
+    try:
+        return kline_trading_days(data_dir)
+    except Exception as e:  # noqa: BLE001 —— 统计失败降级为 None, 不影响其它域
+        logger.debug("kline coverage days failed: %s", e)
+        return []
+
+
 def _safe_aggregate_daily(repo, view: str = "kline_daily") -> dict | None:
     """日K轻量统计 — 零数据扫描。
 
@@ -374,10 +397,9 @@ def _safe_aggregate_daily(repo, view: str = "kline_daily") -> dict | None:
     daily_dir = repo.store.data_dir / "kline_daily"
     if not daily_dir.exists():
         return None
-    dates = list_partition_dates(daily_dir)
-    if not dates:
+    ordered = _kline_coverage_days(repo.store.data_dir)
+    if not ordered:
         return None
-    ordered = sorted(dates)
 
     symbols = _count_instruments_symbols(repo)
 
@@ -653,12 +675,18 @@ def _safe_aggregate_adj_factor(repo) -> dict | None:
     日 K 区间走分区目录名 (月分区读一次 date 列), 不再 `SELECT min/max(date)
     FROM kline_daily` —— 那条查询要展开 363 个文件的元数据, 实测 2.9s, 而它
     只是想要两个日期。
+
+    区间取数走 `_kline_coverage_days` (带缓存的唯一日历源): 直接
+    `list_partition_dates(kline_daily)` 在月分区布局下是 19.0s/次, 而
+    `/status` 里 `daily` 已经算过同一个集合。
     """
     daily_dir = repo.store.data_dir / "kline_daily"
-    daily_dates = list_partition_dates(daily_dir) if daily_dir.exists() else set()
+    if not daily_dir.exists():
+        return None
+    daily_dates = _kline_coverage_days(repo.store.data_dir)
     if not daily_dates:
         return None
-    d_min, d_max = min(daily_dates), max(daily_dates)
+    d_min, d_max = daily_dates[0], daily_dates[-1]
     try:
         row = repo.execute_one(
             """SELECT count(*) AS rows,

@@ -145,6 +145,10 @@ data/strategies/custom/
 # 「哪些是这一轮的改动」要靠人眼筛——这正是 `git add -A` 把测试产物带进去的入口。
 .junit*.xml
 junit_*.xml
+# API 延迟探针的落盘结果（`scripts/probe_api_latency.py --json`）。
+# 基线是**机器相关**的：同一份 JSON 在 CI 机器上必然"劣化"，提交它只会制造假红。
+# 需要长期跟踪时把基线放在团队的性能记录里，而不是仓库。
+.perf_*.json
 # vite 每次启动配置重载都会在 frontend/ 落一个时间戳副本（含绝对路径），
 # 它是进程内的临时文件，不是配置：`vite.config.ts.timestamp-<ms>-<hash>.mjs`。
 frontend/vite.config.ts.timestamp-*.mjs

@@ -131,6 +131,10 @@ class JobStore:
         self._active_jobs: dict[str, dict[str, Any]] = {}   # running/pending
         self._active_id: str | None = None
         self._lock = threading.Lock()
+        #: 列表读的解析缓存: 文件名 → ((mtime_ns, size), 解析后的 job dict)。
+        #: 见 `_job_files_sorted`: 一次轮询重解析 50 个 JSON 是 105ms 的源。
+        self._file_cache: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+        self._file_cache_lock = threading.Lock()
         self._lease_path = _lease_dir(store_dir) / f"{_INSTANCE}.lease"
         self._last_touch = 0.0
         self._heartbeat: threading.Thread | None = None
@@ -189,13 +193,61 @@ class JobStore:
                 logger.warning("failed to delete old job file %s", oldest)
 
     def _job_files_sorted(self) -> list[dict[str, Any]]:
-        """扫描磁盘上所有 job 文件,按 started_at 从新到旧排序。"""
-        jobs: list[dict[str, Any]] = []
-        for f in self._store_dir.glob("*.json"):
+        """扫描磁盘上所有 job 文件,按 started_at 从新到旧排序。
+
+        **增量解析**: 目录里最多 `max_jobs`(50) 个文件, 单个可达 45KB。在全量
+        重读的实现下 `list_recent(1)` 也要解析 50 个 JSON —— 容器内实测
+        **105ms/次**(首轮 285ms), 而它在 Layout 的常驻轮询里(每 15s, 有活跃
+        任务时 2s)、`/api/maintenance`(每次调 2 遍 ⇒ 225ms) 和 `/api/data/status`
+        的 `_last_finished` 里反复出现。这几个接口本该是几毫秒的状态读。
+
+        目录遍历用 `os.scandir`(一次 readdir, 实测 1.5ms/590 项); 每项按
+        (mtime_ns, size) 判断是否需要重新解析, 未变化的直接复用上次的 dict。
+        不能用「目录 mtime」单独当指纹: 同一目录内的 `os.replace` 会更新目录
+        mtime, 但我们要的是逐文件的粒度 —— 否则写一个 job 就要重解析全部。
+
+        外部进程(宿主脚本共用 data/)写入的 job 文件同样能识别: 判据是文件自身
+        的 mtime/size, 不是本进程的记账。
+        """
+        entries: dict[str, tuple[int, int]] = {}
+        try:
+            with os.scandir(self._store_dir) as it:
+                for entry in it:
+                    if not entry.name.endswith(".json") or not entry.is_file():
+                        continue
+                    try:
+                        st = entry.stat()
+                    except OSError:
+                        continue
+                    entries[entry.name] = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return []
+
+        with self._file_cache_lock:
+            cache = dict(self._file_cache)
+        # 锁外解析: 规则是「不在持锁期间做磁盘扫描」, 缓存只做读快照/回写。
+        parsed: dict[str, dict[str, Any]] = {}
+        updates: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+        for name, sig in entries.items():
+            hit = cache.get(name)
+            if hit is not None and hit[0] == sig:
+                parsed[name] = hit[1]
+                continue
+            path = self._store_dir / name
             try:
-                jobs.append(json.loads(f.read_text("utf-8")))
+                job = json.loads(path.read_text("utf-8"))
             except Exception:
                 continue
+            parsed[name] = job
+            updates[name] = (sig, job)
+
+        with self._file_cache_lock:
+            self._file_cache.update(updates)
+            # 文件被删/改名后清出缓存, 否则 max_jobs 淘汰过的旧记录会一直占内存
+            for name in [n for n in self._file_cache if n not in entries]:
+                self._file_cache.pop(name, None)
+
+        jobs = list(parsed.values())
         jobs.sort(key=lambda j: j.get("started_at") or "", reverse=True)
         return jobs
 

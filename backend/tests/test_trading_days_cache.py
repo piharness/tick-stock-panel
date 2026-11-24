@@ -161,3 +161,163 @@ def test_snapshot_is_outside_partition_globs(tmp_path: Path):
     snap = td.snapshot_path(tmp_path)
     assert "kline_daily" not in snap.relative_to(tmp_path).parts
     assert snap.parent.name == "trading_days"
+
+
+# ── 写入方通知：增量合并，不重扫 ─────────────────────────────────
+#
+# 回归动机（2026-11-24）：指纹包含「最新月分区 mtime」，而盘后管道每个交易日
+# 都会重写当月分区 ⇒ 指纹必变 ⇒ 19.5s 全表重扫，且落在写入后第一个读请求上。
+# 启动预热只能救「进程刚起来」那一次，救不了每天这一次。
+
+
+def _write_month(data: Path, month: str, days: list[str]) -> None:
+    """写真实月分区（part.parquet 里带 date 列），并且**按仓库的写法**落盘。
+
+    必须 tmp + os.replace：指纹盯的是**目录** mtime（新文件进目录会更新它），
+    而直接 `write_parquet` 原地改写只动文件 mtime、不动目录 mtime —— 用后者
+    构造用例会得到一个指纹看不出变化的假场景，测出来的结论在生产里不成立。
+    """
+    import os
+
+    import polars as pl
+
+    part = data / "kline_daily" / f"date={month}"
+    part.mkdir(parents=True, exist_ok=True)
+    out = part / "part.parquet"
+    tmp = out.with_name(out.name + ".tmp")
+    pl.DataFrame(
+        {
+            "symbol": ["600001.SH"] * len(days),
+            "date": [date.fromisoformat(d) for d in days],
+            "close": [10.0] * len(days),
+        }
+    ).write_parquet(tmp)
+    os.replace(tmp, out)
+
+
+def test_note_partition_dates_avoids_full_rescan(tmp_path: Path, monkeypatch):
+    """已预热 → 写入方通知 → 新日期立刻可见且**不重扫**。"""
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    assert td.kline_trading_days(tmp_path) == [date(2026, 11, 19)]
+
+    calls = _spy(monkeypatch)
+    _write_month(tmp_path, "2026-11", ["2026-11-19", "2026-11-24"])
+    assert td.note_partition_dates(tmp_path, "kline_daily", [date(2026, 11, 24)]) is True
+
+    assert td.kline_trading_days(tmp_path) == [date(2026, 11, 19), date(2026, 11, 24)]
+    assert calls == [], "写入方已告知日期，必须命中，不得再全表重扫 19s"
+
+
+def test_without_note_append_would_rescan(tmp_path: Path, monkeypatch):
+    """对照组：不做通知时，当月写入会让指纹失效并触发重扫。
+
+    这条证明「通知」不是装饰 —— 没有它，每天盘后都会付一次 19.5s。
+    """
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    assert td.kline_trading_days(tmp_path) == [date(2026, 11, 19)]
+
+    calls = _spy(monkeypatch)
+    _write_month(tmp_path, "2026-11", ["2026-11-19", "2026-11-24"])
+    days = td.kline_trading_days(tmp_path)
+
+    assert days == [date(2026, 11, 19), date(2026, 11, 24)]
+    assert len(calls) == 1, "未通知时必须（也只能）重扫一次，内容仍然正确"
+
+
+def test_note_without_warm_baseline_is_declined(tmp_path: Path):
+    """没有内存底稿就不猜：进程刚起、预热未完成时返回 False，交给正常路径。"""
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    assert td.note_partition_dates(tmp_path, "kline_daily", [date(2026, 11, 24)]) is False
+
+
+def test_note_ignores_non_monthly_tables(tmp_path: Path):
+    """日分区表的日期就是目录名，不需要维护第二份索引。"""
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    td.kline_trading_days(tmp_path)
+    assert td.note_partition_dates(tmp_path, "kline_daily_enriched", [date(2026, 11, 24)]) is False
+
+
+def test_note_with_no_new_days_is_noop(tmp_path: Path):
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    td.kline_trading_days(tmp_path)
+    assert td.note_partition_dates(tmp_path, "kline_daily", [date(2026, 11, 19)]) is False
+
+
+# ── 写入方通知：增量合并，不重扫 ─────────────────────────────────
+#
+# 回归动机（2026-11-24）：指纹包含「最新月分区 mtime」，而盘后管道每个交易日
+# 都会重写当月分区 ⇒ 指纹必变 ⇒ 19.5s 全表重扫，且落在写入后第一个读请求上。
+# 启动预热只能救「进程刚起来」那一次，救不了每天这一次。
+
+
+def _write_month(data: Path, month: str, days: list[str]) -> None:
+    """写真实月分区（part.parquet 里带 date 列），并且**按仓库的写法**落盘。
+
+    必须 tmp + os.replace：指纹盯的是**目录** mtime（新文件进目录会更新它），
+    而直接 `write_parquet` 原地改写只动文件 mtime、不动目录 mtime —— 用后者
+    构造用例会得到一个指纹看不出变化的假场景，测出来的结论在生产里不成立。
+    """
+    import os
+
+    import polars as pl
+
+    part = data / "kline_daily" / f"date={month}"
+    part.mkdir(parents=True, exist_ok=True)
+    out = part / "part.parquet"
+    tmp = out.with_name(out.name + ".tmp")
+    pl.DataFrame(
+        {
+            "symbol": ["600001.SH"] * len(days),
+            "date": [date.fromisoformat(d) for d in days],
+            "close": [10.0] * len(days),
+        }
+    ).write_parquet(tmp)
+    os.replace(tmp, out)
+
+
+def test_note_partition_dates_avoids_full_rescan(tmp_path: Path, monkeypatch):
+    """已预热 → 写入方通知 → 新日期立刻可见且**不重扫**。"""
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    assert td.kline_trading_days(tmp_path) == [date(2026, 11, 19)]
+
+    calls = _spy(monkeypatch)
+    _write_month(tmp_path, "2026-11", ["2026-11-19", "2026-11-24"])
+    assert td.note_partition_dates(tmp_path, "kline_daily", [date(2026, 11, 24)]) is True
+
+    assert td.kline_trading_days(tmp_path) == [date(2026, 11, 19), date(2026, 11, 24)]
+    assert calls == [], "写入方已告知日期，必须命中，不得再全表重扫 19s"
+
+
+def test_without_note_append_would_rescan(tmp_path: Path, monkeypatch):
+    """对照组：不做通知时，当月写入会让指纹失效并触发重扫。
+
+    这条证明「通知」不是装饰 —— 没有它，每天盘后都会付一次 19.5s。
+    """
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    assert td.kline_trading_days(tmp_path) == [date(2026, 11, 19)]
+
+    calls = _spy(monkeypatch)
+    _write_month(tmp_path, "2026-11", ["2026-11-19", "2026-11-24"])
+    days = td.kline_trading_days(tmp_path)
+
+    assert days == [date(2026, 11, 19), date(2026, 11, 24)]
+    assert len(calls) == 1, "未通知时必须（也只能）重扫一次，内容仍然正确"
+
+
+def test_note_without_warm_baseline_is_declined(tmp_path: Path):
+    """没有内存底稿就不猜：进程刚起、预热未完成时返回 False，交给正常路径。"""
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    assert td.note_partition_dates(tmp_path, "kline_daily", [date(2026, 11, 24)]) is False
+
+
+def test_note_ignores_non_monthly_tables(tmp_path: Path):
+    """日分区表的日期就是目录名，不需要维护第二份索引。"""
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    td.kline_trading_days(tmp_path)
+    assert td.note_partition_dates(tmp_path, "kline_daily_enriched", [date(2026, 11, 24)]) is False
+
+
+def test_note_with_no_new_days_is_noop(tmp_path: Path):
+    _write_month(tmp_path, "2026-11", ["2026-11-19"])
+    td.kline_trading_days(tmp_path)
+    assert td.note_partition_dates(tmp_path, "kline_daily", [date(2026, 11, 19)]) is False

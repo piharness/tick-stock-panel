@@ -15,7 +15,11 @@
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
+import threading
+import time
 from pathlib import Path
 
 import polars as pl
@@ -113,7 +117,196 @@ def turnover_pct(repo, window: int = DEFAULT_WINDOW) -> dict[str, float]:
     }
 
 
+#: 拥挤度判决的进程内缓存。键 = data_dir。
+#:
+#: 为什么可以按目录缓存: 这个判决是对**全部本地日线**算的一个静态统计 (换手率
+#: 分组 → 后续 20 日超额中位), 只在下一批 enriched 分区落盘时才变。而它每次
+#: 要对 5316 个分区、1530 万行做窗口 + 分组, 容器内实测 **30.8s**
+#: (`/api/stock-analysis/crowding-verdict` 账本均值 37s, 用户是「点开常识页
+#: 然后等半分钟」)。
+#:
+#: ## 为什么是 stale-while-revalidate 而不是 TTL 或任务化
+#:
+#: 早期版本用 30 分钟 TTL: **每半小时就有一个倒霉的请求同步等 35s** —— 这等于
+#: 把一次等待变成每天四十八次。任务化(202 + 轮询)能解决阻塞, 但它要求前端多一套
+#: 状态机, 而这里不需要: 判决是静态结论, 晚一天看到没有代价。
+#:
+#: 现在: 命中就返回(哪怕"过期"); 数据写入时只**打个脏标记**; 下一次读发现是脏的,
+#: 返回旧值并顺手起一个后台重算。于是
+#:   - 首次(进程内还没有值)才同步算一次, 由启动预热兜住;
+#:   - 之后任何时刻读都不阻塞, 最坏是看到昨天的结论。
+#: 这与仓库对"新鲜度"判据的分工一致: 会驱动「要不要再更新」的判定不许陈旧,
+#: 而展示型的静态统计允许落后一个批次。
+_CROWDING_CACHE: dict[str, dict] = {}
+_CROWDING_STALE: dict[str, bool] = {}
+_CROWDING_LOCK = threading.Lock()
+_CROWDING_BUILDING: set[str] = set()
+
+#: 兜底 TTL: 脏标记靠写入方通知, 若有外部进程绕过仓库写 enriched (宿主脚本),
+#: 标记不会被打上。超过这个时长即便没脏也重算一次。
+_CROWDING_MAX_AGE_S = 24 * 3600.0
+_CROWDING_BUILT_AT: dict[str, float] = {}
+
+#: 结论物化的磁盘快照。**这是"冷启动也不再等 30.8s"的关键**：
+#: 进程内缓存只在本进程活着时有意义，重启后第一次读仍要同步算一遍；启动预热
+#: 只是抢在用户之前，进程刚起的那几秒里打开页面仍会撞上。把结论落盘后，
+#: 冷进程的一次读就是一次 1KB 的 JSON 读取。
+#:
+#: 放 `_cache/` 而不是业务目录：不进任何 `date=*` / `**/*.parquet` 扫描。
+_CROWDING_SNAPSHOT_VERSION = 1
+_CROWDING_SNAPSHOT_NAME = "crowding_verdict.json"
+
+
+def _crowding_snapshot_path(data_dir: Path | str) -> Path:
+    return Path(data_dir) / "_cache" / _CROWDING_SNAPSHOT_NAME
+
+
+def _read_crowding_snapshot(data_dir: Path | str) -> tuple[dict, float] | None:
+    """返回 (结论, 距今秒数)；读不出/版本不符返回 None（调用方回退到同步算）。"""
+    path = _crowding_snapshot_path(data_dir)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if payload.get("version") != _CROWDING_SNAPSHOT_VERSION:
+        return None
+    verdict = payload.get("verdict")
+    if not isinstance(verdict, dict):
+        return None
+    try:
+        built_at = float(payload.get("built_at_epoch") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    return verdict, max(0.0, time.time() - built_at)
+
+
+def _write_crowding_snapshot(data_dir: Path | str, verdict: dict) -> None:
+    """原子写。失败只记日志：快照是加速手段，不是正确性前提。"""
+    path = _crowding_snapshot_path(data_dir)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(
+            json.dumps(
+                {
+                    "version": _CROWDING_SNAPSHOT_VERSION,
+                    "built_at_epoch": time.time(),
+                    "built_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "n": verdict.get("n"),
+                    "verdict": verdict,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+    except OSError as exc:
+        logger.warning("crowding verdict 快照写入失败(不影响结果): %s", exc)
+
+
+#: 被显式丢弃过快照的目录：下次读**不要**再从磁盘装回旧结论。
+#:
+#: 为什么用内存标记而不是删文件：删除走 `unlink`，在本仓的沙箱/回收站策略下
+#: 会被拦（`SAFE_DELETE_BULK_GUARD`），而"清缓存"不该依赖删除权限。标记的
+#: 代价只是重启后仍会装回那份快照 —— 而重启后重新算一遍本来就是可接受的。
+_CROWDING_SNAPSHOT_IGNORED: set[str] = set()
+
+
+def clear_crowding_cache() -> None:
+    """清空并让下一次读同步重算（测试与"我要立刻看到新结论"的显式入口）。
+
+    同时让已物化的快照失效（内存标记），否则下一次读又会把旧结论装回来。
+    """
+    with _CROWDING_LOCK:
+        for key in _CROWDING_CACHE:
+            _CROWDING_SNAPSHOT_IGNORED.add(key)
+        _CROWDING_CACHE.clear()
+        _CROWDING_STALE.clear()
+        _CROWDING_BUILT_AT.clear()
+
+
+def mark_crowding_stale(data_dir: Path | str) -> None:
+    """写入方通知：enriched 有新分区落盘，判决需要重算（下一读触发后台重算）。"""
+    key = str(Path(data_dir))
+    with _CROWDING_LOCK:
+        if key in _CROWDING_CACHE:
+            _CROWDING_STALE[key] = True
+
+
+def _recompute_in_background(repo, key: str) -> None:
+    """后台重算。只为展示型结论服务，失败只记日志、保留旧值。"""
+    with _CROWDING_LOCK:
+        if key in _CROWDING_BUILDING:
+            return
+        _CROWDING_BUILDING.add(key)
+
+    def _run() -> None:
+        try:
+            result = _compute_crowding_verdict(repo)
+        except Exception as e:  # noqa: BLE001 —— 后台失败不许影响正在服务的旧值
+            logger.warning("crowding verdict background refresh failed: %s", e)
+            return
+        finally:
+            with _CROWDING_LOCK:
+                _CROWDING_BUILDING.discard(key)
+        with _CROWDING_LOCK:
+            _CROWDING_CACHE[key] = result
+            _CROWDING_STALE[key] = False
+            _CROWDING_BUILT_AT[key] = time.monotonic()
+            _CROWDING_SNAPSHOT_IGNORED.discard(key)
+        # 重算完立刻物化：否则下一次重启又要从头算 30.8s
+        _write_crowding_snapshot(key, result)
+
+    threading.Thread(
+        target=_run, name="crowding-verdict-refresh", daemon=True,
+    ).start()
+
+
 def build_crowding_verdict(repo) -> dict:
+    """带缓存的入口。计算与缓存分离见 `_compute_crowding_verdict`。
+
+    取值顺序：进程内 → 磁盘快照 → 同步计算。前两级都是 O(1)，所以
+    "重启后第一次打开常识页"不再是冷路径。
+    """
+    data_dir = Path(repo.store.data_dir)
+    key = str(data_dir)
+    with _CROWDING_LOCK:
+        hit = _CROWDING_CACHE.get(key)
+        stale = _CROWDING_STALE.get(key, False)
+        built_at = _CROWDING_BUILT_AT.get(key, 0.0)
+
+    if hit is None:
+        with _CROWDING_LOCK:
+            ignored = key in _CROWDING_SNAPSHOT_IGNORED
+        snap = None if ignored else _read_crowding_snapshot(data_dir)
+        if snap is not None:
+            verdict, age_s = snap
+            with _CROWDING_LOCK:
+                _CROWDING_CACHE[key] = verdict
+                _CROWDING_STALE[key] = False
+                # 换算到 monotonic 域：快照可能来自上一个进程，用「距今多久」
+                # 反推一个等效的 monotonic 起点，后续的年龄判定不必分两套时钟。
+                _CROWDING_BUILT_AT[key] = time.monotonic() - age_s
+            hit = verdict
+            built_at = time.monotonic() - age_s
+
+    if hit is not None:
+        too_old = (time.monotonic() - built_at) > _CROWDING_MAX_AGE_S
+        if stale or too_old:
+            _recompute_in_background(repo, key)  # 返回旧值，不阻塞
+        return hit
+
+    result = _compute_crowding_verdict(repo)
+    with _CROWDING_LOCK:
+        _CROWDING_CACHE[key] = result
+        _CROWDING_STALE[key] = False
+        _CROWDING_BUILT_AT[key] = time.monotonic()
+        _CROWDING_SNAPSHOT_IGNORED.discard(key)
+    _write_crowding_snapshot(data_dir, result)
+    return result
+
+
+def _compute_crowding_verdict(repo) -> dict:
     """换手率（拥挤度代理）→ 后续 20 日超额收益的判决 —— 证伪「拥挤=踩踏」。
 
     市场常识页「踩踏链」那条常识，原本用硬编码的 danger 值画「趋同→拥挤→
