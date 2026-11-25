@@ -261,7 +261,7 @@ FOCUS_MIN_RET60 = -0.10
 STAGE_ORDER = ["cold", "warming", "hot", "fading"]
 
 STAGE_LABELS = {
-    "cold": "待启动",
+    "cold": "未启动",
     "warming": "已启动",
     "hot": "正在炒",
     "fading": "退潮",
@@ -940,7 +940,7 @@ def _market_emotion(data_dir: Path, days: list[date_cls], latest: date_cls) -> d
     打板次日高开溢价 +278bp vs 低晋级日 +184bp，差 95bp，单调）。
 
     状态：今日晋级率在近 120 个交易日的分位。
-      >= 0.67 主升期(绿灯，触点照常) / 0.33~0.67 中性(黄灯) / < 0.33 退潮期(红灯，空仓)。
+      >= 0.67 主升期(绿灯，观察池照常) / 0.33~0.67 中性(黄灯) / < 0.33 退潮期(红灯，空仓)。
     只读 consecutive_limit_ups 一列，120 分区 ~0.2s。
     """
     win = _window(days, latest, 120)
@@ -982,7 +982,7 @@ def _market_emotion(data_dir: Path, days: list[date_cls], latest: date_cls) -> d
         "label": label,
         "window_days": len(daily),
         "hint": {
-            "green": "连板晋级率高，打板次日溢价历史 +278bp，触点照常",
+            "green": "连板晋级率高，打板次日溢价历史 +278bp，观察池照常",
             "amber": "连板晋级率中性，谨慎参与",
             "red": "连板晋级率退潮，打板次日溢价历史 +184bp 且退潮期常负，建议空仓",
         }[state],
@@ -1059,14 +1059,17 @@ def _focus(rows: pl.DataFrame, backing: dict[str, dict] | None = None) -> dict:
     而在「为什么其余 5,400 只今天不该看」。没有这一层，页面只是又一个全市场列表。
     """
     stages_count = {k: 0 for k in STAGE_ORDER}
+    # 门槛与取数一并返回：页面文案（「热度分 < 0.75」「取前 15」）不再抄第二份常量。
+    cut = {"heat_cut": HEAT_CUT, "top_n": FOCUS_TOP_N}
     if rows.is_empty():
         return {
             "budget": {"market": 0, "struct": 0, "cold": 0, "picks": 0},
             "stages": stages_count,
             "picks": [],
             "pool": [],
-            "excluded": {"st": 0, "bse": 0, "thin": 0, "young": 0, "falling": 0,
-                         "hot": 0, "warming": 0, "fading": 0},
+            "excluded": {"non_cold": 0, "st": 0, "bse": 0, "thin": 0, "young": 0,
+                         "falling": 0, "hot": 0, "warming": 0, "fading": 0},
+            **cut,
         }
     for key, n in rows.group_by("stage").len().iter_rows():
         if key in stages_count:
@@ -1109,12 +1112,18 @@ def _focus(rows: pl.DataFrame, backing: dict[str, dict] | None = None) -> dict:
     ]).sort("heat", descending=True)
 
     base_ok = ~is_st & ~bse & (pl.col("amount") >= FOCUS_MIN_AMOUNT)
+    # 这六项必须**互斥且覆盖** struct − cold_ok，页面才能把「519 → 55 删掉了 464」逐项加平。
+    # 旧版把 st/bse 计在 struct 上（含已涨停的票）、thin 又与 young 重叠，
+    # 于是六项之和可以超过实际删除量 —— 跨口径相减会让漏斗自己不自洽。
+    non_cold = struct.filter(pl.col("stage") != "cold")
     excluded = {
-        "st": int(struct.filter(is_st).height),
-        "bse": int(struct.filter(~is_st & bse).height),
+        "non_cold": int(non_cold.height),
+        "st": int(cold.filter(is_st).height),
+        "bse": int(cold.filter(~is_st & bse).height),
         "thin": int(cold.filter(~is_st & ~bse & (pl.col("amount") < FOCUS_MIN_AMOUNT)).height),
         "young": int(cold.filter(base_ok & (~mature | pl.col("ret20").is_null())).height),
         "falling": int(cold.filter(base_ok & mature & ~not_falling & pl.col("ret20").is_not_null()).height),
+        # 全市场阶段计数：页面不再用来当单步删除量，只作市场温度参考
         "hot": stages_count.get("hot", 0),
         "warming": stages_count.get("warming", 0),
         "fading": stages_count.get("fading", 0),
@@ -1134,6 +1143,7 @@ def _focus(rows: pl.DataFrame, backing: dict[str, dict] | None = None) -> dict:
         "picks": picks_data,
         "pool": pool.to_dicts(),
         "excluded": excluded,
+        **cut,
     }
 
 

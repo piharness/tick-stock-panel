@@ -1746,18 +1746,25 @@ export interface ShortlineRadarFocus {
   picks: ShortlineRadarPick[]
   /** 池子成员与 heat 四项分位：排序体检的登记素材（页面不展示，台账用） */
   pool?: { symbol: string; heat: number; p_amp: number; p_turn_med: number; p_scale: number; p_amount: number; amount: number }[]
+  /** 热度门槛（heat 四项分位等权的均值下限）：页面文案直接引用，不抄第二份常量 */
+  heat_cut: number
+  /** 观察池取数（按 heat 降序取前几名） */
+  top_n: number
   /** 席位接力榜：今日被高声誉席位净买入的票（独立于冷启动触点的接力信号） */
   seat_backing: SeatBackingItem[]
   /** 排序体检产出物；null = 尚未生成（定时任务未跑过） */
   sort_audit?: SortAudit | null
   /** 市场情绪闸门：今天该不该动手的总开关 */
   emotion: MarketEmotion
+  /** 漏斗单步删除量：non_cold + st + bse + thin + young + falling = budget.struct − budget.cold */
   excluded: {
+    non_cold: number
     st: number
     bse: number
     thin: number
     young: number
     falling: number
+    /** 全市场阶段计数（不是单步删除量） */
     hot: number
     warming: number
     fading: number

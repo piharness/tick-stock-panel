@@ -554,6 +554,50 @@ def test_focus_excludes_st_bse_young_thin_falling():
     assert f["excluded"]["falling"] == 1
 
 
+def test_focus_excluded_partitions_the_drop():
+    """漏斗单步的六项必须互斥且覆盖：non_cold + 五道否定 = struct − cold。
+
+    页面直接把这六项展示成「519 → 55 删掉了 464」。旧版把 st/bse 计在 struct 上
+    （含已涨停的票）、thin 又与 young 重叠，六项之和可以超过实际删除量 ——
+    漏斗会在页面上自己加不平。
+    """
+    f = citizenship._focus(_rows(
+        {"symbol": "300001.SZ", "stage": "hot"},     # 非未启动
+        {"symbol": "600001.SH", "risk": "high"},     # ST
+        {"symbol": "920001.BJ"},                      # 北交所
+        {"symbol": "300002.SZ", "listing_days": 5},   # 次新
+        {"symbol": "300003.SZ", "amount": 1e7},       # 成交额不足
+        {"symbol": "300004.SZ", "ret60": -0.20},      # 下跌中继
+        {"symbol": "300005.SZ"},                      # 唯一合格
+    ))
+    b, ex = f["budget"], f["excluded"]
+    parts = ex["non_cold"] + ex["st"] + ex["bse"] + ex["thin"] + ex["young"] + ex["falling"]
+    assert parts == b["struct"] - b["cold"], (parts, b)
+    assert b["struct"] == 7 and b["cold"] == 1
+
+
+def test_focus_excluded_partitions_the_drop():
+    """漏斗单步的六项必须互斥且覆盖：non_cold + 五道否定 = struct − cold。
+
+    页面直接把这六项展示成「519 → 55 删掉了 464」。旧版把 st/bse 计在 struct 上
+    （含已涨停的票）、thin 又与 young 重叠，六项之和可以超过实际删除量 ——
+    漏斗会在页面上自己加不平。
+    """
+    f = citizenship._focus(_rows(
+        {"symbol": "300001.SZ", "stage": "hot"},     # 非未启动
+        {"symbol": "600001.SH", "risk": "high"},     # ST
+        {"symbol": "920001.BJ"},                      # 北交所
+        {"symbol": "300002.SZ", "listing_days": 5},   # 次新
+        {"symbol": "300003.SZ", "amount": 1e7},       # 成交额不足
+        {"symbol": "300004.SZ", "ret60": -0.20},      # 下跌中继
+        {"symbol": "300005.SZ"},                      # 唯一合格
+    ))
+    b, ex = f["budget"], f["excluded"]
+    parts = ex["non_cold"] + ex["st"] + ex["bse"] + ex["thin"] + ex["young"] + ex["falling"]
+    assert parts == b["struct"] - b["cold"], (parts, b)
+    assert b["struct"] == 7 and b["cold"] == 1
+
+
 def test_focus_budget_is_monotone():
     """漏斗必须逐层收窄：market ≥ struct ≥ cold ≥ picks。"""
     f = citizenship._focus(_rows(*[{"symbol": f"3000{i:02d}.SZ"} for i in range(30)]))
