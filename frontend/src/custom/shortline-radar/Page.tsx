@@ -40,6 +40,7 @@ import {
   type ShortlineRadarData,
   type ShortlineRadarFocus,
   type ShortlineRadarLevel,
+  type ShortlineRadarLockWatch,
   type ShortlineRadarRisk,
   type ShortlineRadarRow,
   type ShortlineRadarStage,
@@ -49,7 +50,7 @@ import {
 } from '@/lib/api'
 import { QK } from '@/lib/queryKeys'
 import { cn } from '@/lib/cn'
-import { fmtBigNum } from '@/lib/format'
+import { fmtBigNum, priceColorClass } from '@/lib/format'
 import { PageHeader } from '@/components/PageHeader'
 import { DateInput } from '@/components/DateInput'
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
@@ -81,7 +82,9 @@ const TAG_META: Record<ShortlineRadarTag, { label: string; chip: string; dot: st
 type ViewKey = 'all' | ShortlineRadarTag
 
 const VIEWS: { key: ViewKey; label: string; dot: string | null }[] = [
-  { key: 'all', label: '全部', dot: null },
+  // 「全市场」不是「四个标签的并集」：标签互斥只是**屏幕**互斥，一只票可能同时属于两三个标签，
+  // 四页计数相加 ≠ 全市场。旧名「全部」会把人引向并集，所以改成口径名。
+  { key: 'all', label: '全市场', dot: null },
   ...TAG_ORDER.map(key => ({ key, label: TAG_META[key].label, dot: TAG_META[key].dot })),
 ]
 
@@ -640,6 +643,185 @@ function FocusBand({
 }
 
 /**
+ * 重点关注 · 锁仓横盘 —— 观察池之外的**一个**对象，独立口径。
+ *
+ * 为什么必须单独一块，而不是塞进上面 15 张卡：
+ *   观察池的入场券是 heat ≥ 0.75，而 heat 四项里有一项是 20 日换手分位；
+ *   本形态要求 60 日均换手 ≤1.3%（目标 0.96%）—— 两条**构造上互斥**。
+ *   把它塞进池里只有两种结果：永远选不中，或者偷偷改掉旧门槛。
+ *   所以这里照实列出「与旧标准的冲突项」，并把它排除在池外。
+ *
+ * 措辞纪律：标题是「重点关注」，不是「即将启动」。卡片底部必须带历史读数
+ * （前向 20 日超额不显著、未来 20 日涨停率显著低于同池对照），否则这四个字
+ * 会被读成买入建议 —— 那正是这一页反复在防的误读。
+ */
+function LockWatchBand({
+  lock, asOf, onOpenStock, onOpenMethod,
+}: {
+  lock: ShortlineRadarLockWatch | undefined
+  asOf: string | null
+  onOpenStock: (s: string) => void
+  onOpenMethod: () => void
+}) {
+  if (!lock) return null
+  const { picks, budget, excluded, criteria, readout } = lock
+  const first = picks[0]
+  const rest = picks.slice(1)
+  // 命中总数可能大于列出的只数（后端按距离只发前 max_n 只）：不把「截断」藏起来。
+  const restTotal = Math.max(0, budget.matched - 1)
+  const pct = (v: number) => `${(v * 100).toFixed(1)}%`
+
+  return (
+    <section className="overflow-hidden rounded-card border border-amber-500/25 bg-amber-500/[0.025]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 pb-1.5 pt-2.5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <h2 className="text-[13px] font-medium text-foreground">重点关注 · 锁仓横盘</h2>
+          <span className="text-[10px] text-muted">
+            独立口径 · 不进观察池 · {asOf ?? '—'}
+          </span>
+        </div>
+        <span
+          className="text-[9.5px] tabular-nums text-muted/80"
+          title={`硬门槛删掉：ST ${excluded.st} · 北交所 ${excluded.bse} · 次新 ${excluded.young} · 已启动 ${excluded.moved} · 缩量不足 ${excluded.thin}；形态带外 ${excluded.band}`}
+        >
+          全市场 {budget.market.toLocaleString()} → 硬门槛 {budget.hard.toLocaleString()} → 形态 {budget.matched}
+        </span>
+      </div>
+
+      <p className="px-4 pb-1.5 text-[9.5px] leading-relaxed text-muted/75">
+        观察池要 <b className="text-foreground/75">heat ≥ 0.75</b>（换手项要高），本形态要
+        <b className="text-foreground/75"> 60 日均换手 {criteria.turn60_target}%±{criteria.turn60_tol}pp</b>（低换手）
+        —— 两条互斥，所以命中票必然进不了池，单独列在这里，不套旧门槛。
+      </p>
+
+      {picks.length === 0 ? (
+        <div className="border-t border-amber-500/15 px-4 py-4 text-center">
+          <div className="text-[11.5px] text-foreground">今天没有票同时满足这三个条件</div>
+          <p className="mt-1 text-[9.5px] leading-relaxed text-muted/70">
+            60 日均换手 {criteria.turn60_target}%±{criteria.turn60_tol}pp · 20 日涨幅{' '}
+            {pct(criteria.ret20_target)}±{pct(criteria.ret20_tol)} · 锁 {Math.round(criteria.lock_ratio * 100)}% 流通盘 ≤
+            {fmtBigNum(criteria.lock_max_capital)}。硬门槛后 {budget.hard.toLocaleString()} 只，形态命中 0 ——
+            空也是一个结论，不是漏算。
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="border-t border-amber-500/15 px-4 py-2">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <button
+                type="button"
+                onClick={() => onOpenStock(first.symbol)}
+                className="text-[13px] font-medium text-foreground underline-offset-2 hover:underline"
+              >
+                {first.name ?? first.symbol}
+              </button>
+              <span className="font-mono text-[10px] text-muted/70">{first.symbol.split('.')[0]}</span>
+              <span className="text-[10px] text-muted">{first.industry ?? '未分类'}</span>
+              {first.turn_q != null && (
+                <span
+                  className="rounded border border-border/60 bg-surface/70 px-1 py-0.5 text-[9px] text-secondary"
+                  title={
+                    '当日 60 日均换手的横截面五分位（Q1 = 最低）。'
+                    + '全市场「当日换手 ≥2×60 日均值」的放量事件，未来 20 日超额：'
+                    + 'Q1 −47bp / Q5 −304bp（2020-26，82 个月，差值 t 4.45）——'
+                    + 'Q1 也不是买点，只是少亏。见 prereg-surge-all.md'
+                  }
+                >
+                  换手档 Q{first.turn_q}/5
+                  {first.tr_ratio != null && (
+                    <span className="ml-1 text-muted/70">{first.tr_ratio.toFixed(1)}× 均量</span>
+                  )}
+                </span>
+              )}
+              {first.high_recognition ? (
+                <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
+                  辨识度 {first.recognition.toFixed(2)} · 相对更高
+                </span>
+              ) : (
+                <span className="text-[9px] text-muted/70">
+                  辨识度 {first.recognition.toFixed(2)}（近一年涨停 {first.lu250} · 龙虎榜 {first.lhb_days}）
+                </span>
+              )}
+              {first.in_pool && (
+                <span className="text-[9px] text-emerald-700">同时在观察池</span>
+              )}
+            </div>
+
+            <div className="mt-1.5 grid grid-cols-3 gap-px overflow-hidden rounded-btn border border-border/50 bg-border/30">
+              <div className="bg-surface/70 px-2 py-1">
+                <div className="text-[9px] text-muted/70">60 日均换手（目标 {criteria.turn60_target}%）</div>
+                <div className="font-mono text-[13px] tabular-nums text-foreground">{first.turn60.toFixed(2)}%</div>
+              </div>
+              <div className="bg-surface/70 px-2 py-1">
+                <div className="text-[9px] text-muted/70">20 日涨幅（目标 {pct(criteria.ret20_target)}）</div>
+                {/* 这一页唯一的价格语义列：涨红跌绿 */}
+                <div className={cn('font-mono text-[13px] tabular-nums', priceColorClass(first.ret20))}>
+                  {fmtPct(first.ret20, 1)}
+                </div>
+              </div>
+              <div className="bg-surface/70 px-2 py-1">
+                <div className="text-[9px] text-muted/70">锁 {Math.round(criteria.lock_ratio * 100)}% 流通盘需</div>
+                <div className="font-mono text-[13px] tabular-nums text-foreground">{fmtBigNum(first.lock_capital)}</div>
+                <div className="text-[8.5px] text-muted/70">≈ {first.lock_days.toFixed(0)} 日成交</div>
+              </div>
+            </div>
+
+            {first.conflicts.length > 0 && (
+              <div className="mt-1.5 text-[9.5px] leading-relaxed text-amber-700/90">
+                与观察池旧标准冲突 {first.conflicts.length} 项（因此单独列出，不套旧门槛）：
+                {first.conflicts.map(c => (
+                  <span key={c} className="ml-1 rounded bg-amber-500/[0.08] px-1 py-0.5">{c}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {rest.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 border-t border-amber-500/10 px-4 py-1.5">
+              <span className="text-[9px] text-muted/70">
+                同形态另有 {restTotal} 只{rest.length < restTotal ? `（只列前 ${rest.length}）` : ''}：
+              </span>
+              {rest.map(p => (
+                <button
+                  key={p.symbol}
+                  type="button"
+                  onClick={() => onOpenStock(p.symbol)}
+                  className={cn(
+                    'rounded-btn border px-1.5 py-0.5 text-[9.5px] transition-colors',
+                    p.high_recognition
+                      ? 'border-amber-500/40 bg-amber-500/[0.08] text-amber-700'
+                      : 'border-border/60 bg-surface/60 text-secondary hover:text-foreground',
+                  )}
+                  title={`60 日均换手 ${p.turn60.toFixed(2)}% · 20 日 ${fmtPct(p.ret20, 1)} · 换手档 ${p.turn_q == null ? '—' : `Q${p.turn_q}`} · 辨识度 ${p.recognition.toFixed(2)}`}
+                >
+                  {p.name ?? p.symbol}
+                  {p.high_recognition && ' ★'}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-amber-500/10 px-4 py-1.5 text-[9px] leading-relaxed text-muted/70">
+        <span>
+          实测 {readout.base_periods} 个基期（{readout.sample}）：前向 20 日超额 {fmtPct(readout.fwd20_ex, 2)}
+          （t {readout.fwd20_t.toFixed(2)}），同池高换手对照 {fmtPct(readout.ctrl_ex, 2)}（差值 t {readout.diff_t.toFixed(2)}）；
+          中位 {fmtPct(readout.fwd20_med, 2)}、p10 {fmtPct(readout.fwd20_p10, 2)}。
+          未来 20 日涨停率 {fmtPct(readout.lu_rate, 1)} vs 对照 {fmtPct(readout.ctrl_lu_rate, 1)}
+          （t {readout.lu_t.toFixed(2)}，仅 {readout.lu_pos_periods}/{readout.base_periods} 期为正）
+          —— <b className="text-foreground/70">安静不等于要动</b>。
+        </span>
+        <button type="button" onClick={onOpenMethod}
+          className="text-accent underline underline-offset-2 hover:text-foreground">
+          完整口径
+        </button>
+      </div>
+    </section>
+  )
+}
+
+/**
  * 排序体检的一行摘要。
  *
  * 判据冻结在 docs/structural-edge/prereg-heat-sort.md，评估日由人执行；
@@ -673,42 +855,27 @@ function SortAuditLine({ audit, onOpen }: { audit: SortAudit | null | undefined;
 }
 
 /**
- * 可执行动作 —— 短线唯一有正期望证据的部分，但它是**事件驱动**，不是「买观察池」。
+ * 可执行动作 —— 从一张常驻卡片压成一行。
  *
- * 数据来自 docs/hotmoney-quant-game.md（2010-2026，换手板 = 收盘涨停且非一字）。
- * 这里只留两条可执行 + 一行代价；完整四行与「不要做」在口径抽屉里。
+ * 它不随日期变化，属于**规则参考**而不是今天的数据；完整四行与「不要做」在口径抽屉里。
+ * 留在首屏只为一件事：拦住「把观察池当买入名单」。
+ * 旧版是一张 90px 的卡，占的是每天都不变的信息，却和当日读数抢同一屏。
  */
-function ActionStrip({ onOpenMethod }: { onOpenMethod: () => void }) {
-  const rows = [
-    { label: 'T 日封板 → T+1 开盘卖', value: '+1.45%', note: '2026 · 17 年唯一稳定为正' },
-    { label: 'T+1 日内跌 >5% → T+2 开盘买、收盘卖', value: '+0.836%', note: 't 12.69 · 2018-26 九年全正' },
-  ]
+function ActionLine({ onOpenMethod }: { onOpenMethod: () => void }) {
   return (
-    <section className="overflow-hidden rounded-card border border-border bg-surface/40">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-border/50 px-4 py-1.5">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <h2 className="text-[12px] font-medium text-foreground">执行窗口</h2>
-          <span className="text-[9.5px] text-muted">事件驱动 · 不由本页选股</span>
-        </div>
-        <button type="button" onClick={onOpenMethod}
-          className="text-[9.5px] text-muted/70 underline underline-offset-2 hover:text-foreground">
-          完整规则与「不要做」
-        </button>
-      </div>
-      <div className="grid gap-x-6 sm:grid-cols-2">
-        {rows.map(r => (
-          <div key={r.label} className="flex items-baseline justify-between gap-3 border-b border-border/30 px-4 py-1.5 last:border-b-0">
-            <span className="text-[10.5px] text-secondary">{r.label}</span>
-            <span className="shrink-0 font-mono text-[13px] tabular-nums text-foreground">{r.value}</span>
-            <span className="shrink-0 text-[9px] text-muted/70">{r.note}</span>
-          </div>
-        ))}
-      </div>
-      <div className="border-t border-border/40 px-4 py-1 text-[9.5px] leading-relaxed text-muted/75">
-        代价：T+2 开盘后日内最低点中位 <span className="text-foreground/80">−2.69%</span>、p10 <span className="text-foreground/80">−6.80%</span>，
-        22% 的样本盘中跌破 −5%。用盘中回撤换收盘超额，不是低风险短线。
-      </div>
-    </section>
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-card border border-border/70 bg-surface/30 px-4 py-1.5 text-[9.5px] leading-relaxed text-muted">
+      <span className="text-[10px] font-medium text-foreground">可执行动作只有两个</span>
+      <span>
+        全市场换手板口径，不是本页观察池：T 日封板 → T+1 开盘卖{' '}
+        <b className="text-foreground/85">+1.45%</b>；T+1 日内跌 &gt;5% → T+2 开盘买、收盘卖{' '}
+        <b className="text-foreground/85">+0.836%</b>
+      </span>
+      <span className="hidden text-muted/70 sm:inline">代价 p10 −6.80% · 22% 盘中破 −5%</span>
+      <button type="button" onClick={onOpenMethod}
+        className="ml-auto text-accent underline underline-offset-2 hover:text-foreground">
+        完整规则与「不要做」
+      </button>
+    </div>
   )
 }
 
@@ -861,7 +1028,7 @@ function TagHeader({
         </span>
         <span className="ml-auto">
           观察池与可执行规则是全市场口径，见
-          <button type="button" onClick={onGoAll} className="ml-1 underline underline-offset-2 hover:text-foreground">全部</button>
+          <button type="button" onClick={onGoAll} className="ml-1 underline underline-offset-2 hover:text-foreground">全市场</button>
         </span>
       </div>
     </section>
@@ -976,7 +1143,9 @@ function Row({
   const hot = r.turn_ratio >= 2
   const cold = r.turn_ratio <= 0.5
   const young = r.n_days < 10
-  const shownTags = activeTag ? r.tags.filter(t => t !== activeTag) : r.tags
+  // 标签只在标签页里出现：全市场视图不给逐行合并多标签的列 —— 那会把「视图」读成「分类」，
+  // 也正是页面脚注反复在解释的那件事。
+  const shownTags = activeTag ? r.tags.filter(t => t !== activeTag) : []
   const open = () => onOpenStock(r.symbol)
   return (
     <tr
@@ -1012,19 +1181,21 @@ function Row({
         </div>
         <div className="mt-0.5 truncate text-[9px] text-muted/60">{r.industry ?? '未分类'}</div>
       </td>
-      <td className="px-2 py-1.5">
-        <div className="flex flex-wrap items-center gap-1">
-          {shownTags.length === 0 ? (
-            <span className="text-[9px] text-muted/25">—</span>
-          ) : (
-            shownTags.map(t => (
-              <span key={t} className={cn('rounded border px-1 py-px text-[9px] font-medium', TAG_META[t].chip)}>
-                {TAG_META[t].label}
-              </span>
-            ))
-          )}
-        </div>
-      </td>
+      {activeTag && (
+        <td className="px-2 py-1.5">
+          <div className="flex flex-wrap items-center gap-1">
+            {shownTags.length === 0 ? (
+              <span className="text-[9px] text-muted/25">—</span>
+            ) : (
+              shownTags.map(t => (
+                <span key={t} className={cn('rounded border px-1 py-px text-[9px] font-medium', TAG_META[t].chip)}>
+                  {TAG_META[t].label}
+                </span>
+              ))
+            )}
+          </div>
+        </td>
+      )}
       <td className="px-2 py-1.5 text-right font-mono tabular-nums text-secondary">{fmtBigNum(r.mcap)}</td>
       <td className="px-2 py-1.5 text-right font-mono tabular-nums text-secondary">{fmtBigNum(r.amount)}</td>
       <td className="px-2 py-1.5 text-right">
@@ -1120,7 +1291,7 @@ function ArenaSection({
           <table className="w-full min-w-[780px] table-fixed border-collapse text-left" aria-label={`${meta.label}明细`}>
             <colgroup>
               <col style={{ width: '26%' }} />
-              <col style={{ width: '10%' }} />
+              {activeTag && <col style={{ width: '10%' }} />}
               <col style={{ width: '12%' }} />
               <col style={{ width: '12%' }} />
               <col style={{ width: '10%' }} />
@@ -1130,7 +1301,7 @@ function ArenaSection({
             <thead className="sticky top-0 z-10 bg-surface">
               <tr className="border-b border-border/40 text-[10px] tracking-wide text-muted/60">
                 <th className="py-1.5 pl-3 pr-2 font-medium">股票 / 行业</th>
-                <th className="px-2 py-1.5 font-medium">{activeTag ? '其他标签' : '属性'}</th>
+                {activeTag && <th className="px-2 py-1.5 font-medium">其他标签</th>}
                 <th className="px-2 py-1.5 text-right font-medium">流通市值</th>
                 <th className="px-2 py-1.5 text-right font-medium">成交额</th>
                 <th className="px-2 py-1.5 text-right font-medium">换手</th>
@@ -1304,6 +1475,50 @@ function MethodDrawer({
               <li>去掉已涨停的票之后，前 20 名的未来 5 日打板率是基准的 6.98 倍（23.3bp → 162bp），但<b className="text-foreground/80">打板率不是收益</b>。</li>
               <li>热度分是四项分位等权（振幅 / 换手 / 市值反向 / 当日成交额），门槛 {heatCut}，按热度取前 {topN}；它只排序，没有校准，不能读成上涨概率。</li>
               <li>“超跌修复”救不回来（<code>stock-dip-repair.md</code>）：唯一两段同向的改进是缩量+小市值，Δ +115.6bp，是<b className="text-foreground/80">少亏</b>不是赚。</li>
+            </ul>
+          </div>
+
+          <div>
+            <div className="mb-1 text-[10px] font-medium text-foreground">重点关注 · 锁仓横盘（独立口径，不进观察池）</div>
+            <ul className="list-disc space-y-1 pl-4 text-[9.5px] text-muted/85">
+              <li>
+                三条形态条件：60 日均换手 {data.focus.lock?.criteria.turn60_target ?? 0.96}%±
+                {data.focus.lock?.criteria.turn60_tol ?? 0.35}pp、20 日涨幅{' '}
+                {((data.focus.lock?.criteria.ret20_target ?? -0.035) * 100).toFixed(1)}%±
+                {((data.focus.lock?.criteria.ret20_tol ?? 0.025) * 100).toFixed(1)}pp、锁 20% 流通盘 ≤
+                {fmtBigNum(data.focus.lock?.criteria.lock_max_capital ?? 8e8)}（含 60 日均成交额 ≥
+                {fmtBigNum(data.focus.lock?.criteria.min_amount60 ?? 1.5e7)}）。
+              </li>
+              <li>
+                与观察池<b className="text-foreground/80">构造性互斥</b>：池要 heat ≥ {heatCut}，其中一项是换手分位；
+                本形态要 60 日均换手 ≤{(data.focus.lock?.criteria.turn60_target ?? 0.96) + (data.focus.lock?.criteria.turn60_tol ?? 0.35)}%。
+                所以它永远进不了池，页面单独列，并把冲突项逐条写出，不套旧门槛。
+              </li>
+              <li>
+                辨识度 =（近 250 日涨停天数分位 + 龙虎榜上榜天数分位）/2，≥
+                {data.focus.lock?.criteria.recognition_cut ?? 0.6} 标「相对更高」。用 average rank：
+                0 涨停的票有几千只，ordinal rank 会把「都没有」读成「有差别」。
+              </li>
+              <li>
+                换手档 = 当日 60 日均换手的横截面五分位（Q1 最低）。全市场「当日换手 ≥2×60 日均值」的
+                放量事件，未来 20 日超额 <b className="text-foreground/80">Q1 −47bp / Q5 −304bp</b>
+                （2010-26 五档单调；2020-26，82 个月，差值 +258bp，t 4.45；市值五分位内五档全正）。
+                <b className="text-foreground/80">Q1 也不是买点，只是少亏</b>，见
+                <code>prereg-surge-all.md</code>。
+              </li>
+              <li>
+                历史读数（{data.focus.lock?.readout.base_periods ?? 65} 个基期，2021-04..2026-09）：
+                前向 20 日超额 {((data.focus.lock?.readout.fwd20_ex ?? 0.011) * 100).toFixed(2)}%
+                （t {data.focus.lock?.readout.fwd20_t ?? 1.45}），同池高换手对照{' '}
+                {((data.focus.lock?.readout.ctrl_ex ?? 0.0049) * 100).toFixed(2)}%（差值 t{' '}
+                {data.focus.lock?.readout.diff_t ?? 0.94}）；未来 20 日涨停率{' '}
+                {((data.focus.lock?.readout.lu_rate ?? 0.036) * 100).toFixed(1)}% vs{' '}
+                {((data.focus.lock?.readout.ctrl_lu_rate ?? 0.114) * 100).toFixed(1)}%（t{' '}
+                {data.focus.lock?.readout.lu_t ?? -5.28}，仅 {data.focus.lock?.readout.lu_pos_periods ?? 2}/
+                {data.focus.lock?.readout.base_periods ?? 65} 期为正）。
+                <b className="text-foreground/80">低换手没有收益增量，且涨停率更低 —— 安静不等于要动。</b>
+                重算入口 <code>{data.focus.lock?.readout.script ?? 'analysis/_diag_lock_pattern.py'}</code>。
+              </li>
             </ul>
           </div>
 
@@ -1636,7 +1851,13 @@ export function ShortlineRadar() {
                     onOpenStock={setPreview}
                     onOpenMethod={openMethod}
                   />
-                  <ActionStrip onOpenMethod={openMethod} />
+                  <LockWatchBand
+                    lock={data.focus.lock}
+                    asOf={data.as_of}
+                    onOpenStock={setPreview}
+                    onOpenMethod={openMethod}
+                  />
+                  <ActionLine onOpenMethod={openMethod} />
                   <MarketBand
                     arenas={data.summary.arenas}
                     total={total}
@@ -1693,7 +1914,7 @@ export function ShortlineRadar() {
                     {activeTag && (
                       <button onClick={() => switchView('all')}
                         className="rounded-btn border border-border bg-elevated px-2 py-1 text-[10px] text-secondary hover:text-foreground">
-                        切到全部
+                        切到全市场
                       </button>
                     )}
                   </div>

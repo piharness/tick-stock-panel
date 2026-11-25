@@ -5,7 +5,7 @@
  * 这一页最容易改坏的不是样式，而是「隔离」与「口径」：
  *   1. 五个标签页与计数是否来自同一份 summary；
  *   2. 切到某个标签后，屏幕上是否只剩这一类的票（而不是在 5,576 行里加个高亮）；
- *   3. 观察池/执行窗口是否只出现在「全部」这一屏；
+ *   3. 观察池/可执行动作是否只出现在「全市场」这一屏；
  *   4. 白马没有历史读数时必须说「无历史背书」，不能显示成 0%；
  *   5. 换标签是否清掉上一屏的筛选（否则会读成「该标签没有票」）；
  *   6. 摘要里的「变化/风险」是否真的能筛明细（第四版新增的出口）；
@@ -102,6 +102,40 @@ const fixture: ShortlineRadarData = {
     seat_backing: [],
     emotion: { available: false },
     excluded: { non_cold: 2, st: 0, bse: 0, thin: 0, young: 0, falling: 0, hot: 2, warming: 0, fading: 0 },
+    lock: {
+      criteria: {
+        turn60_target: 0.96, turn60_tol: 0.35, ret20_target: -0.035, ret20_tol: 0.025,
+        lock_ratio: 0.2, lock_max_capital: 8e8, min_amount60: 1.5e7,
+        recognition_cut: 0.6, max_n: 10,
+      },
+      budget: { market: 6, hard: 4, matched: 2 },
+      excluded: { st: 1, bse: 0, young: 0, moved: 1, thin: 0, band: 0 },
+      picks: [
+        {
+          symbol: '603309.SH', name: '维力医疗', industry: '医疗器械', arena: 'nowhere',
+          mcap: 2.96e9, turn60: 0.897, ret20: -0.0374, amount: 5.47e6, amt60: 2.87e7,
+          lock_capital: 5.91e8, lock_days: 20.6, turn_q: 1, tr_ratio: 0.21,
+          lu250: 0, lhb_days: 0,
+          recognition: 0.19, high_recognition: false, in_pool: false,
+          conflicts: ['热度分 0.24 < 0.75（换手项被本形态主动压低）', '当日成交额 547 万 < 3000 万'],
+        },
+        {
+          symbol: '605108.SH', name: '同庆楼', industry: '酒店餐饮', arena: 'hotmoney',
+          mcap: 2.82e9, turn60: 1.082, ret20: -0.0582, amount: 3.4e7, amt60: 3.43e7,
+          lock_capital: 5.64e8, lock_days: 16.4, turn_q: 2, tr_ratio: 0.9,
+          lu250: 3, lhb_days: 2,
+          recognition: 0.64, high_recognition: true, in_pool: false,
+          conflicts: ['热度分 0.40 < 0.75（换手项被本形态主动压低）'],
+        },
+      ],
+      readout: {
+        base_periods: 65, sample: '2021-04..2026-09',
+        fwd20_ex: 0.011, fwd20_t: 1.45, ctrl_ex: 0.0049, diff_t: 0.94,
+        fwd20_med: -0.0015, fwd20_p10: -0.0504,
+        lu_rate: 0.036, ctrl_lu_rate: 0.114, lu_t: -5.28, lu_pos_periods: 2,
+        script: 'analysis/_diag_lock_pattern.py',
+      },
+    },
   },
   rows: [
     row({ symbol: '600000.SH', name: '浦发银行', arena: 'institution', tags: ['bluechip', 'leader'], level: 'core', transition: 'up' }),
@@ -170,26 +204,44 @@ async function switchTo(el: HTMLElement, key: string) {
 const rowsWith = (el: HTMLElement, text: string) =>
   Array.from(el.querySelectorAll('tbody tr')).filter(tr => tr.textContent?.includes(text))
 
-it('默认停在「全部」：五个标签页带计数，状态条 / 观察池 / 执行窗口都在这一屏', async () => {
+it('默认停在「全市场」：五个标签页带计数，状态条 / 观察池 / 可执行动作都在这一屏', async () => {
   const el = await render()
   const tabs = Array.from(el.querySelectorAll('[role="tab"]')) as HTMLButtonElement[]
   expect(tabs).toHaveLength(5)
   expect(tabs.map(t => t.id)).toEqual([
     'radar-tab-all', 'radar-tab-bluechip', 'radar-tab-whitehorse', 'radar-tab-leader', 'radar-tab-yaogu',
   ])
+  expect(tab(el, 'all').textContent).toContain('全市场')
   expect(tab(el, 'all').getAttribute('aria-selected')).toBe('true')
-  // 计数取自 summary：全部 6、蓝筹 2、白马 1、龙头 2、妖股 2
+  // 计数取自 summary：全市场 6、蓝筹 2、白马 1、龙头 2、妖股 2
   expect(tab(el, 'all').textContent).toContain('6')
   expect(tab(el, 'bluechip').textContent).toContain('2')
   expect(tab(el, 'whitehorse').textContent).toContain('1')
 
   expect(el.textContent).toContain('今日观察池')
-  expect(el.textContent).toContain('执行窗口')
+  // 「执行窗口」不再是常驻卡片：压成一行「可执行动作只有两个」，完整规则在抽屉里
+  expect(el.textContent).toContain('可执行动作只有两个')
+  expect(el.textContent).not.toContain('执行窗口')
   expect(el.textContent).toContain('机构主场')
   // 变化与风险从摘要变成入口：这两个数字旧版在页面上根本没有出口
   expect(el.textContent).toContain('上移 1')
   expect(el.textContent).toContain('下移 1')
   expect(el.textContent).toContain('另有 3 只 ST 今日无成交')
+})
+
+it('全市场视图不显示逐行合并的标签列：标签只属于标签页', async () => {
+  const el = await render()
+  // 表头：全市场视图没有「属性 / 其他标签」列
+  expect(el.textContent).not.toContain('其他标签')
+  expect(el.textContent).not.toContain('属性')
+  // 默认展开的游资格里有「北自科技」（带妖股标签）：没有标签列就不该出现 chip
+  expect(rowsWith(el, '北自科技')).toHaveLength(1)
+  expect(rowsWith(el, '北自科技')[0].textContent).not.toContain('妖股')
+
+  await switchTo(el, 'bluechip')
+  // 标签页里才有「其他标签」，回答「它还同时是什么」
+  expect(el.textContent).toContain('其他标签')
+  expect(rowsWith(el, '浦发银行')[0].textContent).toContain('龙头')
 })
 
 it('切到蓝筹：屏幕上只剩蓝筹的票，观察池不再重复出现', async () => {
@@ -399,4 +451,41 @@ it('排序体检：前向有数据时首行切到 forward，裁决线按 forward
   expect(el.textContent).toContain('前向 1/6 月')
   expect(el.textContent).not.toContain('回填 500 天（样本内）')
   expect(el.textContent).toContain('+12.5bp')
+})
+
+// ===== 重点关注（锁仓横盘）：独立口径，不进池 =====
+//
+// 这一块存在的前提是「两条口径互斥」：池要 heat≥0.75（高换手），本形态要
+// 60 日均换手 ≤1.3%。所以测试必须同时锁住三件事——块存在、冲突被逐条写出、
+// 历史负读数跟着显示。少任何一条，页面就会把它读成「明天要涨」。
+
+it('重点关注：单独一块、写明与观察池旧标准的冲突、辨识度更高的带标记', async () => {
+  const el = await render()
+  expect(el.textContent).toContain('重点关注 · 锁仓横盘')
+  expect(el.textContent).toContain('独立口径 · 不进观察池')
+  // 主对象 = 离参照读数最近的那只
+  expect(el.textContent).toContain('维力医疗')
+  expect(el.textContent).toContain('0.90%')          // 60 日均换手
+  expect(el.textContent).toContain('-3.7%')          // 20 日涨幅（跌绿，但文案仍是负号）
+  // 冲突必须逐条列出，并说明因此单独列出
+  expect(el.textContent).toContain('与观察池旧标准冲突 2 项')
+  expect(el.textContent).toContain('热度分 0.24 < 0.75')
+  expect(el.textContent).toContain('当日成交额 547 万 < 3000 万')
+  // 辨识度更高的同形态票要带标记
+  expect(el.textContent).toContain('同庆楼')
+  expect(el.textContent).toContain('★')
+  // 历史读数：不能说成「即将启动」
+  expect(el.textContent).toContain('安静不等于要动')
+  expect(el.textContent).toContain('3.6%')
+  expect(el.textContent).toContain('11.4%')
+  // 换手档：把卡片锚到「放量 × 换手档」的历史读数上
+  expect(el.textContent).toContain('换手档 Q1/5')
+  expect(el.textContent).toContain('0.2× 均量')
+})
+
+it('重点关注：切到标签页后不再出现（与观察池同一屏规则）', async () => {
+  const el = await render()
+  expect(el.textContent).toContain('重点关注 · 锁仓横盘')
+  await switchTo(el, 'bluechip')
+  expect(el.textContent).not.toContain('重点关注 · 锁仓横盘')
 })

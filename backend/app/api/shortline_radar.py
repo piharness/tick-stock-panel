@@ -106,6 +106,19 @@ def get_levels():
             "min_listing_days": citizenship.FOCUS_MIN_LISTING_DAYS,
             "min_ret60": citizenship.FOCUS_MIN_RET60,
         },
+        # 重点关注（锁仓横盘）：独立口径，与观察池并列。页面据此渲染条件与实测读数，
+        # 不抄第二份常量。
+        "lock": {
+            "turn60_target": citizenship.LOCK_TURN60_TARGET,
+            "turn60_tol": citizenship.LOCK_TURN60_TOL,
+            "ret20_target": citizenship.LOCK_RET20_TARGET,
+            "ret20_tol": citizenship.LOCK_RET20_TOL,
+            "lock_ratio": citizenship.LOCK_RATIO,
+            "lock_max_capital": citizenship.LOCK_MAX_CAPITAL,
+            "min_amount60": citizenship.LOCK_MIN_AMOUNT60,
+            "recognition_cut": citizenship.LOCK_RECOGNITION_CUT,
+            "readout": citizenship.LOCK_READOUT,
+        },
         "risk_flags": {
             "order": citizenship.RISK_ORDER,
             "labels": citizenship.RISK_LABELS,

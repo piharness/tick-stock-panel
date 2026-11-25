@@ -1740,6 +1740,84 @@ export interface SortAudit {
 }
 
 /** 观察漏斗：每一层删掉了什么 */
+/** 重点关注（锁仓横盘）：独立口径，与观察池并列而不是同池。
+ *
+ *  为什么单独一块：观察池要求 heat ≥ 0.75（其中一项是换手分位），本形态要求
+ *  60 日均换手 ≤1.3% —— 两条**构造上互斥**，命中票必然落在「与旧标准冲突」一侧。
+ *  后端把冲突项逐条给出，页面照实列出，不塞进 15 张池内卡片。 */
+export interface ShortlineRadarLockPick {
+  symbol: string
+  name: string | null
+  industry: string | null
+  arena: ShortlineRadarArena
+  mcap: number
+  /** 60 日均换手（百分数，0.9 = 0.90%） */
+  turn60: number
+  /** 20 日涨幅（小数） */
+  ret20: number
+  /** 当日成交额 */
+  amount: number
+  /** 60 日均成交额 */
+  amt60: number
+  /** 锁死 20% 流通盘所需资金（元） */
+  lock_capital: number
+  /** 上面的资金折合多少个 60 日均成交日 */
+  lock_days: number
+  /** 当日 turn60 的横截面五分位（1 = 最低换手）；null = 不在统计口径内 */
+  turn_q: number | null
+  /** 当日换手 / 60 日均换手；≥2 记为「放量」 */
+  tr_ratio: number | null
+  /** 近 250 交易日涨停天数 */
+  lu250: number
+  /** 近一年龙虎榜上榜天数 */
+  lhb_days: number
+  /** 辨识度：两项市场分位的均值（0~1） */
+  recognition: number
+  high_recognition: boolean
+  /** true = 同时满足观察池全部旧门槛（当前数据下几乎必然 false） */
+  in_pool: boolean
+  /** 与观察池旧门槛的冲突项（人话，逐条可复核） */
+  conflicts: string[]
+}
+
+export interface ShortlineRadarLockReadout {
+  base_periods: number
+  sample: string
+  /** 前向 20 日超额（小数） */
+  fwd20_ex: number
+  fwd20_t: number
+  /** 同日同池、只把换手换到 2%~8% 的对照 */
+  ctrl_ex: number
+  diff_t: number
+  fwd20_med: number
+  fwd20_p10: number
+  /** 未来 20 日出现过涨停的比例 */
+  lu_rate: number
+  ctrl_lu_rate: number
+  lu_t: number
+  lu_pos_periods: number
+  script: string
+}
+
+export interface ShortlineRadarLockWatch {
+  criteria: {
+    turn60_target: number
+    turn60_tol: number
+    ret20_target: number
+    ret20_tol: number
+    lock_ratio: number
+    lock_max_capital: number
+    min_amount60: number
+    recognition_cut: number
+    max_n: number
+  }
+  /** 全市场 → 硬门槛（非 ST/北交所/次新/已启动/缩量不足）→ 形态命中 */
+  budget: { market: number; hard: number; matched: number }
+  excluded: { st: number; bse: number; young: number; moved: number; thin: number; band: number }
+  picks: ShortlineRadarLockPick[]
+  readout: ShortlineRadarLockReadout
+}
+
 export interface ShortlineRadarFocus {
   budget: { market: number; struct: number; cold: number; picks: number }
   stages: Record<ShortlineRadarStage, number>
@@ -1756,6 +1834,8 @@ export interface ShortlineRadarFocus {
   sort_audit?: SortAudit | null
   /** 市场情绪闸门：今天该不该动手的总开关 */
   emotion: MarketEmotion
+  /** 重点关注（锁仓横盘）：独立口径；老响应可能没有这个键，页面按缺省不渲染 */
+  lock?: ShortlineRadarLockWatch
   /** 漏斗单步删除量：non_cold + st + bse + thin + young + falling = budget.struct − budget.cold */
   excluded: {
     non_cold: number
