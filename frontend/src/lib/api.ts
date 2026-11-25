@@ -1740,42 +1740,51 @@ export interface SortAudit {
 }
 
 /** 观察漏斗：每一层删掉了什么 */
-/** 重点关注（锁仓 + 上方无抛压）：独立口径，与观察池并列而不是同池。
+/** 跨年妖候选池：8 画像 → 6 条件（实时计算，独立口径，替代旧「锁仓 + 上方无抛压」）。
  *
- *  条件：流通市值 ≤50 亿 + 前两大股东(剔除托管户) ≥60% + 上市 ≥2 年 + 获利盘 ≥75%。
- *  排序：获利盘从小到大。 */
-export interface ShortlineRadarLockPick {
+ *  条件：现价 3~15 元 + 流通市值 10~60 亿 + 近 20 日有涨停 + 非 ST/北交所/次新
+ *  + 名字记忆点。排序 net_gain = ret20 − ret60 降序；tier：ret60 < 30% 第一梯队。 */
+export interface CrossYearCandidate {
   symbol: string
-  name: string | null
-  industry: string | null
+  name: string
+  /** 6 位代码 */
+  code: string
+  /** 现价（元） */
+  price: number
   /** 流通市值（元） */
   float_cap: number
-  /** 前两大股东（剔除托管户）占比（百分数，60 = 60%） */
-  top2_ratio: number
-  top1_ratio: number
-  top1_name: string | null
-  top2_name: string | null
-  /** 获利盘占比（小数 0~1，现价及以下筹码占比） */
-  profit_ratio: number
-  /** 平均成本（元） */
-  avg_cost: number
-  /** 现价（raw_close，元） */
-  last_close: number
+  /** 20 日涨幅（小数，0.49 = +49%） */
+  ret20: number | null
+  /** 60 日涨幅（小数，负 = 前期深跌/横盘，位置更干净） */
+  ret60: number | null
+  /** 位置干净度 = ret20 − ret60（排序键，降序） */
+  net_gain: number
+  /** 近 20 日涨停天数 */
+  lu20: number
+  /** 当日换手率（百分数） */
+  turnover_rate: number | null
+  /** 名字记忆点（东方/龙/洋/阳/羊/福/喜/吉祥/凤凰/万事/长虹/金龙） */
+  mem: boolean
+  /** 申万行业 */
+  industry: string | null
+  /** 梯队：1 = 位置干净（ret60<30%，刚启动）；2 = 位置偏高（已涨过一轮） */
+  tier: 1 | 2
 }
 
-export interface ShortlineRadarLockWatch {
+export interface CrossYearWatch {
   criteria: {
-    float_cap_max: number
-    top2_min: number
+    price_min: number
+    price_max: number
+    mcap_min: number
+    mcap_max: number
     min_listing_days: number
-    profit_min: number
-    chip_days: number
-    max_n: number
+    ret60_clean: number
+    mem: string
   }
-  /** 全市场 → 硬门槛（非 ST/北交所/次新/超50亿/锁仓不足）→ 获利盘命中 */
-  budget: { market: number; hard: number; matched: number }
-  excluded: { st: number; bse: number; young: number; big: number; unlocked: number; profit: number }
-  picks: ShortlineRadarLockPick[]
+  /** 全市场 → 候选（六条件筛选） */
+  budget: { market: number; candidates: number }
+  tier1: CrossYearCandidate[]
+  tier2: CrossYearCandidate[]
 }
 
 export interface ShortlineRadarFocus {
@@ -1794,8 +1803,8 @@ export interface ShortlineRadarFocus {
   sort_audit?: SortAudit | null
   /** 市场情绪闸门：今天该不该动手的总开关 */
   emotion: MarketEmotion
-  /** 重点关注（锁仓横盘）：独立口径；老响应可能没有这个键，页面按缺省不渲染 */
-  lock?: ShortlineRadarLockWatch
+  /** 跨年妖候选池：独立口径；老响应可能没有这个键，页面按缺省不渲染 */
+  cross_year?: CrossYearWatch
   /** 漏斗单步删除量：non_cold + st + bse + thin + young + falling = budget.struct − budget.cold */
   excluded: {
     non_cold: number

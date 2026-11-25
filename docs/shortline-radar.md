@@ -286,6 +286,47 @@
   （新增 1 条：全市场视图没有「属性 / 其他标签」列，切到蓝筹才出现；原「执行窗口」断言
   改为「可执行动作只有两个」且不再是 h2 卡片）。
 
+## 第七版（2026-11-26 凌晨）：「锁仓 + 上方无抛压」下线，换成「跨年妖候选池」
+
+第五版加的「重点关注 · 锁仓 + 上方无抛压」块下线。原因（详见对话复盘）：
+
+- 它依赖的「获利盘 ≥75%」是一个**无回测背书、方向自相矛盾**的指标：获利盘高 = 下方 75% 浮盈盘
+  （真正的止盈抛压），却被打成「上方无抛压」标签；且换手率衰减筹码模型在低换手锁仓票上
+  机械性高估获利盘，使该条件在锁仓票上近乎必然成立、没有区分度。
+- 筹码结构这一族变量已被判死：`state-family-converge.md` 14 个检验全灭、`stock-dip-repair.md`
+  与 `concentration_ignition` 的股东集中度前向超额全负（top2>70% 组 −4.59% 最差）。
+
+替换物是「跨年妖候选池」：把跨年妖股 8 条画像翻译成 6 个可量化条件，实时筛出候选，分两梯队
+（位置干净 / 位置偏高），卡片可点开日 K（复用 `StockPreviewDialog`）。
+
+**口径与实现**：
+
+- 条件（`citizenship.py::CROSS_YEAR_*` 常量 + `_cross_year_candidates`）：现价 3~15 元 +
+  流通市值 10~60 亿 + 近 20 日有涨停（`lu20 ≥ 1`）+ 非 ST/北交所/次新 + 名字记忆点。
+  排序 `net_gain = ret20 − ret60` 降序；梯队：`ret60 < 30%` 第一梯队（刚启动），否则第二梯队。
+- **涨幅口径用 ret20/ret60（滚动交易日），不用「11 月/7 月」这种日历锚点**——后者随日期漂移，
+  前者全年通用。与旧的「获利盘」无关。
+- **实时计算**：后端从 `kline_daily_enriched` 当日横截面现算，每次请求重算，随交易日自动更新，
+  不落盘、无批处理。前端读 `focus.cross_year`（类型 `CrossYearWatch`），不再有静态快照。
+- **情绪温度合并**：块头显示「市场温度 = 全市场 20 日内有涨停的票数」+「候选数」，
+  构成完整读数——密度是退潮温度计，候选是热度样本（呼应 `yaogu-density-result.md` 的「密度是
+  描述性指标、不是信号」）。
+- 页面上明确写「候选池不是买入名单」——项目 20 年全样本（`yaogu-census.md`）首板后开盘买入
+  20 日超额 −1.85%（t −15.94），见顶确认时买入 −26.9%。
+
+**后端死代码已清理**：`_lock_watch`、`_top2_concentration`、`_profit_ratio`、`_TOP2_NOMINEE`、
+`LOCK_*` 常量与 `levels._profit_split` 的 import 全部删除；`focus.lock` 改为 `focus.cross_year`。
+`test_citizenship.py` 的 4 条锁仓测试换成 4 条候选池测试。
+
+### 验证
+
+- 后端 `pytest tests/test_citizenship.py`：32 passed；`test_shortline_radar_api.py`：2 passed。
+- `pnpm exec tsc --noEmit`：通过。
+- `pnpm exec vitest run src/custom/shortline-radar/Page.test.tsx`：**17 passed**（删 2 条锁仓测试、
+  加 2 条候选池测试：两梯队 + 情绪温度 + 记忆点 + 切标签消失）。
+- `pnpm exec vitest run src/lib/navOrder.test.ts`：16 passed（导航不受影响）。
+- `pnpm exec vite build --outDir dist/verify`：成功。
+
 ## 为什么不能把观察池当买入名单
 
 这是本次改造的前提，不是附注：

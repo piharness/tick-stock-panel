@@ -101,29 +101,18 @@ const fixture: ShortlineRadarData = {
     picks: [],
     seat_backing: [],
     emotion: { available: false },
-    excluded: { non_cold: 2, st: 0, bse: 0, thin: 0, young: 0, falling: 0, hot: 2, warming: 0, fading: 0 },
-    lock: {
-      criteria: {
-        float_cap_max: 50e8, top2_min: 60, min_listing_days: 730, profit_min: 0.75,
-        chip_days: 500, max_n: 10,
-      },
-      budget: { market: 6, hard: 2, matched: 2 },
-      excluded: { st: 1, bse: 0, young: 1, big: 1, unlocked: 1, profit: 0 },
-      picks: [
-        {
-          symbol: '603261.SH', name: '立航科技', industry: '航空装备',
-          float_cap: 42.5e8, top2_ratio: 66.0, top1_ratio: 63.7,
-          top1_name: '刘随阳', top2_name: '成都瑞联嘉信企业管理咨询合伙企业(有限合伙)',
-          profit_ratio: 0.764, avg_cost: 49.49, last_close: 54.8,
-        },
-        {
-          symbol: '603324.SH', name: '盛剑科技', industry: '半导体',
-          float_cap: 47.07e8, top2_ratio: 61.38, top1_ratio: 59.19,
-          top1_name: '张伟明', top2_name: '上海昆升企业管理合伙企业(有限合伙)',
-          profit_ratio: 0.9352, avg_cost: 27.95, last_close: 32.27,
-        },
+    cross_year: {
+      criteria: { price_min: 3, price_max: 15, mcap_min: 10e8, mcap_max: 60e8, min_listing_days: 250, ret60_clean: 0.3, mem: '东方|龙|洋|阳|羊|福|喜|吉祥|凤凰|万事|长虹|金龙' },
+      budget: { market: 6, candidates: 3 },
+      tier1: [
+        { symbol: '000521.SZ', name: '长虹美菱', code: '000521', price: 4.68, float_cap: 41e8, ret20: 0.20, ret60: -0.22, net_gain: 0.42, lu20: 2, turnover_rate: 12, mem: true, industry: '家电', tier: 1 },
+        { symbol: '002548.SZ', name: '金新农', code: '002548', price: 5.01, float_cap: 40.3e8, ret20: 0.49, ret60: 0.23, net_gain: 0.26, lu20: 6, turnover_rate: 13, mem: false, industry: '养殖', tier: 1 },
+      ],
+      tier2: [
+        { symbol: '600467.SH', name: '好当家', code: '600467', price: 3.6, float_cap: 52.6e8, ret20: 0.67, ret60: 0.76, net_gain: -0.09, lu20: 6, turnover_rate: 24, mem: false, industry: '水产', tier: 2 },
       ],
     },
+    excluded: { non_cold: 2, st: 0, bse: 0, thin: 0, young: 0, falling: 0, hot: 2, warming: 0, fading: 0 },
   },
   rows: [
     row({ symbol: '600000.SH', name: '浦发银行', arena: 'institution', tags: ['bluechip', 'leader'], level: 'core', transition: 'up' }),
@@ -441,33 +430,33 @@ it('排序体检：前向有数据时首行切到 forward，裁决线按 forward
   expect(el.textContent).toContain('+12.5bp')
 })
 
-// ===== 重点关注（锁仓 + 上方无抛压）：独立口径，不进池 =====
+// ===== 跨年妖候选池：实时计算，替换旧「锁仓 + 上方无抛压」=====
 //
-// 条件：流通市值 ≤50 亿 + 前两大股东(剔除托管户) ≥60% + 上市 ≥2 年 + 获利盘 ≥75%，
-// 按获利盘从小到大排序。测试锁住：块存在、命中票带获利盘/锁仓/流通市值读数。
+// 8 画像 → 6 条件，后端 focus.cross_year 实时筛出，分两梯队（位置干净 / 位置偏高）。
+// 测试锁住：块存在、两梯队分组、情绪温度读数、记忆点标记、切标签后不再出现。
 
-it('重点关注：单独一块、按获利盘从小到大列出、带锁仓与流通市值读数', async () => {
+it('跨年妖候选池：分两梯队、带情绪温度与记忆点标记', async () => {
   const el = await render()
-  expect(el.textContent).toContain('重点关注 · 锁仓 + 上方无抛压')
-  expect(el.textContent).toContain('独立口径 · 不进观察池')
-  // 主对象 = 获利盘最小的那只（后端已排序）
-  expect(el.textContent).toContain('立航科技')
-  expect(el.textContent).toContain('76.4%')          // 获利盘
-  expect(el.textContent).toContain('66.0%')          // 前两大股东占比
-  expect(el.textContent).toContain('42.50亿')        // 流通市值
-  expect(el.textContent).toContain('54.80 / 49.49')  // 现价 / 平均成本
-  // 前两大股东名称要跟着显示
-  expect(el.textContent).toContain('刘随阳')
-  // 第二只按获利盘排在后面
-  expect(el.textContent).toContain('盛剑科技')
-  expect(el.textContent).toContain('93.5%')
-  // 条件文案
-  expect(el.textContent).toContain('获利盘 ≥ 75.0%')
+  expect(el.textContent).toContain('跨年妖候选池')
+  expect(el.textContent).toContain('8 画像 → 6 条件')
+  expect(el.textContent).toContain('第一梯队 · 位置干净')
+  expect(el.textContent).toContain('第二梯队 · 位置偏高')
+  // 情绪温度计：全市场正在炒的票数 + 候选数合并成完整温度读数
+  expect(el.textContent).toContain('市场温度')
+  // 关键候选（第一梯队 + 第二梯队）
+  expect(el.textContent).toContain('长虹美菱')
+  expect(el.textContent).toContain('金新农')
+  expect(el.textContent).toContain('好当家')
+  // 名字记忆点标签
+  expect(el.textContent).toContain('记忆点')
+  // 负向说明：候选池不是买入名单
+  expect(el.textContent).toContain('候选池不是买入名单')
 })
 
-it('重点关注：切到标签页后不再出现（与观察池同一屏规则）', async () => {
+it('跨年妖候选池：切到标签页后不再出现（与观察池同一屏规则）', async () => {
   const el = await render()
-  expect(el.textContent).toContain('重点关注 · 锁仓 + 上方无抛压')
+  expect(el.textContent).toContain('跨年妖候选池')
   await switchTo(el, 'bluechip')
-  expect(el.textContent).not.toContain('重点关注 · 锁仓 + 上方无抛压')
+  expect(el.textContent).not.toContain('跨年妖候选池')
 })
+

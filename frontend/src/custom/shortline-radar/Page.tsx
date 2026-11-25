@@ -35,12 +35,13 @@ import {
 } from 'lucide-react'
 import {
   api,
+  type CrossYearCandidate,
+  type CrossYearWatch,
   type ShortlineRadarArena,
   type ShortlineRadarArenaSummary,
   type ShortlineRadarData,
   type ShortlineRadarFocus,
   type ShortlineRadarLevel,
-  type ShortlineRadarLockWatch,
   type ShortlineRadarRisk,
   type ShortlineRadarRow,
   type ShortlineRadarStage,
@@ -48,6 +49,7 @@ import {
   type ShortlineRadarTagSummary,
   type SortAudit,
 } from '@/lib/api'
+import { CROSS_YEAR_SCREEN } from './crossYearCandidates'
 import { QK } from '@/lib/queryKeys'
 import { cn } from '@/lib/cn'
 import { fmtBigNum } from '@/lib/format'
@@ -643,124 +645,104 @@ function FocusBand({
 }
 
 /**
- * 重点关注 · 锁仓 + 上方无抛压 —— 观察池之外的一个对象，独立口径。
+ * 跨年妖候选池 —— 观察池之外的另一块，独立口径，实时计算（数据来自后端 focus.cross_year）。
  *
- * 条件（用户指定，非回测拟合）：流通市值 ≤50 亿 + 前两大股东(剔除托管户) ≥60%
- * + 上市 ≥2 年 + 获利盘 ≥75%。排序：获利盘从小到大。
+ * 把跨年妖股的 8 条历史画像翻译成 6 个可量化的数据条件，实时筛出候选，分两梯队：
+ *   第一梯队 = 位置干净（ret60 < 30%，前期没怎么涨、最近才启动）
+ *   第二梯队 = 位置偏高（ret60 ≥ 30%，已涨过一轮）
  *
- * 措辞纪律：标题是「重点关注」，不是「买入建议」。这套条件**没有历史前向回测背书**，
- * 页面只列条件与命中，不写收益承诺。
+ * 措辞纪律：标题是「候选池」，不是「买入名单」。项目 20 年全样本（docs/yaogu-census.md）：
+ * 首板后开盘买入 20 日超额中位 −1.85%（t −15.94），见顶确认时买入 −26.9%/20 日。
+ * 这是情绪温度计，不是选股筛子。
  */
-function LockWatchBand({
-  lock, asOf, onOpenStock, onOpenMethod,
+function CrossYearCandidates({
+  watch, hotCount, onOpenStock, onOpenMethod,
 }: {
-  lock: ShortlineRadarLockWatch | undefined
-  asOf: string | null
+  watch: CrossYearWatch | undefined
+  /** 全市场「正在炒」（20 日内有涨停）的票数：情绪温度计读数，与候选池合并构成完整温度。 */
+  hotCount: number
   onOpenStock: (s: string) => void
   onOpenMethod: () => void
 }) {
-  if (!lock) return null
-  const { picks, budget, excluded, criteria } = lock
-  const first = picks[0]
-  const rest = picks.slice(1)
-  const restTotal = Math.max(0, budget.matched - 1)
-  const pct = (v: number) => `${(v * 100).toFixed(1)}%`
+  const [showTier2, setShowTier2] = useState(true)
+  if (!watch) return null
+  const { tier1, tier2, budget, criteria } = watch
+
+  // 情绪温度：候选数 / 全市场正在炒数 = 跨年妖候选在当前热度里的密度。
+  const density = hotCount > 0 ? budget.candidates / hotCount : 0
 
   return (
-    <section className="overflow-hidden rounded-card border border-amber-500/25 bg-amber-500/[0.025]">
+    <section className="overflow-hidden rounded-card border border-purple-500/25 bg-purple-500/[0.02]">
+      {/* 头部：标题 + 情绪温度计 */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 pb-1.5 pt-2.5">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <h2 className="text-[13px] font-medium text-foreground">重点关注 · 锁仓 + 上方无抛压</h2>
+          <h2 className="text-[13px] font-medium text-foreground">跨年妖候选池</h2>
           <span className="text-[10px] text-muted">
-            独立口径 · 不进观察池 · {asOf ?? '—'}
+            8 画像 → 6 条件 · 实时计算
           </span>
         </div>
-        <span
-          className="text-[9.5px] tabular-nums text-muted/80"
-          title={`硬门槛删掉：ST ${excluded.st} · 北交所 ${excluded.bse} · 上市不足两年 ${excluded.young} · 流通市值超 50 亿 ${excluded.big} · 锁仓不足 ${excluded.unlocked}；获利盘不足 ${excluded.profit}`}
-        >
-          全市场 {budget.market.toLocaleString()} → 硬门槛 {budget.hard.toLocaleString()} → 命中 {budget.matched}
+        <span className="flex items-center gap-1.5 text-[9.5px] tabular-nums text-muted/80">
+          <span title="全市场 20 日内有涨停的票数：情绪温度（密度是退潮温度计，候选是热度样本）">
+            市场温度 <b className="text-foreground/80">{hotCount.toLocaleString()}</b> 只正在炒
+          </span>
+          <span className="text-muted/40">·</span>
+          <span title={`候选占正在炒的比例 ${(density * 100).toFixed(1)}%`}>
+            候选 <b className="text-foreground/80">{budget.candidates}</b> 只
+          </span>
         </span>
       </div>
 
-      <p className="px-4 pb-1.5 text-[9.5px] leading-relaxed text-muted/75">
-        条件：流通市值 ≤ {fmtBigNum(criteria.float_cap_max)} · 前两大股东（剔除托管户）≥{' '}
-        {criteria.top2_min}% · 上市 ≥ {Math.round(criteria.min_listing_days / 365)} 年 · 获利盘 ≥{' '}
-        {pct(criteria.profit_min)}。按获利盘从小到大排序。
-      </p>
+      {/* 口径：六个可量化条件（阈值来自后端 criteria） */}
+      <div className="mx-4 mb-1.5 flex flex-wrap gap-1">
+        {CROSS_YEAR_SCREEN.map(s => (
+          <span
+            key={s.label}
+            className="rounded-btn border border-purple-500/20 bg-purple-500/[0.04] px-1.5 py-0.5 text-[9px] text-muted/80"
+            title={`${s.label}：${s.hint}`}
+          >
+            <span className="text-foreground/70">{s.label}</span>
+            <span className="ml-1 text-muted/60">{s.hint}</span>
+          </span>
+        ))}
+      </div>
 
-      {picks.length === 0 ? (
-        <div className="border-t border-amber-500/15 px-4 py-4 text-center">
-          <div className="text-[11.5px] text-foreground">今天没有票同时满足这四个条件</div>
-          <p className="mt-1 text-[9.5px] leading-relaxed text-muted/70">
-            硬门槛后 {budget.hard.toLocaleString()} 只，获利盘命中 0 —— 空也是一个结论，不是漏算。
-          </p>
+      {/* 第一梯队：位置干净 */}
+      <div className="border-t border-purple-500/10">
+        <div className="flex items-baseline gap-2 px-4 pb-1 pt-2">
+          <span className="text-[11px] font-medium text-foreground">第一梯队 · 位置干净</span>
+          <span className="text-[9.5px] text-muted/70">
+            60 日涨幅 &lt; {Math.round(criteria.ret60_clean * 100)}%，最近才启动 · {tier1.length} 只
+          </span>
         </div>
-      ) : (
-        <>
-          <div className="border-t border-amber-500/15 px-4 py-2">
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <button
-                type="button"
-                onClick={() => onOpenStock(first.symbol)}
-                className="text-[13px] font-medium text-foreground underline-offset-2 hover:underline"
-              >
-                {first.name ?? first.symbol}
-              </button>
-              <span className="font-mono text-[10px] text-muted/70">{first.symbol.split('.')[0]}</span>
-              <span className="text-[10px] text-muted">{first.industry ?? '未分类'}</span>
-              <span className="text-[10px] text-muted/70">
-                前两大股东 {first.top2_ratio.toFixed(1)}%{first.top1_name ? `（${first.top1_name} ${first.top1_ratio.toFixed(1)}% + ${first.top2_name ?? '—'}）` : ''}
-              </span>
-            </div>
+        <div className="grid grid-cols-2 gap-1.5 px-2.5 pb-2 sm:grid-cols-3 lg:grid-cols-4">
+          {tier1.map(c => <CandidateCard key={c.symbol} c={c} onOpen={onOpenStock} />)}
+        </div>
+      </div>
 
-            <div className="mt-1.5 grid grid-cols-4 gap-px overflow-hidden rounded-btn border border-border/50 bg-border/30">
-              <div className="bg-surface/70 px-2 py-1">
-                <div className="text-[9px] text-muted/70">获利盘（排序键）</div>
-                <div className="font-mono text-[13px] tabular-nums text-foreground">{fmtPct(first.profit_ratio, 1)}</div>
-              </div>
-              <div className="bg-surface/70 px-2 py-1">
-                <div className="text-[9px] text-muted/70">前两大股东</div>
-                <div className="font-mono text-[13px] tabular-nums text-foreground">{first.top2_ratio.toFixed(1)}%</div>
-                <div className="text-[8.5px] text-muted/70">{first.top1_ratio.toFixed(1)}% + {(first.top2_ratio - first.top1_ratio).toFixed(1)}%</div>
-              </div>
-              <div className="bg-surface/70 px-2 py-1">
-                <div className="text-[9px] text-muted/70">流通市值</div>
-                <div className="font-mono text-[13px] tabular-nums text-foreground">{fmtBigNum(first.float_cap)}</div>
-              </div>
-              <div className="bg-surface/70 px-2 py-1">
-                <div className="text-[9px] text-muted/70">现价 / 平均成本</div>
-                <div className="font-mono text-[13px] tabular-nums text-foreground">{first.last_close?.toFixed(2) ?? '—'} / {first.avg_cost?.toFixed(2) ?? '—'}</div>
-              </div>
-            </div>
+      {/* 第二梯队：位置偏高，默认收起 */}
+      <div className="border-t border-purple-500/10">
+        <button
+          type="button"
+          aria-expanded={showTier2}
+          onClick={() => setShowTier2(v => !v)}
+          className="flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors hover:bg-purple-500/[0.03]"
+        >
+          <span className="text-[11px] font-medium text-foreground">第二梯队 · 位置偏高</span>
+          <span className="text-[9.5px] text-muted/70">60 日已涨过一轮，风险已显性化 · {tier2.length} 只</span>
+          <ChevronDown className={cn('ml-auto h-3 w-3 shrink-0 text-muted/60 transition-transform', showTier2 && 'rotate-180')} />
+        </button>
+        {showTier2 && (
+          <div className="grid grid-cols-2 gap-1.5 px-2.5 pb-2 sm:grid-cols-3 lg:grid-cols-4">
+            {tier2.map(c => <CandidateCard key={c.symbol} c={c} onOpen={onOpenStock} />)}
           </div>
+        )}
+      </div>
 
-          {rest.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1 border-t border-amber-500/10 px-4 py-1.5">
-              <span className="text-[9px] text-muted/70">
-                另有 {restTotal} 只{rest.length < restTotal ? `（只列前 ${rest.length}）` : ''}，按获利盘从小到大：
-              </span>
-              {rest.map(p => (
-                <button
-                  key={p.symbol}
-                  type="button"
-                  onClick={() => onOpenStock(p.symbol)}
-                  className="rounded-btn border border-border/60 bg-surface/60 px-1.5 py-0.5 text-[9.5px] text-secondary transition-colors hover:text-foreground"
-                  title={`获利盘 ${fmtPct(p.profit_ratio, 1)} · 前两大股东 ${p.top2_ratio.toFixed(1)}% · 流通市值 ${fmtBigNum(p.float_cap)}`}
-                >
-                  {p.name ?? p.symbol}
-                  <span className="ml-1 font-mono text-muted/70">{fmtPct(p.profit_ratio, 1)}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-amber-500/10 px-4 py-1.5 text-[9px] leading-relaxed text-muted/70">
+      {/* 底部：诚实说明 */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-purple-500/10 px-4 py-1.5 text-[9px] leading-relaxed text-muted/70">
         <span>
-          获利盘 = 现价及以下持仓筹码占比（换手率衰减筹码模型），≥ {pct(criteria.profit_min)} 即上方套牢 ≤
-          {pct(1 - criteria.profit_min)}。这套条件没有历史前向回测背书，仅列条件与命中。
+          候选池不是买入名单：项目 20 年全样本里，首板后开盘买入 20 日超额中位 −1.85%（t −15.94），
+          见顶确认时买入 −26.9%。这是情绪温度计，不是选股筛子。
         </span>
         <button type="button" onClick={onOpenMethod}
           className="text-accent underline underline-offset-2 hover:text-foreground">
@@ -768,6 +750,44 @@ function LockWatchBand({
         </button>
       </div>
     </section>
+  )
+}
+
+/** 单只候选卡片：点击弹日 K。涨幅涨红跌绿。 */
+function CandidateCard({ c, onOpen }: { c: CrossYearCandidate; onOpen: (s: string) => void }) {
+  const chg = (v: number | null) => v == null ? '—' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(0)}%`
+  const chgTone = (v: number | null) => v == null ? 'text-muted' : v > 0 ? 'text-red-600' : v < 0 ? 'text-emerald-600' : 'text-muted'
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(c.symbol)}
+      className="rounded-btn border border-border/60 bg-surface/70 px-2 py-1.5 text-left transition-colors hover:border-purple-500/40 hover:bg-purple-500/[0.04]"
+    >
+      <div className="flex items-baseline justify-between gap-1">
+        <span className="flex min-w-0 items-baseline gap-1">
+          <span className="truncate text-[11.5px] font-medium text-foreground">{c.name}</span>
+          {c.mem && (
+            <span className="shrink-0 rounded border border-purple-500/25 bg-purple-500/[0.08] px-1 text-[8.5px] leading-[1.4] text-purple-600">
+              记忆点
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 font-mono text-[9px] text-muted/60">{c.code}</span>
+      </div>
+
+      <div className="mt-0.5 truncate text-[9px] text-muted/70">{c.industry ?? '未分类'}</div>
+
+      <div className="mt-1 flex items-baseline justify-between font-mono text-[10px] tabular-nums">
+        <span className="text-foreground">¥{c.price.toFixed(2)}</span>
+        <span className="text-muted/70">流通 {fmtBigNum(c.float_cap)}</span>
+      </div>
+
+      <div className="mt-0.5 flex items-baseline gap-2 font-mono text-[9.5px] tabular-nums">
+        <span title="20 日涨幅" className={chgTone(c.ret20)}>20日 {chg(c.ret20)}</span>
+        <span title="60 日涨幅（负/低 = 位置干净）" className={chgTone(c.ret60)}>60日 {chg(c.ret60)}</span>
+        <span className="ml-auto text-muted/70" title="近 20 日涨停天数">涨停 {c.lu20} 天</span>
+      </div>
+    </button>
   )
 }
 
@@ -1429,29 +1449,28 @@ function MethodDrawer({
           </div>
 
           <div>
-            <div className="mb-1 text-[10px] font-medium text-foreground">重点关注 · 锁仓 + 上方无抛压（独立口径，不进观察池）</div>
+            <div className="mb-1 text-[10px] font-medium text-foreground">跨年妖候选池（实时计算，不进观察池）</div>
             <ul className="list-disc space-y-1 pl-4 text-[9.5px] text-muted/85">
               <li>
-                四条条件：流通市值 ≤ {fmtBigNum(data.focus.lock?.criteria.float_cap_max ?? 50e8)} ·
-                前两大股东（剔除托管户）≥ {data.focus.lock?.criteria.top2_min ?? 60}% · 上市 ≥{' '}
-                {Math.round((data.focus.lock?.criteria.min_listing_days ?? 730) / 365)} 年 · 获利盘 ≥{' '}
-                {(((data.focus.lock?.criteria.profit_min ?? 0.75) * 100).toFixed(0))}%。
-                按获利盘从小到大排序。
+                把跨年妖股 8 条历史画像翻译成 6 个可量化条件：现价 3~15 元 · 流通市值 10~60 亿 ·
+                近 20 日有涨停 · 非 ST/北交所/次新 · 名字记忆点（东方·龙·羊·福·万事·长虹…），
+                再加「位置干净度」= 20 日涨幅 − 60 日涨幅（net_gain，降序）。
+                梯队：60 日涨幅 &lt; 30% 为第一梯队（刚启动），否则第二梯队（已涨过）。
               </li>
               <li>
-                <b className="text-foreground/80">前两大股东</b> = 十大股东（占总股本）口径，剔除
-                「香港中央结算 / HKSCC / NOMINEES」等托管户 —— 托管户是名义持有人，不代表锁定筹码。
-                数据源 <code>data/shareholder/top_holders/part.parquet</code>（东财 RPT_F10_EH_HOLDERS）。
+                <b className="text-foreground/80">实时计算</b>：由后端 <code>citizenship.py::_cross_year_candidates</code>
+                从 <code>kline_daily_enriched</code> 当日横截面现算，每次请求重算，不落盘、无批处理，
+                随交易日自动更新（与旧「锁仓 + 上方无抛压」块同源位置）。
               </li>
               <li>
-                <b className="text-foreground/80">获利盘</b> = 现价及以下的持仓筹码占比（换手率衰减筹码模型，
-                <code>indicators/levels.py::_profit_split</code>，最近 {data.focus.lock?.criteria.chip_days ?? 500} 个
-                交易日，raw 价格口径）。≥ {((data.focus.lock?.criteria.profit_min ?? 0.75) * 100).toFixed(0)}% 即上方套牢
-                ≤ {((1 - (data.focus.lock?.criteria.profit_min ?? 0.75)) * 100).toFixed(0)}%，视为「上方无抛压」。
+                <b className="text-foreground/80">候选池不是买入名单</b>：项目 20 年全样本（<code>docs/yaogu-census.md</code>）
+                里，首板后开盘买入 20 日超额中位 −1.85%（t −15.94）、60 日 −3.56%（t −20.74）；
+                见顶确认时买入 20 日超额中位 −26.9%、1 年 −57.4%。「确认它是妖股」这个动作本身就把期望由正转负。
               </li>
               <li>
-                <b className="text-foreground/80">这套条件没有历史前向回测背书</b>：它来自用户指定的筛选口径，
-                不是回测验证过的信号。页面只列条件与命中，不写收益承诺。
+                <b className="text-foreground/80">它替代了旧的「锁仓 + 上方无抛压」块</b>：旧块依赖获利盘 ≥75% 这一
+                无回测背书、方向自相矛盾的指标（详见 <code>docs/structural-edge/stock-dip-repair.md</code> 与
+                <code>docs/state-family-converge.md</code> 的筹码族结论），已连同后端死代码一起下线。
               </li>
             </ul>
           </div>
@@ -1785,9 +1804,9 @@ export function ShortlineRadar() {
                     onOpenStock={setPreview}
                     onOpenMethod={openMethod}
                   />
-                  <LockWatchBand
-                    lock={data.focus.lock}
-                    asOf={data.as_of}
+                  <CrossYearCandidates
+                    watch={data.focus.cross_year}
+                    hotCount={data.summary.stages.hot}
                     onOpenStock={setPreview}
                     onOpenMethod={openMethod}
                   />

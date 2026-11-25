@@ -639,29 +639,24 @@ def test_empty_focus_degrades_gracefully():
     assert set(f["stages"]) == set(citizenship.STAGE_ORDER)
 
 
-# ===== 重点关注（锁仓 + 上方无抛压）：独立口径，不套观察池门槛 =====
+# ===== 跨年妖候选池：8 画像 → 6 条件（实时计算，替代旧「锁仓 + 上方无抛压」）=====
 #
-# 条件：流通市值 ≤50 亿 + 前两大股东(剔除托管户) ≥60% + 上市 ≥2 年 + 获利盘 ≥75%，
-# 按获利盘从小到大排序。测试要锁住三件事：
-#   1) 命中票按获利盘升序；
-#   2) 五道硬门槛互斥且覆盖，漏斗能加平；
-#   3) 获利盘 <75% 的票被拒（不是「接近就放过」）。
+# 条件：现价 3~15 元 + 流通市值 10~60 亿 + 近 20 日有涨停 + 非 ST/北交所/次新
+# + 名字记忆点。排序 net_gain = ret20 − ret60 降序；tier：ret60 < 30% 第一梯队。
+# 测试锁住：排序 + 梯队切分、硬门槛拒绝、记忆点标记、空数据降级。
 
-LOCK_COLS = [
-    "symbol", "name", "industry", "risk", "mcap", "listing_days",
-    "top2_ratio", "top1_ratio", "top1_name", "top2_name",
-    "profit_ratio", "avg_cost", "last_close",
+CAND_COLS = [
+    "symbol", "name", "industry", "close", "mcap", "listing_days",
+    "lu20", "ret20", "ret60", "turnover_rate",
 ]
 
 
-def _lock_rows(*specs: dict) -> pl.DataFrame:
-    """合成 df。[mcap, listing_days, top2_ratio, profit_ratio, risk] 可覆盖。"""
+def _cand_rows(*specs: dict) -> pl.DataFrame:
+    """合成 df。[close, mcap, listing_days, lu20, ret20, ret60] 可覆盖。"""
     base = {
-        "name": "测试", "industry": "电子", "risk": "none",
-        "mcap": 2.0e9, "listing_days": 2000,
-        "top2_ratio": 65.0, "top1_ratio": 60.0,
-        "top1_name": "甲控股", "top2_name": "乙投资",
-        "profit_ratio": 0.85, "avg_cost": 10.0, "last_close": 12.0,
+        "name": "测试", "industry": "电子",
+        "close": 8.0, "mcap": 3.0e9, "listing_days": 2000,
+        "lu20": 1, "ret20": 0.20, "ret60": 0.10, "turnover_rate": 10.0,
     }
     out = []
     for i, s in enumerate(specs):
@@ -669,56 +664,50 @@ def _lock_rows(*specs: dict) -> pl.DataFrame:
         r.setdefault("symbol", f"30000{i}.SZ")
         r.update(s)
         out.append(r)
-    return pl.DataFrame(out).select(LOCK_COLS)
+    return pl.DataFrame(out).select(CAND_COLS)
 
 
-def test_lock_watch_hits_and_sorts_by_profit_ascending():
-    """命中票必须按获利盘从小到大，且带锁仓/流通市值读数。"""
-    f = citizenship._lock_watch(_lock_rows(
-        {"symbol": "300001.SZ", "profit_ratio": 0.90},
-        {"symbol": "300002.SZ", "profit_ratio": 0.76},
-        {"symbol": "300003.SZ", "profit_ratio": 0.99},
+def test_cross_year_sorts_by_net_gain_and_splits_tiers():
+    """候选按 net_gain 降序；ret60<30% 进第一梯队，否则第二梯队。"""
+    f = citizenship._cross_year_candidates(_cand_rows(
+        {"symbol": "300001.SZ", "ret20": 0.50, "ret60": 0.10},  # net 0.40 → tier1
+        {"symbol": "300002.SZ", "ret20": 0.20, "ret60": 0.40},  # net -0.20 → tier2
+        {"symbol": "300003.SZ", "ret20": 0.30, "ret60": 0.05},  # net 0.25 → tier1
     ))
-    assert [p["symbol"] for p in f["picks"]] == ["300002.SZ", "300001.SZ", "300003.SZ"]
-    p = f["picks"][0]
-    assert p["profit_ratio"] == 0.76
-    assert p["top2_ratio"] == 65.0
-    assert p["top1_name"] == "甲控股"
-    assert p["float_cap"] == 2.0e9
-    assert p["last_close"] == 12.0
+    assert [c["symbol"] for c in f["tier1"]] == ["300001.SZ", "300003.SZ"]
+    assert [c["symbol"] for c in f["tier2"]] == ["300002.SZ"]
+    assert f["budget"]["candidates"] == 3
+    assert f["tier1"][0]["net_gain"] == pytest.approx(0.40)
 
 
-def test_lock_watch_hard_gates_partition_the_market():
-    """五道硬门槛互斥且覆盖：st+bse+young+big+unlocked+profit + matched = market。"""
-    f = citizenship._lock_watch(_lock_rows(
-        {"symbol": "600001.SH", "risk": "high"},          # ST
-        {"symbol": "920001.BJ"},                           # 北交所
-        {"symbol": "300002.SZ", "listing_days": 300},      # 上市不足两年
-        {"symbol": "300003.SZ", "mcap": 6.0e9},            # 流通市值超 50 亿
-        {"symbol": "300004.SZ", "top2_ratio": 30.0},       # 锁仓不足
-        {"symbol": "300005.SZ"},                           # 合格
+def test_cross_year_hard_gates_reject_st_bse_young_big_price_no_lu():
+    """ST / 北交所 / 次新 / 超市值 / 超价 / 无涨停 都被拒，只剩合格票。"""
+    f = citizenship._cross_year_candidates(_cand_rows(
+        {"symbol": "600001.SH", "name": "ST测试"},       # ST
+        {"symbol": "920001.BJ"},                          # 北交所
+        {"symbol": "300002.SZ", "listing_days": 100},     # 次新
+        {"symbol": "300003.SZ", "mcap": 8.0e9},           # 流通市值超 60 亿
+        {"symbol": "300004.SZ", "close": 20.0},           # 价超 15 元
+        {"symbol": "300005.SZ", "lu20": 0},               # 近 20 日无涨停
+        {"symbol": "300006.SZ"},                          # 合格
     ))
-    b, ex = f["budget"], f["excluded"]
-    assert b["market"] == 6
-    assert ex["st"] + ex["bse"] + ex["young"] + ex["big"] + ex["unlocked"] + ex["profit"] + b["matched"] == b["market"]
-    assert b["hard"] == 1
-    assert [p["symbol"] for p in f["picks"]] == ["300005.SZ"]
+    assert f["budget"]["candidates"] == 1
+    assert f["tier1"][0]["symbol"] == "300006.SZ"
 
 
-def test_lock_watch_rejects_profit_below_threshold():
-    """获利盘 <75% 的票不算「上方无抛压」；刚过线算。"""
-    f = citizenship._lock_watch(_lock_rows(
-        {"symbol": "300001.SZ", "profit_ratio": 0.74},   # 略低于 75%
-        {"symbol": "300002.SZ", "profit_ratio": 0.75},   # 刚好 75%
+def test_cross_year_marks_name_memory():
+    f = citizenship._cross_year_candidates(_cand_rows(
+        {"symbol": "300001.SZ", "name": "东方某某"},
+        {"symbol": "300002.SZ", "name": "平凡科技"},
     ))
-    assert [p["symbol"] for p in f["picks"]] == ["300002.SZ"]
-    assert f["excluded"]["profit"] == 1
+    mem = {c["symbol"]: c["mem"] for c in f["tier1"] + f["tier2"]}
+    assert mem["300001.SZ"] is True
+    assert mem["300002.SZ"] is False
 
 
-def test_empty_lock_watch_degrades_gracefully():
-    f = citizenship._lock_watch(pl.DataFrame())
-    assert f["picks"] == []
-    assert f["budget"]["matched"] == 0
+def test_empty_cross_year_degrades_gracefully():
+    f = citizenship._cross_year_candidates(pl.DataFrame())
+    assert f["tier1"] == []
+    assert f["tier2"] == []
+    assert f["budget"]["candidates"] == 0
     assert "criteria" in f
-    # 新形态没有历史前向读数（旧「锁仓横盘」的 readout 已随口径一起删除）
-    assert "readout" not in f
