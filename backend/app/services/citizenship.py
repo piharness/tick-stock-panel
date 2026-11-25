@@ -48,6 +48,7 @@ from pathlib import Path
 
 import polars as pl
 
+from app.indicators.levels import _profit_split
 from app.services.ttl_cache import TtlCache
 
 # ===== 参数 =====
@@ -258,59 +259,31 @@ FOCUS_MIN_LISTING_DAYS = 250
 # 高波动要区分「出货 vs 进攻」，方向就是答案：跟风盘不会在持续下跌中追高。
 FOCUS_MIN_RET60 = -0.10
 
-# ===== 重点关注：锁仓横盘（独立口径，不进观察池）=====
+# ===== 重点关注：锁仓 + 上方无抛压（独立口径，不进观察池）=====
 #
-# 形态描述：60 日均换手 ≈0.96%、20 日涨幅 ≈−3.5%、流通盘小到「少量资金就能锁死」。
-# 三个数不是拟合出来的最优阈值，而是**一个参照样本的读数**，所以下面用「目标 ± 容差」
-# 而不是等值比较 —— 两个实数同时等值，在任何一天都匹配不到票。
+# 条件（用户指定，非回测拟合的阈值）：
+#   流通市值 ≤ 50 亿 + 前两大股东(剔除托管户) ≥ 60% + 上市 ≥ 2 年 + 获利盘 ≥ 75%。
+# 排序：获利盘**从小到大**（上方套牢相对多的排前面）。
 #
-# 与观察池的关系：**构造上互斥**。观察池要求 heat ≥ 0.75，heat 的四项里有一项是
-# 20 日换手中位分位；本形态要求 60 日均换手 ≤1.31%（约为全市场最低的三成），
-# 两项不可能同时高。所以命中票几乎必然落在「与旧标准冲突」一侧，
-# 页面把它**单独列出**，而不是塞进 15 张卡里冒充同类。
+# 两个口径的定义（都只有一处实现，勿另写）：
+#   - 「前两大股东」= 十大股东(占总股本)口径，剔除香港中央结算 / HKSCC / NOMINEES
+#     等**托管户**——托管户是名义持有人，不是锁定筹码。数据
+#     `data/shareholder/top_holders/part.parquet` 由 `analysis/_pull_top_holders.py`
+#     拉取（东财 RPT_F10_EH_HOLDERS）。
+#   - 「获利盘」= 现价及以下的持仓筹码占比，换手率衰减筹码模型
+#     `indicators/levels.py::_profit_split`。≥75% 即上方套牢 ≤25%，视为「上方无抛压」。
 #
-# 历史读数（analysis/_diag_lock_pattern.py --run，65 个基期 2021-04..2026-09）：
-#   前向 20 日超额 +1.10%（t=1.45），同池高换手对照 +0.49%，差值 +0.61%（t=0.94）
-#   ⇒ 低换手这一维没有可测的收益增量；
-#   未来 20 日出现涨停的比例 3.6% vs 对照 11.4%（差 −7.8pp，t=−5.28，仅 2/65 基期为正）
-#   ⇒ 它是「安静」的状态，不是「即将启动」的信号。
-# 这两条必须跟着卡片一起显示：没有它们，「重点关注」四个字会被读成买入建议。
-LOCK_TURN60_TARGET = 0.96      # %
-LOCK_TURN60_TOL = 0.35         # ±pp → [0.61, 1.31]
-LOCK_RET20_TARGET = -0.035     # 小数
-LOCK_RET20_TOL = 0.025         # ±2.5pp → [−6.0%, −1.0%]
-# 锁死所需资金 = 流通市值 × LOCK_RATIO。20% 是「能影响边际定价」的常用估计，
-# 不是精确门槛；页面上把金额与折合成交天数一起写出来，让读者自己判断。
-LOCK_RATIO = 0.20
-# 8 亿 = 2,500 万标准仓位的 32 倍。再大就需要机构协同，不是「少量资金」。
-LOCK_MAX_CAPITAL = 8e8
-# 60 日均成交额下限：低于 1,500 万，2,500 万仓位要占两天以上全部成交，进不去也出不来。
-LOCK_MIN_AMOUNT60 = 1.5e7
+# 注意：这套条件**没有历史前向回测背书**（与旧「锁仓横盘」形态的 fwd20 读数无关），
+# 页面只列条件与命中数，不写历史收益承诺。
+LOCK_FLOAT_CAP_MAX = 50e8   # 流通市值上限（元）；mcap 列已是 close × float_shares
+LOCK_TOP2_MIN = 60.0        # 前两大股东占比下限（%）
+LOCK_MIN_LISTING_DAYS = 730  # 上市至少 2 年（自然日）
+LOCK_PROFIT_MIN = 0.75      # 获利盘下限（小数）
+LOCK_CHIP_DAYS = 500        # 筹码窗口（交易日）
 LOCK_MAX_N = 10
-# 形态全集上限（预注册 lock-surge 的登记要用到「安静组」，不只是前 10 只）。
-# 300 足够覆盖任何一天（实测 2019-2026 最多 111 只），超出说明口径坏了。
+# 形态全集上限：500 足够覆盖任何一天（流通市值 ≤50 亿的锁仓股共 275 只，
+# 再叠加获利盘 ≥75% 后只剩个位数），超出说明口径坏了。
 LOCK_BAND_MAX = 300
-# 辨识度 = 近 250 交易日涨停天数 + 龙虎榜上榜天数的市场分位均值。
-# 两条都是「被市场点过名」的痕迹，窗口取一年：60 日太短，一只刚启动过的票
-# 会被误判成「没有记忆」。≥0.60 ≈ 近一年涨停 ≥3 次或上榜 ≥2 次，高于市场中位。
-LOCK_RECOGNITION_CUT = 0.60
-
-#: 形态的历史读数。重算入口 `analysis/_diag_lock_pattern.py --run`（漂移需人工复核）。
-LOCK_READOUT = {
-    "base_periods": 65,
-    "sample": "2021-04..2026-09",
-    "fwd20_ex": 0.0110,
-    "fwd20_t": 1.45,
-    "ctrl_ex": 0.0049,
-    "diff_t": 0.94,
-    "fwd20_med": -0.0015,
-    "fwd20_p10": -0.0504,
-    "lu_rate": 0.036,
-    "ctrl_lu_rate": 0.114,
-    "lu_t": -5.28,
-    "lu_pos_periods": 2,
-    "script": "analysis/_diag_lock_pattern.py",
-}
 
 STAGE_ORDER = ["cold", "warming", "hot", "fading"]
 
@@ -1264,158 +1237,188 @@ def _lhb_days(data_dir: Path, as_of: date_cls | None) -> pl.DataFrame:
     )
 
 
+#: 前两大股东计算要剔除的托管户（名义持有人，不代表锁定筹码）。
+_TOP2_NOMINEE = "香港中央结算|HKSCC|NOMINEES"
+
+
+def _top2_concentration(data_dir: Path) -> pl.DataFrame:
+    """读十大股东(占总股本)，最新报告期，剔除托管户后取前两大股东之和。
+
+    返回 symbol 维：top2_ratio / top1_ratio / top1_name / top2_name / top1_pct / top2_pct。
+    数据缺失或坏文件时返回空表（列齐全），不阻断页面。
+    """
+    schema = {
+        "symbol": pl.Utf8, "top2_ratio": pl.Float64, "top1_ratio": pl.Float64,
+        "top1_name": pl.Utf8, "top2_name": pl.Utf8,
+    }
+    path = Path(data_dir) / "shareholder" / "top_holders" / "part.parquet"
+    if not path.exists():
+        return pl.DataFrame(schema=schema)
+    try:
+        holders = pl.read_parquet(path)
+    except Exception as exc:  # noqa: BLE001 - 坏文件不该让整页 500
+        logger.warning("十大股东数据读取失败 %s: %s", path, exc)
+        return pl.DataFrame(schema=schema)
+    if holders.is_empty() or "period_end" not in holders.columns:
+        return pl.DataFrame(schema=schema)
+    latest = holders["period_end"].max()
+    d = holders.filter(
+        (pl.col("period_end") == latest)
+        & (~pl.col("holder_name").str.contains(_TOP2_NOMINEE, literal=False))
+    ).sort(["code", "rank"])
+    conc = d.group_by("code", maintain_order=True).agg([
+        pl.col("holder_name").head(2).alias("h_names"),
+        pl.col("ratio").head(2).alias("h_ratios"),
+        pl.col("ratio").head(2).sum().alias("top2_ratio"),
+        pl.col("ratio").first().alias("top1_ratio"),
+    ])
+    inst_path = Path(data_dir) / "instruments" / "instruments.parquet"
+    if inst_path.exists():
+        inst = pl.read_parquet(inst_path, columns=["code", "symbol"])
+        conc = conc.join(inst, on="code", how="left")
+    if "symbol" not in conc.columns:
+        conc = conc.with_columns(pl.lit(None, dtype=pl.Utf8).alias("symbol"))
+    return conc.with_columns([
+        pl.col("h_names").list.get(0).alias("top1_name"),
+        pl.col("h_names").list.get(1).alias("top2_name"),
+    ]).select(["symbol", "top2_ratio", "top1_ratio", "top1_name", "top2_name"])
+
+
+def _profit_ratio(
+    data_dir: Path,
+    symbols: list[str],
+    days: list[date_cls],
+    as_of: date_cls,
+) -> pl.DataFrame:
+    """对给定 symbols 算获利盘（换手率衰减筹码模型，raw 价格口径）。
+
+    只读最近 LOCK_CHIP_DAYS 个交易日 enriched 分区的 raw 字段，逐只调
+    `_profit_split`。返回 symbol → profit_ratio / avg_cost。无数据返回空表。
+    """
+    empty = pl.DataFrame(schema={"symbol": pl.Utf8, "profit_ratio": pl.Float64,
+                                 "avg_cost": pl.Float64, "last_close": pl.Float64})
+    if not symbols:
+        return empty
+    window = [d for d in days if d <= as_of][-LOCK_CHIP_DAYS:]
+    files = [str(Path(data_dir) / "kline_daily_enriched" / f"date={d.isoformat()}"
+                 / "part.parquet") for d in window]
+    existing = [f for f in files if Path(f).exists()]
+    if not existing:
+        return empty
+    raw = (
+        pl.scan_parquet(existing, extra_columns="ignore")
+        .filter(pl.col("symbol").is_in(symbols))
+        .select(["symbol", "date", "raw_high", "raw_low", "raw_close",
+                 "volume", "turnover_rate"])
+        .collect()
+        .sort(["symbol", "date"])
+    )
+    rows: list[dict] = []
+    for sym, grp in raw.group_by("symbol", maintain_order=True):
+        g = grp.rename({"raw_high": "high", "raw_low": "low", "raw_close": "close"})
+        if g.height < 20:
+            continue
+        last_close = float(g.tail(1)["close"][0])
+        sp = _profit_split(g, last_close)
+        if sp is None:
+            continue
+        rows.append({"symbol": sym[0], "profit_ratio": sp["profit_ratio"],
+                     "avg_cost": sp["avg_cost"], "last_close": last_close})
+    return pl.DataFrame(rows) if rows else empty
+
+
 def _lock_watch(
     df: pl.DataFrame,
     data_dir: Path | None = None,
     as_of: date_cls | None = None,
     days: list[date_cls] | None = None,
 ) -> dict:
-    """重点关注：锁仓横盘。**独立口径**，不套观察池的 heat / stage 门槛。
+    """重点关注：锁仓 + 上方无抛压。**独立口径**，不套观察池的 heat / stage 门槛。
 
-    为什么单独一个函数而不是塞进 `_focus`：`_focus` 的每一层都在回答
-    「为什么这只票够热」，本形态回答的是「为什么这只票冷到没人交易」。
-    两者共用同一批票会让漏斗自相矛盾（详见 LOCK_* 常量处的说明）。
+    条件（用户指定，见 LOCK_* 常量）：
+      流通市值 ≤ 50 亿 + 前两大股东(剔除托管户) ≥ 60% + 上市 ≥ 2 年 + 获利盘 ≥ 75%。
+    排序：获利盘**从小到大**。
 
-    返回四段：
-      budget    全市场 → 硬门槛 → 形态命中（每步只减同一批票）
-      excluded  硬门槛的六项删除量，互斥且覆盖
-      picks     命中票，按「离参照读数多远」排序；每只带 conflict（与旧口径的冲突项）
-      readout   形态的历史前向读数（论文级负结果，不是收益承诺）
+    为什么单独一个函数而不是塞进 `_focus`：`_focus` 回答「为什么够热」，
+    本块回答「为什么筹码锁死且上方没人套牢」，两批票不同源。
+
+    返回：
+      budget    全市场 → 硬门槛 → 命中（每步只减同一批票）
+      excluded  硬门槛的删除量，互斥且覆盖
+      picks     命中票，按获利盘升序
+      band      命中全集（截 LOCK_BAND_MAX）
     """
     criteria = {
-        "turn60_target": LOCK_TURN60_TARGET,
-        "turn60_tol": LOCK_TURN60_TOL,
-        "ret20_target": LOCK_RET20_TARGET,
-        "ret20_tol": LOCK_RET20_TOL,
-        "lock_ratio": LOCK_RATIO,
-        "lock_max_capital": LOCK_MAX_CAPITAL,
-        "min_amount60": LOCK_MIN_AMOUNT60,
-        "recognition_cut": LOCK_RECOGNITION_CUT,
+        "float_cap_max": LOCK_FLOAT_CAP_MAX,
+        "top2_min": LOCK_TOP2_MIN,
+        "min_listing_days": LOCK_MIN_LISTING_DAYS,
+        "profit_min": LOCK_PROFIT_MIN,
+        "chip_days": LOCK_CHIP_DAYS,
         "max_n": LOCK_MAX_N,
     }
     empty = {
         "criteria": criteria,
         "budget": {"market": 0, "hard": 0, "matched": 0},
-        "excluded": {"st": 0, "bse": 0, "young": 0, "moved": 0, "thin": 0, "band": 0},
+        "excluded": {"st": 0, "bse": 0, "young": 0, "big": 0, "unlocked": 0, "profit": 0},
         "picks": [],
         "band": [],
-        "readout": LOCK_READOUT,
     }
-    if df.is_empty() or "turn60" not in df.columns:
+    if df.is_empty():
         return empty
 
-    # 辨识度：只影响标记，缺数据时整列 0（页面照常显示已命中的那一项）。
-    # 已带 lu250/lhb_days 列的调用方（测试）不再覆盖 —— 生产路径永远不预置这两列。
-    if data_dir is not None:
-        lu = _lu_250(data_dir, days or [], as_of)
-        lhb = _lhb_days(data_dir, as_of)
-        df = (df.join(lu, on="symbol", how="left")
-              .join(lhb, on="symbol", how="left"))
-    if "lu250" not in df.columns:
-        df = df.with_columns(pl.lit(0, dtype=pl.UInt32).alias("lu250"))
-    if "lhb_days" not in df.columns:
-        df = df.with_columns(pl.lit(0, dtype=pl.UInt32).alias("lhb_days"))
-    df = df.with_columns([
-        pl.col("lu250").fill_null(0),
-        pl.col("lhb_days").fill_null(0),
-    ])
-
-    # 辨识度 = 两项市场分位的均值。用 average rank：0 涨停的票有几千只，
-    # ordinal rank 会给它们排出不同名次，等于把「都没有」读成「有差别」。
     n = df.height
-    denom = max(n - 1, 1)
-    df = df.with_columns([
-        (pl.col("lu250").rank("average") - 1).truediv(denom).alias("_p_lu"),
-        (pl.col("lhb_days").rank("average") - 1).truediv(denom).alias("_p_lhb"),
-    ]).with_columns([
-        ((pl.col("_p_lu") + pl.col("_p_lhb")) / 2.0).alias("recognition"),
-        (pl.col("mcap") * LOCK_RATIO).alias("lock_capital"),
-        # 当日换手 / 60 日均换手：预注册 lock-surge 的触发变量（见 prereg-lock-surge.md）。
-        # 放在这里而不是脚本里，是为了让「放量」只有这一个定义点。
-        (pl.col("turnover_rate") / pl.col("turn60").clip(lower_bound=1e-6)).alias("tr_ratio"),
-    ]).with_columns([
-        (pl.col("lock_capital") / pl.col("amt60").clip(lower_bound=1.0)).alias("lock_days"),
-    ])
 
-    # 换手档：当日 `turn60` 的横截面五分位（Q1 = 最低）。口径与 `prereg-surge-all.md`
-    # 一致：非 ST/北交所、上市 ≥250 交易日、60 日均额 ≥1500 万、turn60 > 0。
-    # 与研究脚本的唯一差别：这里不能要求「有 fwd20」——那是未来数据。
-    # 页面用它把「锁仓」锚到可复核的历史读数上：放量后 20 日 Q1 −47bp / Q5 −304bp。
-    uni = (
-        (pl.col("risk") != "high")
-        & ~_is_bse()
-        & (pl.col("listing_days").is_null() | (pl.col("listing_days") >= FOCUS_MIN_LISTING_DAYS))
-        & (pl.col("amt60") >= LOCK_MIN_AMOUNT60)
-        & pl.col("turn60").is_not_null()
-        & (pl.col("turn60") > 0)
-    )
-    ranked = df.filter(uni).select([
-        "symbol",
-        (((pl.col("turn60").rank("ordinal") - 1) * 5 / pl.len()).floor() + 1)
-        .clip(1, 5).cast(pl.Int8).alias("turn_q"),
-    ])
-    df = df.join(ranked, on="symbol", how="left")
+    # 前两大股东数据。缺文件时整列空 → 「锁仓≥60%」判否，全部落进 unlocked，
+    # 页面按 budget/excluded 如实显示「锁仓数据缺失」，不静默通过。
+    if data_dir is not None:
+        top2 = _top2_concentration(data_dir)
+        if not top2.is_empty():
+            df = df.join(top2, on="symbol", how="left")
+    for col, dtype in (("top2_ratio", pl.Float64), ("top1_ratio", pl.Float64),
+                       ("top1_name", pl.Utf8), ("top2_name", pl.Utf8)):
+        if col not in df.columns:
+            df = df.with_columns(pl.lit(None, dtype=dtype).alias(col))
 
-    # 硬门槛：与观察池同一套「数据有效性」否定，不涉及风格。
+    # 硬门槛：与观察池同套「数据有效性」否定 + 本块三个风格条件。
     st = pl.col("risk") == "high"
     bse = _is_bse()
-    young = pl.col("listing_days").is_not_null() & (pl.col("listing_days") < FOCUS_MIN_LISTING_DAYS)
-    moved = pl.col("lu20").fill_null(0) > 0          # 已启动：与「横盘」定义矛盾
-    thin = pl.col("amt60").is_null() | (pl.col("amt60") < LOCK_MIN_AMOUNT60)
-    usable = pl.col("turn60").is_not_null() & pl.col("ret20").is_not_null()
-    hard = ~st & ~bse & ~young & ~moved & ~thin & usable
-
-    band = (
-        (pl.col("turn60") >= LOCK_TURN60_TARGET - LOCK_TURN60_TOL)
-        & (pl.col("turn60") <= LOCK_TURN60_TARGET + LOCK_TURN60_TOL)
-        & (pl.col("ret20") >= LOCK_RET20_TARGET - LOCK_RET20_TOL)
-        & (pl.col("ret20") <= LOCK_RET20_TARGET + LOCK_RET20_TOL)
-        & (pl.col("mcap") <= LOCK_MAX_CAPITAL / LOCK_RATIO)
-    )
+    young = pl.col("listing_days").is_not_null() & (pl.col("listing_days") < LOCK_MIN_LISTING_DAYS)
+    big = pl.col("mcap").is_null() | (pl.col("mcap") > LOCK_FLOAT_CAP_MAX)
+    unlocked = pl.col("top2_ratio").is_null() | (pl.col("top2_ratio") < LOCK_TOP2_MIN)
+    hard = ~st & ~bse & ~young & ~big & ~unlocked
 
     hard_df = df.filter(hard)
-    band_df = hard_df.filter(band).with_columns(
-        ((pl.col("turn60") - LOCK_TURN60_TARGET).abs() / LOCK_TURN60_TOL
-         + (pl.col("ret20") - LOCK_RET20_TARGET).abs() / LOCK_RET20_TOL).alias("_dist")
-    )
-    # 排序不按 heat（本形态没有 heat）：按离参照读数的归一化距离，越近越靠前。
-    matched = band_df.sort("_dist").head(LOCK_MAX_N)
+
+    # 获利盘：只对过硬门槛的票算（流通≤50亿的锁仓股本就不多，成本可控）。
+    if data_dir is not None and as_of is not None and days and not hard_df.is_empty():
+        profit = _profit_ratio(data_dir, hard_df["symbol"].to_list(), days, as_of)
+        if not profit.is_empty():
+            hard_df = hard_df.join(profit, on="symbol", how="left")
+    if "profit_ratio" not in hard_df.columns:
+        hard_df = hard_df.with_columns(pl.lit(None, dtype=pl.Float64).alias("profit_ratio"))
+    if "avg_cost" not in hard_df.columns:
+        hard_df = hard_df.with_columns(pl.lit(None, dtype=pl.Float64).alias("avg_cost"))
+    if "last_close" not in hard_df.columns:
+        hard_df = hard_df.with_columns(pl.lit(None, dtype=pl.Float64).alias("last_close"))
+
+    profit_ok = pl.col("profit_ratio").is_not_null() & (pl.col("profit_ratio") >= LOCK_PROFIT_MIN)
+    # 排序：获利盘从小到大（上方套牢相对多的排前面）。
+    matched_df = hard_df.filter(profit_ok).sort("profit_ratio")
 
     picks = []
-    for r in matched.to_dicts():
-        conflicts = []
-        if r["heat"] < HEAT_CUT:
-            conflicts.append(f"热度分 {r['heat']:.2f} < {HEAT_CUT:.2f}（换手项被本形态主动压低）")
-        if r["stage"] != "cold":
-            conflicts.append(f"阶段是「{STAGE_LABELS.get(r['stage'], r['stage'])}」")
-        if r["amount"] < FOCUS_MIN_AMOUNT:
-            conflicts.append(
-                f"当日成交额 {r['amount'] / 1e4:.0f} 万 < {FOCUS_MIN_AMOUNT / 1e4:.0f} 万"
-            )
-        if r["ret60"] is not None and r["ret60"] < FOCUS_MIN_RET60:
-            conflicts.append("60 日跌幅超 10%（观察池的下跌中继排除）")
+    for r in matched_df.head(LOCK_MAX_N).to_dicts():
         picks.append({
             "symbol": r["symbol"],
             "name": r["name"],
-            "industry": r["industry"],
-            "arena": r["arena"],
-            "mcap": r["mcap"],
-            "turn60": r["turn60"],
-            "ret20": r["ret20"],
-            "amount": r["amount"],
-            "amt60": r["amt60"],
-            "lock_capital": r["lock_capital"],
-            "lock_days": r["lock_days"],
-            # 当日换手档（1=最低）与放量倍数：把卡片接到「放量 × 换手档」的历史读数上。
-            "turn_q": int(r["turn_q"]) if r["turn_q"] is not None else None,
-            "tr_ratio": float(r["tr_ratio"]) if r["tr_ratio"] is not None else None,
-            "lu250": int(r["lu250"] or 0),
-            "lhb_days": int(r["lhb_days"] or 0),
-            "recognition": r["recognition"],
-            "high_recognition": r["recognition"] >= LOCK_RECOGNITION_CUT,
-            # 冲突项为空才说明它同时满足旧口径；当前数据下几乎必然非空（见常量说明）。
-            "in_pool": len(conflicts) == 0,
-            "conflicts": conflicts,
+            "industry": r.get("industry"),
+            "float_cap": r.get("mcap"),
+            "top2_ratio": round(r["top2_ratio"], 2) if r.get("top2_ratio") is not None else None,
+            "top1_ratio": round(r["top1_ratio"], 2) if r.get("top1_ratio") is not None else None,
+            "top1_name": r.get("top1_name"),
+            "top2_name": r.get("top2_name"),
+            "profit_ratio": round(r["profit_ratio"], 4) if r.get("profit_ratio") is not None else None,
+            "avg_cost": round(r["avg_cost"], 2) if r.get("avg_cost") is not None else None,
+            "last_close": r.get("last_close"),
         })
 
     already = ~hard
@@ -1423,28 +1426,23 @@ def _lock_watch(
         "st": int(df.filter(already & st).height),
         "bse": int(df.filter(~st & bse).height),
         "young": int(df.filter(~st & ~bse & young).height),
-        "moved": int(df.filter(~st & ~bse & ~young & moved).height),
-        "thin": int(df.filter(~st & ~bse & ~young & ~moved & thin).height),
-        # 形态带外 = 过了硬门槛、但三个条件没同时命中（含被 max_n 截掉的？不：截断在下面）
-        "band": int(hard_df.height - band_df.height),
+        "big": int(df.filter(~st & ~bse & ~young & big).height),
+        "unlocked": int(df.filter(~st & ~bse & ~young & ~big & unlocked).height),
+        # 过了硬门槛、但获利盘不足 75%（含无筹码数据）。
+        "profit": int(hard_df.height - matched_df.height),
     }
     return {
         "criteria": criteria,
         "budget": {
             "market": n,
             "hard": int(hard_df.height),
-            # 命中总数（可能 > max_n）；picks 只列前 max_n 只，页面用 budget 说明还有多少
-            "matched": int(band_df.height),
+            "matched": int(matched_df.height),
         },
         "excluded": excluded,
         "picks": picks,
-        # 形态全集（按距离排序，截 LOCK_BAND_MAX）。页面只在前 10 只里展示；
-        # 预注册 lock-surge 需要「安静组」全体，所以单独给这一段，不混进 picks。
-        "band": band_df.sort("_dist").head(LOCK_BAND_MAX).select([
-            "symbol", "name", "industry", "turn60", "ret20", "mcap", "amt60",
-            "amount", "tr_ratio",
+        "band": matched_df.head(LOCK_BAND_MAX).select([
+            "symbol", "name", "industry", "mcap", "top2_ratio", "profit_ratio",
         ]).to_dicts(),
-        "readout": LOCK_READOUT,
     }
 
 

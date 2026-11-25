@@ -104,37 +104,25 @@ const fixture: ShortlineRadarData = {
     excluded: { non_cold: 2, st: 0, bse: 0, thin: 0, young: 0, falling: 0, hot: 2, warming: 0, fading: 0 },
     lock: {
       criteria: {
-        turn60_target: 0.96, turn60_tol: 0.35, ret20_target: -0.035, ret20_tol: 0.025,
-        lock_ratio: 0.2, lock_max_capital: 8e8, min_amount60: 1.5e7,
-        recognition_cut: 0.6, max_n: 10,
+        float_cap_max: 50e8, top2_min: 60, min_listing_days: 730, profit_min: 0.75,
+        chip_days: 500, max_n: 10,
       },
-      budget: { market: 6, hard: 4, matched: 2 },
-      excluded: { st: 1, bse: 0, young: 0, moved: 1, thin: 0, band: 0 },
+      budget: { market: 6, hard: 2, matched: 2 },
+      excluded: { st: 1, bse: 0, young: 1, big: 1, unlocked: 1, profit: 0 },
       picks: [
         {
-          symbol: '603309.SH', name: '维力医疗', industry: '医疗器械', arena: 'nowhere',
-          mcap: 2.96e9, turn60: 0.897, ret20: -0.0374, amount: 5.47e6, amt60: 2.87e7,
-          lock_capital: 5.91e8, lock_days: 20.6, turn_q: 1, tr_ratio: 0.21,
-          lu250: 0, lhb_days: 0,
-          recognition: 0.19, high_recognition: false, in_pool: false,
-          conflicts: ['热度分 0.24 < 0.75（换手项被本形态主动压低）', '当日成交额 547 万 < 3000 万'],
+          symbol: '603261.SH', name: '立航科技', industry: '航空装备',
+          float_cap: 42.5e8, top2_ratio: 66.0, top1_ratio: 63.7,
+          top1_name: '刘随阳', top2_name: '成都瑞联嘉信企业管理咨询合伙企业(有限合伙)',
+          profit_ratio: 0.764, avg_cost: 49.49, last_close: 54.8,
         },
         {
-          symbol: '605108.SH', name: '同庆楼', industry: '酒店餐饮', arena: 'hotmoney',
-          mcap: 2.82e9, turn60: 1.082, ret20: -0.0582, amount: 3.4e7, amt60: 3.43e7,
-          lock_capital: 5.64e8, lock_days: 16.4, turn_q: 2, tr_ratio: 0.9,
-          lu250: 3, lhb_days: 2,
-          recognition: 0.64, high_recognition: true, in_pool: false,
-          conflicts: ['热度分 0.40 < 0.75（换手项被本形态主动压低）'],
+          symbol: '603324.SH', name: '盛剑科技', industry: '半导体',
+          float_cap: 47.07e8, top2_ratio: 61.38, top1_ratio: 59.19,
+          top1_name: '张伟明', top2_name: '上海昆升企业管理合伙企业(有限合伙)',
+          profit_ratio: 0.9352, avg_cost: 27.95, last_close: 32.27,
         },
       ],
-      readout: {
-        base_periods: 65, sample: '2021-04..2026-09',
-        fwd20_ex: 0.011, fwd20_t: 1.45, ctrl_ex: 0.0049, diff_t: 0.94,
-        fwd20_med: -0.0015, fwd20_p10: -0.0504,
-        lu_rate: 0.036, ctrl_lu_rate: 0.114, lu_t: -5.28, lu_pos_periods: 2,
-        script: 'analysis/_diag_lock_pattern.py',
-      },
     },
   },
   rows: [
@@ -453,39 +441,33 @@ it('排序体检：前向有数据时首行切到 forward，裁决线按 forward
   expect(el.textContent).toContain('+12.5bp')
 })
 
-// ===== 重点关注（锁仓横盘）：独立口径，不进池 =====
+// ===== 重点关注（锁仓 + 上方无抛压）：独立口径，不进池 =====
 //
-// 这一块存在的前提是「两条口径互斥」：池要 heat≥0.75（高换手），本形态要
-// 60 日均换手 ≤1.3%。所以测试必须同时锁住三件事——块存在、冲突被逐条写出、
-// 历史负读数跟着显示。少任何一条，页面就会把它读成「明天要涨」。
+// 条件：流通市值 ≤50 亿 + 前两大股东(剔除托管户) ≥60% + 上市 ≥2 年 + 获利盘 ≥75%，
+// 按获利盘从小到大排序。测试锁住：块存在、命中票带获利盘/锁仓/流通市值读数。
 
-it('重点关注：单独一块、写明与观察池旧标准的冲突、辨识度更高的带标记', async () => {
+it('重点关注：单独一块、按获利盘从小到大列出、带锁仓与流通市值读数', async () => {
   const el = await render()
-  expect(el.textContent).toContain('重点关注 · 锁仓横盘')
+  expect(el.textContent).toContain('重点关注 · 锁仓 + 上方无抛压')
   expect(el.textContent).toContain('独立口径 · 不进观察池')
-  // 主对象 = 离参照读数最近的那只
-  expect(el.textContent).toContain('维力医疗')
-  expect(el.textContent).toContain('0.90%')          // 60 日均换手
-  expect(el.textContent).toContain('-3.7%')          // 20 日涨幅（跌绿，但文案仍是负号）
-  // 冲突必须逐条列出，并说明因此单独列出
-  expect(el.textContent).toContain('与观察池旧标准冲突 2 项')
-  expect(el.textContent).toContain('热度分 0.24 < 0.75')
-  expect(el.textContent).toContain('当日成交额 547 万 < 3000 万')
-  // 辨识度更高的同形态票要带标记
-  expect(el.textContent).toContain('同庆楼')
-  expect(el.textContent).toContain('★')
-  // 历史读数：不能说成「即将启动」
-  expect(el.textContent).toContain('安静不等于要动')
-  expect(el.textContent).toContain('3.6%')
-  expect(el.textContent).toContain('11.4%')
-  // 换手档：把卡片锚到「放量 × 换手档」的历史读数上
-  expect(el.textContent).toContain('换手档 Q1/5')
-  expect(el.textContent).toContain('0.2× 均量')
+  // 主对象 = 获利盘最小的那只（后端已排序）
+  expect(el.textContent).toContain('立航科技')
+  expect(el.textContent).toContain('76.4%')          // 获利盘
+  expect(el.textContent).toContain('66.0%')          // 前两大股东占比
+  expect(el.textContent).toContain('42.50亿')        // 流通市值
+  expect(el.textContent).toContain('54.80 / 49.49')  // 现价 / 平均成本
+  // 前两大股东名称要跟着显示
+  expect(el.textContent).toContain('刘随阳')
+  // 第二只按获利盘排在后面
+  expect(el.textContent).toContain('盛剑科技')
+  expect(el.textContent).toContain('93.5%')
+  // 条件文案
+  expect(el.textContent).toContain('获利盘 ≥ 75.0%')
 })
 
 it('重点关注：切到标签页后不再出现（与观察池同一屏规则）', async () => {
   const el = await render()
-  expect(el.textContent).toContain('重点关注 · 锁仓横盘')
+  expect(el.textContent).toContain('重点关注 · 锁仓 + 上方无抛压')
   await switchTo(el, 'bluechip')
-  expect(el.textContent).not.toContain('重点关注 · 锁仓横盘')
+  expect(el.textContent).not.toContain('重点关注 · 锁仓 + 上方无抛压')
 })

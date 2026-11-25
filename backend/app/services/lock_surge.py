@@ -125,6 +125,11 @@ def record_day(
 
     预注册守卫：`PREREG_START` 之前的日期一律标 backfill（即使传 forward）。
     收盘守卫：只有 `quote_ts ≥ 当日 15:05` 的分区才登记；盘中调用直接返回 None。
+
+    ⚠️ 本预注册已关闭（2026-11-25），且依赖的 `focus.lock.band` 旧结构
+    （tr_ratio / turn60 / ret20 / amt60）已随「重点关注」口径改版移除 —— 现在
+    band 是 symbol/name/industry/mcap/top2_ratio/profit_ratio。此函数是死代码，
+    不要再调用；如需复活请先按新 band 结构重写。
     """
     from app.services import citizenship  # 局部导入，避免模块级环
 

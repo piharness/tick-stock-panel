@@ -1740,82 +1740,42 @@ export interface SortAudit {
 }
 
 /** 观察漏斗：每一层删掉了什么 */
-/** 重点关注（锁仓横盘）：独立口径，与观察池并列而不是同池。
+/** 重点关注（锁仓 + 上方无抛压）：独立口径，与观察池并列而不是同池。
  *
- *  为什么单独一块：观察池要求 heat ≥ 0.75（其中一项是换手分位），本形态要求
- *  60 日均换手 ≤1.3% —— 两条**构造上互斥**，命中票必然落在「与旧标准冲突」一侧。
- *  后端把冲突项逐条给出，页面照实列出，不塞进 15 张池内卡片。 */
+ *  条件：流通市值 ≤50 亿 + 前两大股东(剔除托管户) ≥60% + 上市 ≥2 年 + 获利盘 ≥75%。
+ *  排序：获利盘从小到大。 */
 export interface ShortlineRadarLockPick {
   symbol: string
   name: string | null
   industry: string | null
-  arena: ShortlineRadarArena
-  mcap: number
-  /** 60 日均换手（百分数，0.9 = 0.90%） */
-  turn60: number
-  /** 20 日涨幅（小数） */
-  ret20: number
-  /** 当日成交额 */
-  amount: number
-  /** 60 日均成交额 */
-  amt60: number
-  /** 锁死 20% 流通盘所需资金（元） */
-  lock_capital: number
-  /** 上面的资金折合多少个 60 日均成交日 */
-  lock_days: number
-  /** 当日 turn60 的横截面五分位（1 = 最低换手）；null = 不在统计口径内 */
-  turn_q: number | null
-  /** 当日换手 / 60 日均换手；≥2 记为「放量」 */
-  tr_ratio: number | null
-  /** 近 250 交易日涨停天数 */
-  lu250: number
-  /** 近一年龙虎榜上榜天数 */
-  lhb_days: number
-  /** 辨识度：两项市场分位的均值（0~1） */
-  recognition: number
-  high_recognition: boolean
-  /** true = 同时满足观察池全部旧门槛（当前数据下几乎必然 false） */
-  in_pool: boolean
-  /** 与观察池旧门槛的冲突项（人话，逐条可复核） */
-  conflicts: string[]
-}
-
-export interface ShortlineRadarLockReadout {
-  base_periods: number
-  sample: string
-  /** 前向 20 日超额（小数） */
-  fwd20_ex: number
-  fwd20_t: number
-  /** 同日同池、只把换手换到 2%~8% 的对照 */
-  ctrl_ex: number
-  diff_t: number
-  fwd20_med: number
-  fwd20_p10: number
-  /** 未来 20 日出现过涨停的比例 */
-  lu_rate: number
-  ctrl_lu_rate: number
-  lu_t: number
-  lu_pos_periods: number
-  script: string
+  /** 流通市值（元） */
+  float_cap: number
+  /** 前两大股东（剔除托管户）占比（百分数，60 = 60%） */
+  top2_ratio: number
+  top1_ratio: number
+  top1_name: string | null
+  top2_name: string | null
+  /** 获利盘占比（小数 0~1，现价及以下筹码占比） */
+  profit_ratio: number
+  /** 平均成本（元） */
+  avg_cost: number
+  /** 现价（raw_close，元） */
+  last_close: number
 }
 
 export interface ShortlineRadarLockWatch {
   criteria: {
-    turn60_target: number
-    turn60_tol: number
-    ret20_target: number
-    ret20_tol: number
-    lock_ratio: number
-    lock_max_capital: number
-    min_amount60: number
-    recognition_cut: number
+    float_cap_max: number
+    top2_min: number
+    min_listing_days: number
+    profit_min: number
+    chip_days: number
     max_n: number
   }
-  /** 全市场 → 硬门槛（非 ST/北交所/次新/已启动/缩量不足）→ 形态命中 */
+  /** 全市场 → 硬门槛（非 ST/北交所/次新/超50亿/锁仓不足）→ 获利盘命中 */
   budget: { market: number; hard: number; matched: number }
-  excluded: { st: number; bse: number; young: number; moved: number; thin: number; band: number }
+  excluded: { st: number; bse: number; young: number; big: number; unlocked: number; profit: number }
   picks: ShortlineRadarLockPick[]
-  readout: ShortlineRadarLockReadout
 }
 
 export interface ShortlineRadarFocus {

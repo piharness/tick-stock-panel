@@ -50,7 +50,7 @@ import {
 } from '@/lib/api'
 import { QK } from '@/lib/queryKeys'
 import { cn } from '@/lib/cn'
-import { fmtBigNum, priceColorClass } from '@/lib/format'
+import { fmtBigNum } from '@/lib/format'
 import { PageHeader } from '@/components/PageHeader'
 import { DateInput } from '@/components/DateInput'
 import { StockPreviewDialog } from '@/components/StockPreviewDialog'
@@ -643,17 +643,13 @@ function FocusBand({
 }
 
 /**
- * 重点关注 · 锁仓横盘 —— 观察池之外的**一个**对象，独立口径。
+ * 重点关注 · 锁仓 + 上方无抛压 —— 观察池之外的一个对象，独立口径。
  *
- * 为什么必须单独一块，而不是塞进上面 15 张卡：
- *   观察池的入场券是 heat ≥ 0.75，而 heat 四项里有一项是 20 日换手分位；
- *   本形态要求 60 日均换手 ≤1.3%（目标 0.96%）—— 两条**构造上互斥**。
- *   把它塞进池里只有两种结果：永远选不中，或者偷偷改掉旧门槛。
- *   所以这里照实列出「与旧标准的冲突项」，并把它排除在池外。
+ * 条件（用户指定，非回测拟合）：流通市值 ≤50 亿 + 前两大股东(剔除托管户) ≥60%
+ * + 上市 ≥2 年 + 获利盘 ≥75%。排序：获利盘从小到大。
  *
- * 措辞纪律：标题是「重点关注」，不是「即将启动」。卡片底部必须带历史读数
- * （前向 20 日超额不显著、未来 20 日涨停率显著低于同池对照），否则这四个字
- * 会被读成买入建议 —— 那正是这一页反复在防的误读。
+ * 措辞纪律：标题是「重点关注」，不是「买入建议」。这套条件**没有历史前向回测背书**，
+ * 页面只列条件与命中，不写收益承诺。
  */
 function LockWatchBand({
   lock, asOf, onOpenStock, onOpenMethod,
@@ -664,10 +660,9 @@ function LockWatchBand({
   onOpenMethod: () => void
 }) {
   if (!lock) return null
-  const { picks, budget, excluded, criteria, readout } = lock
+  const { picks, budget, excluded, criteria } = lock
   const first = picks[0]
   const rest = picks.slice(1)
-  // 命中总数可能大于列出的只数（后端按距离只发前 max_n 只）：不把「截断」藏起来。
   const restTotal = Math.max(0, budget.matched - 1)
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`
 
@@ -675,33 +670,30 @@ function LockWatchBand({
     <section className="overflow-hidden rounded-card border border-amber-500/25 bg-amber-500/[0.025]">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 pb-1.5 pt-2.5">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <h2 className="text-[13px] font-medium text-foreground">重点关注 · 锁仓横盘</h2>
+          <h2 className="text-[13px] font-medium text-foreground">重点关注 · 锁仓 + 上方无抛压</h2>
           <span className="text-[10px] text-muted">
             独立口径 · 不进观察池 · {asOf ?? '—'}
           </span>
         </div>
         <span
           className="text-[9.5px] tabular-nums text-muted/80"
-          title={`硬门槛删掉：ST ${excluded.st} · 北交所 ${excluded.bse} · 次新 ${excluded.young} · 已启动 ${excluded.moved} · 缩量不足 ${excluded.thin}；形态带外 ${excluded.band}`}
+          title={`硬门槛删掉：ST ${excluded.st} · 北交所 ${excluded.bse} · 上市不足两年 ${excluded.young} · 流通市值超 50 亿 ${excluded.big} · 锁仓不足 ${excluded.unlocked}；获利盘不足 ${excluded.profit}`}
         >
-          全市场 {budget.market.toLocaleString()} → 硬门槛 {budget.hard.toLocaleString()} → 形态 {budget.matched}
+          全市场 {budget.market.toLocaleString()} → 硬门槛 {budget.hard.toLocaleString()} → 命中 {budget.matched}
         </span>
       </div>
 
       <p className="px-4 pb-1.5 text-[9.5px] leading-relaxed text-muted/75">
-        观察池要 <b className="text-foreground/75">heat ≥ 0.75</b>（换手项要高），本形态要
-        <b className="text-foreground/75"> 60 日均换手 {criteria.turn60_target}%±{criteria.turn60_tol}pp</b>（低换手）
-        —— 两条互斥，所以命中票必然进不了池，单独列在这里，不套旧门槛。
+        条件：流通市值 ≤ {fmtBigNum(criteria.float_cap_max)} · 前两大股东（剔除托管户）≥{' '}
+        {criteria.top2_min}% · 上市 ≥ {Math.round(criteria.min_listing_days / 365)} 年 · 获利盘 ≥{' '}
+        {pct(criteria.profit_min)}。按获利盘从小到大排序。
       </p>
 
       {picks.length === 0 ? (
         <div className="border-t border-amber-500/15 px-4 py-4 text-center">
-          <div className="text-[11.5px] text-foreground">今天没有票同时满足这三个条件</div>
+          <div className="text-[11.5px] text-foreground">今天没有票同时满足这四个条件</div>
           <p className="mt-1 text-[9.5px] leading-relaxed text-muted/70">
-            60 日均换手 {criteria.turn60_target}%±{criteria.turn60_tol}pp · 20 日涨幅{' '}
-            {pct(criteria.ret20_target)}±{pct(criteria.ret20_tol)} · 锁 {Math.round(criteria.lock_ratio * 100)}% 流通盘 ≤
-            {fmtBigNum(criteria.lock_max_capital)}。硬门槛后 {budget.hard.toLocaleString()} 只，形态命中 0 ——
-            空也是一个结论，不是漏算。
+            硬门槛后 {budget.hard.toLocaleString()} 只，获利盘命中 0 —— 空也是一个结论，不是漏算。
           </p>
         </div>
       ) : (
@@ -717,85 +709,47 @@ function LockWatchBand({
               </button>
               <span className="font-mono text-[10px] text-muted/70">{first.symbol.split('.')[0]}</span>
               <span className="text-[10px] text-muted">{first.industry ?? '未分类'}</span>
-              {first.turn_q != null && (
-                <span
-                  className="rounded border border-border/60 bg-surface/70 px-1 py-0.5 text-[9px] text-secondary"
-                  title={
-                    '当日 60 日均换手的横截面五分位（Q1 = 最低）。'
-                    + '全市场「当日换手 ≥2×60 日均值」的放量事件，未来 20 日超额：'
-                    + 'Q1 −47bp / Q5 −304bp（2020-26，82 个月，差值 t 4.45）——'
-                    + 'Q1 也不是买点，只是少亏。见 prereg-surge-all.md'
-                  }
-                >
-                  换手档 Q{first.turn_q}/5
-                  {first.tr_ratio != null && (
-                    <span className="ml-1 text-muted/70">{first.tr_ratio.toFixed(1)}× 均量</span>
-                  )}
-                </span>
-              )}
-              {first.high_recognition ? (
-                <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
-                  辨识度 {first.recognition.toFixed(2)} · 相对更高
-                </span>
-              ) : (
-                <span className="text-[9px] text-muted/70">
-                  辨识度 {first.recognition.toFixed(2)}（近一年涨停 {first.lu250} · 龙虎榜 {first.lhb_days}）
-                </span>
-              )}
-              {first.in_pool && (
-                <span className="text-[9px] text-emerald-700">同时在观察池</span>
-              )}
+              <span className="text-[10px] text-muted/70">
+                前两大股东 {first.top2_ratio.toFixed(1)}%{first.top1_name ? `（${first.top1_name} ${first.top1_ratio.toFixed(1)}% + ${first.top2_name ?? '—'}）` : ''}
+              </span>
             </div>
 
-            <div className="mt-1.5 grid grid-cols-3 gap-px overflow-hidden rounded-btn border border-border/50 bg-border/30">
+            <div className="mt-1.5 grid grid-cols-4 gap-px overflow-hidden rounded-btn border border-border/50 bg-border/30">
               <div className="bg-surface/70 px-2 py-1">
-                <div className="text-[9px] text-muted/70">60 日均换手（目标 {criteria.turn60_target}%）</div>
-                <div className="font-mono text-[13px] tabular-nums text-foreground">{first.turn60.toFixed(2)}%</div>
+                <div className="text-[9px] text-muted/70">获利盘（排序键）</div>
+                <div className="font-mono text-[13px] tabular-nums text-foreground">{fmtPct(first.profit_ratio, 1)}</div>
               </div>
               <div className="bg-surface/70 px-2 py-1">
-                <div className="text-[9px] text-muted/70">20 日涨幅（目标 {pct(criteria.ret20_target)}）</div>
-                {/* 这一页唯一的价格语义列：涨红跌绿 */}
-                <div className={cn('font-mono text-[13px] tabular-nums', priceColorClass(first.ret20))}>
-                  {fmtPct(first.ret20, 1)}
-                </div>
+                <div className="text-[9px] text-muted/70">前两大股东</div>
+                <div className="font-mono text-[13px] tabular-nums text-foreground">{first.top2_ratio.toFixed(1)}%</div>
+                <div className="text-[8.5px] text-muted/70">{first.top1_ratio.toFixed(1)}% + {(first.top2_ratio - first.top1_ratio).toFixed(1)}%</div>
               </div>
               <div className="bg-surface/70 px-2 py-1">
-                <div className="text-[9px] text-muted/70">锁 {Math.round(criteria.lock_ratio * 100)}% 流通盘需</div>
-                <div className="font-mono text-[13px] tabular-nums text-foreground">{fmtBigNum(first.lock_capital)}</div>
-                <div className="text-[8.5px] text-muted/70">≈ {first.lock_days.toFixed(0)} 日成交</div>
+                <div className="text-[9px] text-muted/70">流通市值</div>
+                <div className="font-mono text-[13px] tabular-nums text-foreground">{fmtBigNum(first.float_cap)}</div>
+              </div>
+              <div className="bg-surface/70 px-2 py-1">
+                <div className="text-[9px] text-muted/70">现价 / 平均成本</div>
+                <div className="font-mono text-[13px] tabular-nums text-foreground">{first.last_close?.toFixed(2) ?? '—'} / {first.avg_cost?.toFixed(2) ?? '—'}</div>
               </div>
             </div>
-
-            {first.conflicts.length > 0 && (
-              <div className="mt-1.5 text-[9.5px] leading-relaxed text-amber-700/90">
-                与观察池旧标准冲突 {first.conflicts.length} 项（因此单独列出，不套旧门槛）：
-                {first.conflicts.map(c => (
-                  <span key={c} className="ml-1 rounded bg-amber-500/[0.08] px-1 py-0.5">{c}</span>
-                ))}
-              </div>
-            )}
           </div>
 
           {rest.length > 0 && (
             <div className="flex flex-wrap items-center gap-1 border-t border-amber-500/10 px-4 py-1.5">
               <span className="text-[9px] text-muted/70">
-                同形态另有 {restTotal} 只{rest.length < restTotal ? `（只列前 ${rest.length}）` : ''}：
+                另有 {restTotal} 只{rest.length < restTotal ? `（只列前 ${rest.length}）` : ''}，按获利盘从小到大：
               </span>
               {rest.map(p => (
                 <button
                   key={p.symbol}
                   type="button"
                   onClick={() => onOpenStock(p.symbol)}
-                  className={cn(
-                    'rounded-btn border px-1.5 py-0.5 text-[9.5px] transition-colors',
-                    p.high_recognition
-                      ? 'border-amber-500/40 bg-amber-500/[0.08] text-amber-700'
-                      : 'border-border/60 bg-surface/60 text-secondary hover:text-foreground',
-                  )}
-                  title={`60 日均换手 ${p.turn60.toFixed(2)}% · 20 日 ${fmtPct(p.ret20, 1)} · 换手档 ${p.turn_q == null ? '—' : `Q${p.turn_q}`} · 辨识度 ${p.recognition.toFixed(2)}`}
+                  className="rounded-btn border border-border/60 bg-surface/60 px-1.5 py-0.5 text-[9.5px] text-secondary transition-colors hover:text-foreground"
+                  title={`获利盘 ${fmtPct(p.profit_ratio, 1)} · 前两大股东 ${p.top2_ratio.toFixed(1)}% · 流通市值 ${fmtBigNum(p.float_cap)}`}
                 >
                   {p.name ?? p.symbol}
-                  {p.high_recognition && ' ★'}
+                  <span className="ml-1 font-mono text-muted/70">{fmtPct(p.profit_ratio, 1)}</span>
                 </button>
               ))}
             </div>
@@ -805,12 +759,8 @@ function LockWatchBand({
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-amber-500/10 px-4 py-1.5 text-[9px] leading-relaxed text-muted/70">
         <span>
-          实测 {readout.base_periods} 个基期（{readout.sample}）：前向 20 日超额 {fmtPct(readout.fwd20_ex, 2)}
-          （t {readout.fwd20_t.toFixed(2)}），同池高换手对照 {fmtPct(readout.ctrl_ex, 2)}（差值 t {readout.diff_t.toFixed(2)}）；
-          中位 {fmtPct(readout.fwd20_med, 2)}、p10 {fmtPct(readout.fwd20_p10, 2)}。
-          未来 20 日涨停率 {fmtPct(readout.lu_rate, 1)} vs 对照 {fmtPct(readout.ctrl_lu_rate, 1)}
-          （t {readout.lu_t.toFixed(2)}，仅 {readout.lu_pos_periods}/{readout.base_periods} 期为正）
-          —— <b className="text-foreground/70">安静不等于要动</b>。
+          获利盘 = 现价及以下持仓筹码占比（换手率衰减筹码模型），≥ {pct(criteria.profit_min)} 即上方套牢 ≤
+          {pct(1 - criteria.profit_min)}。这套条件没有历史前向回测背书，仅列条件与命中。
         </span>
         <button type="button" onClick={onOpenMethod}
           className="text-accent underline underline-offset-2 hover:text-foreground">
@@ -1479,45 +1429,29 @@ function MethodDrawer({
           </div>
 
           <div>
-            <div className="mb-1 text-[10px] font-medium text-foreground">重点关注 · 锁仓横盘（独立口径，不进观察池）</div>
+            <div className="mb-1 text-[10px] font-medium text-foreground">重点关注 · 锁仓 + 上方无抛压（独立口径，不进观察池）</div>
             <ul className="list-disc space-y-1 pl-4 text-[9.5px] text-muted/85">
               <li>
-                三条形态条件：60 日均换手 {data.focus.lock?.criteria.turn60_target ?? 0.96}%±
-                {data.focus.lock?.criteria.turn60_tol ?? 0.35}pp、20 日涨幅{' '}
-                {((data.focus.lock?.criteria.ret20_target ?? -0.035) * 100).toFixed(1)}%±
-                {((data.focus.lock?.criteria.ret20_tol ?? 0.025) * 100).toFixed(1)}pp、锁 20% 流通盘 ≤
-                {fmtBigNum(data.focus.lock?.criteria.lock_max_capital ?? 8e8)}（含 60 日均成交额 ≥
-                {fmtBigNum(data.focus.lock?.criteria.min_amount60 ?? 1.5e7)}）。
+                四条条件：流通市值 ≤ {fmtBigNum(data.focus.lock?.criteria.float_cap_max ?? 50e8)} ·
+                前两大股东（剔除托管户）≥ {data.focus.lock?.criteria.top2_min ?? 60}% · 上市 ≥{' '}
+                {Math.round((data.focus.lock?.criteria.min_listing_days ?? 730) / 365)} 年 · 获利盘 ≥{' '}
+                {(((data.focus.lock?.criteria.profit_min ?? 0.75) * 100).toFixed(0))}%。
+                按获利盘从小到大排序。
               </li>
               <li>
-                与观察池<b className="text-foreground/80">构造性互斥</b>：池要 heat ≥ {heatCut}，其中一项是换手分位；
-                本形态要 60 日均换手 ≤{(data.focus.lock?.criteria.turn60_target ?? 0.96) + (data.focus.lock?.criteria.turn60_tol ?? 0.35)}%。
-                所以它永远进不了池，页面单独列，并把冲突项逐条写出，不套旧门槛。
+                <b className="text-foreground/80">前两大股东</b> = 十大股东（占总股本）口径，剔除
+                「香港中央结算 / HKSCC / NOMINEES」等托管户 —— 托管户是名义持有人，不代表锁定筹码。
+                数据源 <code>data/shareholder/top_holders/part.parquet</code>（东财 RPT_F10_EH_HOLDERS）。
               </li>
               <li>
-                辨识度 =（近 250 日涨停天数分位 + 龙虎榜上榜天数分位）/2，≥
-                {data.focus.lock?.criteria.recognition_cut ?? 0.6} 标「相对更高」。用 average rank：
-                0 涨停的票有几千只，ordinal rank 会把「都没有」读成「有差别」。
+                <b className="text-foreground/80">获利盘</b> = 现价及以下的持仓筹码占比（换手率衰减筹码模型，
+                <code>indicators/levels.py::_profit_split</code>，最近 {data.focus.lock?.criteria.chip_days ?? 500} 个
+                交易日，raw 价格口径）。≥ {((data.focus.lock?.criteria.profit_min ?? 0.75) * 100).toFixed(0)}% 即上方套牢
+                ≤ {((1 - (data.focus.lock?.criteria.profit_min ?? 0.75)) * 100).toFixed(0)}%，视为「上方无抛压」。
               </li>
               <li>
-                换手档 = 当日 60 日均换手的横截面五分位（Q1 最低）。全市场「当日换手 ≥2×60 日均值」的
-                放量事件，未来 20 日超额 <b className="text-foreground/80">Q1 −47bp / Q5 −304bp</b>
-                （2010-26 五档单调；2020-26，82 个月，差值 +258bp，t 4.45；市值五分位内五档全正）。
-                <b className="text-foreground/80">Q1 也不是买点，只是少亏</b>，见
-                <code>prereg-surge-all.md</code>。
-              </li>
-              <li>
-                历史读数（{data.focus.lock?.readout.base_periods ?? 65} 个基期，2021-04..2026-09）：
-                前向 20 日超额 {((data.focus.lock?.readout.fwd20_ex ?? 0.011) * 100).toFixed(2)}%
-                （t {data.focus.lock?.readout.fwd20_t ?? 1.45}），同池高换手对照{' '}
-                {((data.focus.lock?.readout.ctrl_ex ?? 0.0049) * 100).toFixed(2)}%（差值 t{' '}
-                {data.focus.lock?.readout.diff_t ?? 0.94}）；未来 20 日涨停率{' '}
-                {((data.focus.lock?.readout.lu_rate ?? 0.036) * 100).toFixed(1)}% vs{' '}
-                {((data.focus.lock?.readout.ctrl_lu_rate ?? 0.114) * 100).toFixed(1)}%（t{' '}
-                {data.focus.lock?.readout.lu_t ?? -5.28}，仅 {data.focus.lock?.readout.lu_pos_periods ?? 2}/
-                {data.focus.lock?.readout.base_periods ?? 65} 期为正）。
-                <b className="text-foreground/80">低换手没有收益增量，且涨停率更低 —— 安静不等于要动。</b>
-                重算入口 <code>{data.focus.lock?.readout.script ?? 'analysis/_diag_lock_pattern.py'}</code>。
+                <b className="text-foreground/80">这套条件没有历史前向回测背书</b>：它来自用户指定的筛选口径，
+                不是回测验证过的信号。页面只列条件与命中，不写收益承诺。
               </li>
             </ul>
           </div>

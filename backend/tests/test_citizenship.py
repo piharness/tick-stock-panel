@@ -639,29 +639,29 @@ def test_empty_focus_degrades_gracefully():
     assert set(f["stages"]) == set(citizenship.STAGE_ORDER)
 
 
-# ===== 重点关注（锁仓横盘）：独立口径，不套观察池门槛 =====
+# ===== 重点关注（锁仓 + 上方无抛压）：独立口径，不套观察池门槛 =====
 #
-# 这一块的正当性来自「与旧标准互斥」：池要 heat≥0.75（换手项高），本形态要
-# 60 日均换手 ≤1.3%。测试要锁住三件事：
-#   1) 命中票确实进不了池，且冲突项被逐条写出来（不是静默丢弃）；
-#   2) 六道硬门槛互斥且覆盖，漏斗能加平；
-#   3) 排序按离参照读数的距离，不是按 heat。
+# 条件：流通市值 ≤50 亿 + 前两大股东(剔除托管户) ≥60% + 上市 ≥2 年 + 获利盘 ≥75%，
+# 按获利盘从小到大排序。测试要锁住三件事：
+#   1) 命中票按获利盘升序；
+#   2) 五道硬门槛互斥且覆盖，漏斗能加平；
+#   3) 获利盘 <75% 的票被拒（不是「接近就放过」）。
 
 LOCK_COLS = [
-    "symbol", "name", "industry", "arena", "risk", "heat", "stage", "mcap",
-    "turn60", "turnover_rate", "amt60", "ret20", "ret60", "amount", "lu20",
-    "listing_days", "lu250", "lhb_days",
+    "symbol", "name", "industry", "risk", "mcap", "listing_days",
+    "top2_ratio", "top1_ratio", "top1_name", "top2_name",
+    "profit_ratio", "avg_cost", "last_close",
 ]
 
 
 def _lock_rows(*specs: dict) -> pl.DataFrame:
-    """合成 df。[turn60, ret20, mcap, amt60, heat, amount, ret60, lu20, listing_days] 可覆盖。"""
+    """合成 df。[mcap, listing_days, top2_ratio, profit_ratio, risk] 可覆盖。"""
     base = {
-        "name": "测试", "industry": "电子", "arena": "nowhere", "risk": "none",
-        "heat": 0.30, "stage": "cold", "mcap": 2.0e9,
-        "turn60": 0.96, "turnover_rate": 0.96, "amt60": 3.0e7, "ret20": -0.035,
-        "ret60": -0.02, "amount": 5.0e7, "lu20": 0, "listing_days": 2000,
-        "lu250": 0, "lhb_days": 0,
+        "name": "测试", "industry": "电子", "risk": "none",
+        "mcap": 2.0e9, "listing_days": 2000,
+        "top2_ratio": 65.0, "top1_ratio": 60.0,
+        "top1_name": "甲控股", "top2_name": "乙投资",
+        "profit_ratio": 0.85, "avg_cost": 10.0, "last_close": 12.0,
     }
     out = []
     for i, s in enumerate(specs):
@@ -672,107 +672,53 @@ def _lock_rows(*specs: dict) -> pl.DataFrame:
     return pl.DataFrame(out).select(LOCK_COLS)
 
 
-def test_lock_watch_hits_band_and_lists_conflicts():
-    """形态命中的票必须给出「为什么进不了观察池」，而不是悄悄不给。"""
-    f = citizenship._lock_watch(_lock_rows({"symbol": "603309.SH"}))
-    assert len(f["picks"]) == 1
+def test_lock_watch_hits_and_sorts_by_profit_ascending():
+    """命中票必须按获利盘从小到大，且带锁仓/流通市值读数。"""
+    f = citizenship._lock_watch(_lock_rows(
+        {"symbol": "300001.SZ", "profit_ratio": 0.90},
+        {"symbol": "300002.SZ", "profit_ratio": 0.76},
+        {"symbol": "300003.SZ", "profit_ratio": 0.99},
+    ))
+    assert [p["symbol"] for p in f["picks"]] == ["300002.SZ", "300001.SZ", "300003.SZ"]
     p = f["picks"][0]
-    assert p["in_pool"] is False
-    # heat 0.30 < 0.75 必然冲突（这两条口径构造上互斥）
-    assert any("热度分" in c for c in p["conflicts"])
-    # 冲突项是人话，且带实际数值，能复核
-    assert all("<" in c or "超" in c or "「" in c for c in p["conflicts"])
-    # 命中票一定同时满足三个形态条件
-    assert abs(p["turn60"] - citizenship.LOCK_TURN60_TARGET) <= citizenship.LOCK_TURN60_TOL
-    assert abs(p["ret20"] - citizenship.LOCK_RET20_TARGET) <= citizenship.LOCK_RET20_TOL
+    assert p["profit_ratio"] == 0.76
+    assert p["top2_ratio"] == 65.0
+    assert p["top1_name"] == "甲控股"
+    assert p["float_cap"] == 2.0e9
+    assert p["last_close"] == 12.0
 
 
 def test_lock_watch_hard_gates_partition_the_market():
-    """六道硬门槛互斥且覆盖：st+bse+young+moved+thin + hard = market。"""
+    """五道硬门槛互斥且覆盖：st+bse+young+big+unlocked+profit + matched = market。"""
     f = citizenship._lock_watch(_lock_rows(
-        {"symbol": "600001.SH", "risk": "high"},                 # ST
-        {"symbol": "920001.BJ"},                                  # 北交所
-        {"symbol": "300002.SZ", "listing_days": 30},              # 次新
-        {"symbol": "300003.SZ", "lu20": 1},                       # 已启动（20 日内涨停）
-        {"symbol": "300004.SZ", "amt60": 5e6},                    # 缩量不足
-        {"symbol": "300005.SZ"},                                  # 合格
+        {"symbol": "600001.SH", "risk": "high"},          # ST
+        {"symbol": "920001.BJ"},                           # 北交所
+        {"symbol": "300002.SZ", "listing_days": 300},      # 上市不足两年
+        {"symbol": "300003.SZ", "mcap": 6.0e9},            # 流通市值超 50 亿
+        {"symbol": "300004.SZ", "top2_ratio": 30.0},       # 锁仓不足
+        {"symbol": "300005.SZ"},                           # 合格
     ))
     b, ex = f["budget"], f["excluded"]
     assert b["market"] == 6
-    assert ex["st"] + ex["bse"] + ex["young"] + ex["moved"] + ex["thin"] + ex["band"] + b["matched"] == b["market"]
+    assert ex["st"] + ex["bse"] + ex["young"] + ex["big"] + ex["unlocked"] + ex["profit"] + b["matched"] == b["market"]
     assert b["hard"] == 1
     assert [p["symbol"] for p in f["picks"]] == ["300005.SZ"]
 
 
-def test_lock_watch_band_rejects_near_misses():
-    """三个形态条件各自生效：换手太高/涨幅太正/盘子太大都不算。"""
+def test_lock_watch_rejects_profit_below_threshold():
+    """获利盘 <75% 的票不算「上方无抛压」；刚过线算。"""
     f = citizenship._lock_watch(_lock_rows(
-        {"symbol": "300001.SZ", "turn60": 2.50},        # 换手太高（观察池那一类）
-        {"symbol": "300002.SZ", "ret20": 0.02},         # 已经涨了
-        {"symbol": "300003.SZ", "mcap": 1.0e10},        # 锁 20% 要 20 亿
-        {"symbol": "300004.SZ"},                         # 唯一合格
+        {"symbol": "300001.SZ", "profit_ratio": 0.74},   # 略低于 75%
+        {"symbol": "300002.SZ", "profit_ratio": 0.75},   # 刚好 75%
     ))
-    assert [p["symbol"] for p in f["picks"]] == ["300004.SZ"]
-    assert f["excluded"]["band"] == 3
-
-
-def test_lock_watch_ranks_by_distance_to_reference():
-    """排序按离参照读数（0.96% / −3.5%）的距离，不是 heat：本块没有 heat 概念。"""
-    f = citizenship._lock_watch(_lock_rows(
-        {"symbol": "300001.SZ", "turn60": 0.65, "ret20": -0.059, "heat": 0.99},
-        {"symbol": "300002.SZ", "turn60": 0.96, "ret20": -0.035, "heat": 0.10},
-        {"symbol": "300003.SZ", "turn60": 1.20, "ret20": -0.015, "heat": 0.50},
-    ))
-    assert [p["symbol"] for p in f["picks"]] == ["300002.SZ", "300003.SZ", "300001.SZ"]
-
-
-def test_lock_watch_marks_relative_recognition():
-    """辨识度 = 一年涨停 + 龙虎榜的综合分位；只有分位够高的那只带标记。"""
-    f = citizenship._lock_watch(_lock_rows(
-        {"symbol": "300001.SZ", "lu250": 0, "lhb_days": 0},
-        {"symbol": "300002.SZ", "lu250": 6, "lhb_days": 3},
-        {"symbol": "300003.SZ", "lu250": 1, "lhb_days": 0},
-    ))
-    by = {p["symbol"]: p for p in f["picks"]}
-    assert by["300002.SZ"]["high_recognition"] is True
-    assert by["300001.SZ"]["high_recognition"] is False
-    assert by["300002.SZ"]["recognition"] > by["300001.SZ"]["recognition"]
-
-
-def test_lock_watch_readout_is_present_and_negative():
-    """历史读数必须跟着走：形态的未来涨停率显著低于同池对照，页面不能只写「重点」。"""
-    f = citizenship._lock_watch(_lock_rows({"symbol": "300001.SZ"}))
-    r = f["readout"]
-    assert r["lu_rate"] < r["ctrl_lu_rate"]
-    assert r["lu_t"] < -2
-    assert r["base_periods"] >= 60
-
-
-def test_lock_watch_exposes_turn_quintile():
-    """换手档 = 当日 turn60 的横截面五分位（Q1 最低），与 prereg-surge-all 同口径。
-
-    页面用它把「锁仓」锚到可复核的读数上；如果这只票的档位和它的 turn60 排序不一致，
-    卡片会把人指向错的那一档。
-    """
-    rows = _lock_rows(*[
-        {"symbol": f"3000{i:02d}.SZ", "turn60": 0.5 + i * 0.1,
-         "turnover_rate": (0.5 + i * 0.1) * 1.5}
-        for i in range(10)
-    ])
-    f = citizenship._lock_watch(rows)
-    picks = sorted(f["picks"], key=lambda p: p["turn60"])
-    assert len(picks) >= 3
-    qs = [p["turn_q"] for p in picks]
-    assert all(q is not None and 1 <= q <= 5 for q in qs), qs
-    # turn60 越大，档位不得更小（秩映射必须单调）
-    assert qs == sorted(qs), (qs, [round(p["turn60"], 2) for p in picks])
-    # 放量倍数 = 当日换手 / 60 日均换手（夹具里固定 1.5 倍）
-    for p in picks:
-        assert abs(p["tr_ratio"] - 1.5) < 1e-6
+    assert [p["symbol"] for p in f["picks"]] == ["300002.SZ"]
+    assert f["excluded"]["profit"] == 1
 
 
 def test_empty_lock_watch_degrades_gracefully():
     f = citizenship._lock_watch(pl.DataFrame())
     assert f["picks"] == []
     assert f["budget"]["matched"] == 0
-    assert "criteria" in f and "readout" in f
+    assert "criteria" in f
+    # 新形态没有历史前向读数（旧「锁仓横盘」的 readout 已随口径一起删除）
+    assert "readout" not in f
