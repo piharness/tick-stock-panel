@@ -126,7 +126,10 @@ def _prune_partial_enriched_partitions(
 
 
 def _prune_stale_price_partitions(
-    daily_dir: Path, enriched_dir: Path, max_dates: int = 5
+    daily_dir: Path,
+    enriched_dir: Path,
+    max_dates: int = 5,
+    on_check: Callable[[str], None] | None = None,
 ) -> list[str]:
     """删除收盘价与官方日线不一致的 enriched 日期分区。
 
@@ -152,6 +155,10 @@ def _prune_stale_price_partitions(
     common = candidates[:max_dates]
     pruned: list[str] = []
     for ds in common:
+        # 每个候选要读整个日K月分区(几千只 × 当月所有行) + 整个 enriched 日分区,
+        # 9p 上单个可达数十秒。不发心跳就会被 1200s 停滞判定当成卡死。
+        if on_check is not None:
+            on_check(ds)
         try:
             day = date.fromisoformat(ds)
             part_dir = locate_partition_dir(daily_dir, "kline_daily", day)
@@ -510,6 +517,9 @@ def run_now(
             scope="universe",
         )
         if affected_symbols:
+            # 视图刷新 = 重建 DuckDB view + 元数据扫描, 9p 上可达数十秒;
+            # 放在 emit 之后会让「除权完成」与下一步之间留出静默段。
+            emit("sync_adj", 60, "刷新除权视图…")
             _refresh_single_view(repo, "adj_factor")
             emit("sync_adj", 60, f"除权因子完成,新增 {len(affected_symbols)} 只个股")
             logger.info("sync_adj: [%s ~ %s] done, %d symbols", adj_start_str, adj_end_str, len(affected_symbols))
@@ -536,8 +546,11 @@ def run_now(
     # 月分区后目录数是月数而非天数; 这里与 enriched 目录数比较判方向,
     # 必须用真实日期数 (月分区读 date 列), 否则 121 < 367 会把增量检测关死。
     # 读一次复用两处: 每个分区一次读盘, 重复调用在 9p 上是 18s 级开销。
+    # 心跳: 这段是纯读盘(逐月分区扫 date 列), 盘慢时是下一个静默段。
+    emit("compute_enriched", 61, "统计日K覆盖…")
     daily_date_list = list_partition_dates(daily_dir) if daily_dir.exists() else []
     daily_days = len(daily_date_list)
+    emit("compute_enriched", 61, f"日K覆盖 {daily_days} 天, 统计 enriched 分区…")
     prev_enriched_days = len(list(enriched_dir.glob("date=*"))) if enriched_exists else 0
 
     # 部分分区修复 (#223) + 收盘价过期分区修复: 删除被实时合并提前创建、覆盖不全
@@ -554,7 +567,9 @@ def run_now(
         partial_pruned = _prune_partial_enriched_partitions(
             daily_dir, enriched_dir, on_check=_verify_progress,
         )
-        stale_pruned = _prune_stale_price_partitions(daily_dir, enriched_dir)
+        stale_pruned = _prune_stale_price_partitions(
+            daily_dir, enriched_dir, on_check=_verify_progress,
+        )
         pruned_dates = sorted(set(partial_pruned) | set(stale_pruned))
         if pruned_dates:
             logger.warning(
@@ -625,6 +640,7 @@ def run_now(
     else:
         written_enriched = 0
         logger.info("compute_enriched: skip (no new daily, no adj_factor changes)")
+    emit("compute_enriched", 88, "刷新指标视图…")
     _refresh_single_view(repo, "kline_enriched")
     _invalidate("enriched")
 

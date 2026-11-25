@@ -31,8 +31,10 @@ import contextlib
 import logging
 import math
 import re
+import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -56,7 +58,18 @@ SECRETS_FIELD = "fuyao_api_key"  # UI 配置的 Key 存 secrets.json, 优先级�
 # 扶摇 *ms 时间字段为北京时间零点(= UTC 前一日 16:00), +8h 后按 UTC 解析即得交易日
 _SH_MS = 28_800_000
 _HIST_MAX_SPAN_MS = 3650 * 86_400_000  # historical 单次窗口上限 10 年, 超出由本层分片
-_HIST_INTERVAL_S = 0.12  # 单标的请求节流(实测 200+ 连发未触发 4001 限频)
+_HIST_INTERVAL_S = 0.12  # 单标的分片之间的间隔(仅 >10 年窗口触发); 逐票速率见 _HIST_RATE_PER_S
+# 逐票 historical 的并发与全局速率。旧实现是「一只一睡 0.12s」的串行循环:
+# 5,892 只 ⇒ 16 分钟, 且与请求的日期跨度无关(拉 1 天与拉 1 年同为 ~1,000s)。
+# 并发只改「同时几个请求在飞」, 不改变「每秒发几个」—— 速率必须钉在常量上:
+# 8 路 × 1/0.12s ≈ 50 req/s 会越过实测安全线, 故用全局节拍器限速。
+# 25/s 实测仍会撞 HTTP 429(同一 Key 还被 ext_pull 的成分拉取占用), 取 18/s。
+_HIST_CONCURRENCY = 8
+_HIST_RATE_PER_S = 18.0
+# 429 是临时限频: 必须退避重试。旧实现一律 break ⇒ 并发后一次限频就永久少几只,
+# 且任务终态仍是成功(静默缺失比报错更贵)。1002(未知代码)等确定性错误不重试。
+_HIST_429_RETRIES = 2
+_HIST_429_BACKOFF_S = (1.5, 4.0)
 _FINANCIAL_HISTORY_PERIODS = 8  # 财务首装全量历史: 最近 8 期季报(约 2 年)
 _VALUATION_BATCH = 100  # 估值/价格快照端点单次上限 100 只
 # 项目财务表名 → 扶摇报表端点名
@@ -208,6 +221,41 @@ def _cache_dir() -> Path:
     return d
 
 
+class _GlobalRateGate:
+    """进程级请求节拍器: 按全局速率发槽位, 与线程数解耦。
+
+    并发的目的只是把等待重叠掉, 不是提高对上游的请求频率 —— 后者会触发 4001
+    限频, 而「触发后重试」比「慢一点」更贵(整批重拉)。所以速率在这里统一发牌,
+    每个线程只在自己的槽位上等待。
+
+    rate_per_s <= 0 表示不限速(测试/诊断用)。
+    """
+
+    def __init__(self, rate_per_s: float) -> None:
+        self._interval = (1.0 / rate_per_s) if rate_per_s > 0 else 0.0
+        self._next = 0.0
+        self._lock = threading.Lock()
+
+    def wait(self) -> None:
+        if self._interval <= 0:
+            return
+        with self._lock:
+            slot = max(time.monotonic(), self._next)
+            self._next = slot + self._interval
+        delay = slot - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+
+
+def _is_rate_limited(err: Exception) -> bool:
+    """429 = 临时限频(可重试); 与其他 FuyaoError(1002 未知代码 / 502 等) 区分。
+
+    只认 HTTP 429: 服务端限频目前只以这个形态出现, 把 1002 也当可重试会把
+    「304 只退市/换码旧码」变成 304 × 3 次无谓请求。
+    """
+    return "429" in str(err)
+
+
 def _kline_rows(symbol: str, bars: list[dict]) -> list[dict]:
     """historical/dump 原始行(价格元, volume 股) → 内部行(volume 手)。"""
     out = []
@@ -313,6 +361,9 @@ class FuyaoProvider:
         self._client: FuyaoClient | None = None
         self._dump_memo: dict[str, pl.DataFrame] = {}
         self._dump_path_memo: dict[str, Path] = {}
+        # 逐票 historical 的全局发牌器: 生命周期跟随 provider(同一 provider 的所有
+        # 并发调用共享速率), 测试可替换成不限速实例。
+        self._hist_gate = _GlobalRateGate(_HIST_RATE_PER_S)
 
     def close(self) -> None:  # loader.load_all 重建注册表时会对每个 provider 调 close
         if self._client is not None:
@@ -586,20 +637,38 @@ class FuyaoProvider:
                     symbols[i:i + _HIST_SYMBOL_BATCH]
                     for i in range(0, len(symbols), _HIST_SYMBOL_BATCH)
                 ]
-                for batch in batches:
-                    rows: list[dict] = []
-                    for symbol in batch:
-                        rows.extend(_kline_rows(
-                            symbol,
-                            self._historical_bars(symbol, source_start, source_end),
-                        ))
-                        time.sleep(_HIST_INTERVAL_S)
-                    df = normalize_daily(rows, source=self.name)
-                    done += 1
-                    if on_chunk_done:
-                        on_chunk_done(done, total)
-                    if not df.is_empty():
-                        yield df
+                # 逐批派发、逐批回收: 内存峰值仍是「一批 50 只的行」, 与串行版一致;
+                # 批内 8 路并发(全局速率由 _hist_gate 钉住)。批边界同时是进度边界,
+                # on_chunk_done / yield 的语义不变 —— 上层落盘与 job 心跳无需改动。
+                with ThreadPoolExecutor(
+                    max_workers=_HIST_CONCURRENCY, thread_name_prefix="fuyao-daily"
+                ) as pool:
+                    for batch in batches:
+                        futures = [
+                            pool.submit(self._fetch_hist_bars, symbol, source_start, source_end)
+                            for symbol in batch
+                        ]
+                        rows: list[dict] = []
+                        # 保持「单只失败不拖垮整批」: _historical_bars 内部已软返回,
+                        # 这里的 except 只兜意外(编码/类型), 一只坏不能丢整批 49 只。
+                        for future in futures:
+                            try:
+                                symbol, bars = future.result()
+                            except Exception as e:  # noqa: BLE001
+                                logger.warning("扶摇日K并发拉取异常: %s", e)
+                                continue
+                            rows.extend(_kline_rows(symbol, bars))
+                        df = normalize_daily(rows, source=self.name)
+                        done += 1
+                        if on_chunk_done:
+                            on_chunk_done(done, total)
+                        if not df.is_empty():
+                            yield df
+
+    def _fetch_hist_bars(self, symbol: str, start_d: date, end_d: date) -> tuple[str, list[dict]]:
+        """单只日K(并发工作体): 先领全局槽位, 再请求。返回 (symbol, 原始行)。"""
+        self._hist_gate.wait()
+        return symbol, self._historical_bars(symbol, start_d, end_d)
 
     def _daily_dump_info(self) -> tuple[Path, date, date] | None:
         """返回多年 dump 的路径和覆盖范围,不把大文件读入进程内存。"""
@@ -686,17 +755,31 @@ class FuyaoProvider:
         return out.select(cols).sort(["symbol", "date"]) if not out.is_empty() else out.select(cols)
 
     def _historical_bars(self, symbol: str, start_d: date, end_d: date) -> list[dict]:
-        """按 ≤10 年窗口分片拉取单标的原始日K。中途失败软返回已得行, 不抛出。"""
+        """按 ≤10 年窗口分片拉取单标的原始日K。中途失败软返回已得行, 不抛出。
+
+        429 例外: 限频是临时状态, 退避重试而不是丢弃 —— 并发下拉取失败不会让
+        job 失败, 只会让当日少几只且无人发现(静默缺失比报错更贵)。
+        """
         out: list[dict] = []
         s = _ms_of_date(start_d)
         e = _ms_of_date(end_d)
         while s <= e:
             chunk_end = min(e, s + _HIST_MAX_SPAN_MS - 1)
-            try:
-                out.extend(self._get_client().historical_kline(symbol, s, chunk_end, adjust="none"))
-            except FuyaoError as err:
-                logger.warning("扶摇日K拉取失败 %s [%s ~ %s]: %s", symbol, start_d, end_d, err)
-                break
+            for attempt in range(_HIST_429_RETRIES + 1):
+                try:
+                    out.extend(self._get_client().historical_kline(symbol, s, chunk_end, adjust="none"))
+                    break
+                except FuyaoError as err:
+                    if _is_rate_limited(err) and attempt < _HIST_429_RETRIES:
+                        wait = _HIST_429_BACKOFF_S[min(attempt, len(_HIST_429_BACKOFF_S) - 1)]
+                        logger.info(
+                            "扶摇日K限频(429), %.1fs 后重试 %s (%d/%d)",
+                            wait, symbol, attempt + 1, _HIST_429_RETRIES,
+                        )
+                        time.sleep(wait)
+                        continue
+                    logger.warning("扶摇日K拉取失败 %s [%s ~ %s]: %s", symbol, start_d, end_d, err)
+                    return out
             if s + _HIST_MAX_SPAN_MS <= e:
                 time.sleep(_HIST_INTERVAL_S)
             s = chunk_end + 1
