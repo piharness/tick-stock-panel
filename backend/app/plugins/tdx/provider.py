@@ -25,8 +25,10 @@ from __future__ import annotations
 import json
 import logging
 import math
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -65,6 +67,15 @@ _SNAPSHOT_BATCH = 60
 # (落盘是「读旧分区 → 合并本批 → 原子写」, 代价与分区总行数成正比, 与本批
 # 行数无关), 调小的代价是同样的写放大被更多轮次平摊。见 `_scan_slice`。
 _SCAN_BATCH = 500
+# 逐票翻页的并发与速率。旧实现「一只接一只串行翻页」: 5 天窗口 ⇒ 全市场 ~29 分钟,
+# 瓶颈是标的数 × 每页 RTT, 与日K同构。并发必须**每线程独占一条 TdxClient 连接**
+# (client.py 契约: tdxrs 非线程安全), 共享一把锁只会把串行换个名字。
+# 速率钉在 10 req/s = 模块 docstring 实测的通道限流值; 并发只重叠 RTT 等待,
+# 不放大请求频率。页级领牌: 一页 = 一次服务端请求。
+_MINUTE_CONCURRENCY = 8
+_MINUTE_RATE_PER_S = 10.0
+# 少于该数的批次不值得开线程池 (每线程建连/关连的固定开销 > 收益)
+_MINUTE_PARALLEL_MIN = 16
 _CURSOR_REL = "state/tdx_minute_cursor.json"
 
 _MINUTE_SCHEMA = {
@@ -376,16 +387,27 @@ _daily_cache: dict[str, tuple[float, pl.DataFrame]] = {}
 # 每个标的都要读全部日期分区, 缓存小于窗口长度会在每个标的上全部击穿
 # (data/ 可能是 9p 挂载, 每文件一次元数据往返)。
 _DAILY_CACHE_MAX = 256
+# 并发翻页时多个线程会同时读写这个模块级 dict (pop 淘汰与 next(iter()) 迭代
+# 可能交错出 RuntimeError)。读盘也放在锁内: 首次命中最贵也就一个分区, 之后全命中。
+_daily_cache_lock = threading.Lock()
 
 
 def _daily_close(day: str) -> pl.DataFrame | None:
     """读本地原始日线该交易日的 symbol/close, 带 mtime 缓存。
+
+    并发安全: 缓存读写在 _daily_cache_lock 内完成 (含首次读盘) —— 多线程
+    同时未命中时最多重复读一次盘, 但 pop 淘汰与迭代不会再交错出 RuntimeError。
 
     不能用 `kline_daily/date={day}/part.parquet`: 该表自 2026-11 起按月分区,
     目录名只给月份、且一个月里有多天的行 —— 硬编码日分区会让**所有日期**都
     找不到锚点, 表现为「缺 X 的原始日线, 该日分钟已跳过」刷屏 (2026-11-12 实测
     全市场逐日全跳过, 分钟回补一行没落)。统一走 locate_partition_dir + 按日过滤。
     """
+    with _daily_cache_lock:
+        return _daily_close_uncached(day)
+
+
+def _daily_close_uncached(day: str) -> pl.DataFrame | None:
     if day in _daily_cache:
         return _daily_cache[day][1]
     from app.tickflow.partitions import locate_partition_dir
@@ -531,6 +553,28 @@ def _calibrate_today(rows: list[dict], raw_price: float | None = None) -> list[d
 # ---------------------------------------------------------------------------
 # Provider
 # ---------------------------------------------------------------------------
+class _PageGate:
+    """页级节拍器: 与 fuyao._GlobalRateGate 同构 (插件间不互相 import)。
+
+    rate_per_s <= 0 表示不限速(测试/诊断用)。
+    """
+
+    def __init__(self, rate_per_s: float) -> None:
+        self._interval = (1.0 / rate_per_s) if rate_per_s > 0 else 0.0
+        self._next = 0.0
+        self._lock = threading.Lock()
+
+    def wait(self) -> None:
+        if self._interval <= 0:
+            return
+        with self._lock:
+            slot = max(time.monotonic(), self._next)
+            self._next = slot + self._interval
+        delay = slot - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+
+
 @dataclass
 class _TdxConfig:
     """轻量 config shim, 让 custom loader 的 provider_has_dataset 能识别本 provider。
@@ -555,6 +599,8 @@ class TdxProvider:
 
     def __init__(self) -> None:
         self._client: TdxClient | None = None
+        # 分钟翻页的全局发牌器: 生命周期跟随 provider, 测试可替换成不限速实例。
+        self._minute_gate = _PageGate(_MINUTE_RATE_PER_S)
         self.config = _TdxConfig()
 
     def _c(self) -> TdxClient:
@@ -658,17 +704,29 @@ class TdxProvider:
         """分钟 K, 逐标的翻页。深度上限由服务端决定 (实测 ≈98 个交易日)。
 
         start_time 为 None 时只取最近一页 (≈3.3 个交易日), 避免无界翻页。
+        全市场批次走多线程 (每线程独占连接), 小批次保持单线程省建连开销。
         """
         if freq not in ("1m", "1min", "1"):
             logger.warning("通达信源只提供 1 分钟 K, 收到 freq=%s, 返回空", freq)
             return _frame([])
-        total = len(symbols or [])
-        # 调用方窗口带时区 (kline_sync), bar 是墙钟 naive: 折到同一口径再比。
         win_start = _naive_bj(start_time)
         win_end = _naive_bj(end_time)
+        syms = list(symbols or [])
+        if len(syms) >= _MINUTE_PARALLEL_MIN:
+            return self._get_minute_parallel(syms, win_start, win_end, on_chunk_done)
+        return self._get_minute_serial(syms, win_start, win_end, on_chunk_done)
+
+    def _get_minute_serial(
+        self,
+        symbols: list[str],
+        win_start: datetime | None,
+        win_end: datetime | None,
+        on_chunk_done: Callable[[int, int], None] | None,
+    ) -> pl.DataFrame:
+        total = len(symbols)
         frames: list[pl.DataFrame] = []
         failures: list[str] = []
-        for i, symbol in enumerate(symbols or []):
+        for i, symbol in enumerate(symbols):
             mapped = to_tdx(symbol)
             if mapped is None:
                 failures.append(symbol)
@@ -676,7 +734,13 @@ class TdxProvider:
                     on_chunk_done(i + 1, total)
                 continue
             market, code = mapped
-            rows = self._page_bars(market, code, win_start)
+            rows, complete = self._page_bars(market, code, win_start)
+            if not complete:
+                # 半截数据不落盘: symbol 级覆盖下, 写半截会把完整旧数据覆盖成半截。
+                failures.append(symbol)
+                if on_chunk_done:
+                    on_chunk_done(i + 1, total)
+                continue
             kept = _minute_rows(symbol, rows)
             if win_start is not None or win_end is not None:
                 kept = [
@@ -689,22 +753,127 @@ class TdxProvider:
                 frames.append(_frame(kept))
             if on_chunk_done:
                 on_chunk_done(i + 1, total)
+        return self._minute_frames_out(frames, failures, total)
+
+    def _get_minute_parallel(
+        self,
+        symbols: list[str],
+        win_start: datetime | None,
+        win_end: datetime | None,
+        on_chunk_done: Callable[[int, int], None] | None,
+    ) -> pl.DataFrame:
+        """多线程逐票翻页: 每线程独占一条 TdxClient (非线程安全契约),
+        页级请求过 _minute_gate 全局限速; 进度按完成只数推进, 与串行版同语义。
+        逐只失败只丢该只并计数, 不拖垮整批 (与串行版一致)。"""
+        total = len(symbols)
+        frames: list[pl.DataFrame] = []
+        failures: list[str] = []
+        lock = threading.Lock()
+        state = {"done": 0}
+        tls = threading.local()
+        clients: list[TdxClient] = []
+
+        def _progress() -> None:
+            with lock:
+                state["done"] += 1
+                if on_chunk_done:
+                    on_chunk_done(state["done"], total)
+
+        def _work(symbol: str) -> pl.DataFrame | None:
+            try:
+                mapped = to_tdx(symbol)
+                if mapped is None:
+                    with lock:
+                        failures.append(symbol)
+                    _progress()
+                    return None
+                client = getattr(tls, "client", None)
+                if client is None:
+                    client = TdxClient()
+                    tls.client = client
+                    with lock:
+                        clients.append(client)
+                market, code = mapped
+                rows, complete = self._page_bars(
+                    market, code, win_start, client=client, gate=self._minute_gate,
+                )
+                if not complete:
+                    # 半截数据不落盘(见 _get_minute_serial 同注释), 归入失败下轮重拉。
+                    with lock:
+                        failures.append(symbol)
+                    _progress()
+                    return None
+                kept = _minute_rows(symbol, rows)
+                if win_start is not None or win_end is not None:
+                    kept = [
+                        r for r in kept
+                        if (win_start is None or r["datetime"] >= win_start)
+                        and (win_end is None or r["datetime"] < win_end)
+                    ]
+                kept = _calibrate_by_day(symbol, kept)
+                out = _frame(kept) if kept else None
+                _progress()
+                return out
+            except Exception as e:  # noqa: BLE001 — 一只坏不能丢整批
+                with lock:
+                    failures.append(symbol)
+                logger.warning("通达信分钟K %s 并发拉取失败: %s", symbol, e)
+                _progress()
+                return None
+
+        try:
+            with ThreadPoolExecutor(
+                max_workers=_MINUTE_CONCURRENCY, thread_name_prefix="tdx-minute"
+            ) as pool:
+                for sub in pool.map(_work, symbols):
+                    if sub is not None:
+                        frames.append(sub)
+        finally:
+            # 连接的生命周期跟这批任务走: 用完即关, 不占常驻 fd。
+            for c in clients:
+                c.close()
+        return self._minute_frames_out(frames, failures, total)
+
+    def _minute_frames_out(
+        self, frames: list[pl.DataFrame], failures: list[str], total: int
+    ) -> pl.DataFrame:
         if failures:
             logger.warning(
-                "通达信分钟K: %d/%d 只无法映射 (北交所旧代码或代码格式异常), 已跳过: %s",
+                "通达信分钟K: %d/%d 只无法映射或拉取失败, 已跳过: %s",
                 len(failures), total, ", ".join(failures[:10]),
             )
         return pl.concat(frames, how="diagonal_relaxed") if frames else _frame([])
 
-    def _page_bars(self, market: int, code: str, start_time: datetime | None) -> list[dict]:
-        """按 800 根/页向前翻, 直到覆盖 start_time 或页数用尽。返回按时间升序的行。"""
+    def _page_bars(
+        self,
+        market: int,
+        code: str,
+        start_time: datetime | None,
+        *,
+        client: TdxClient | None = None,
+        gate: "_PageGate | None" = None,
+    ) -> tuple[list[dict], bool]:
+        """按 800 根/页向前翻, 直到覆盖 start_time 或页数用尽。
+
+        返回 (升序行, complete)。complete=False 表示中途 TdxError 提前终止 ——
+        这是「半截数据」: 上游必须据此把该只当失败处理(不落盘/保留旧数据),
+        否则 symbol 级覆盖会把完整旧数据覆盖成半截。数据自然到头(空页/末页)算 complete。
+
+        client: 并发路径传入线程独占连接 (TdxClient 非线程安全, 不得共享)。
+        gate: 页级领牌 —— 一页就是一次服务端请求, 并发下必须过全局节拍器。
+        """
         pages = _pages_for_window(start_time)
+        c = client or self._c()
         collected: list[dict] = []
+        complete = True
         for page in range(pages):
+            if gate is not None:
+                gate.wait()
             try:
-                rows = self._c().bars(market, code, CATEGORY_1MIN, page * _MINUTE_PAGE_ROWS, _MINUTE_PAGE_ROWS)
+                rows = c.bars(market, code, CATEGORY_1MIN, page * _MINUTE_PAGE_ROWS, _MINUTE_PAGE_ROWS)
             except TdxError as e:
                 logger.debug("通达信分钟K %s 第 %d 页失败: %s", code, page + 1, e)
+                complete = False
                 break
             if not rows:
                 break
@@ -715,7 +884,7 @@ class TdxProvider:
             if start_time is not None and earliest is not None and earliest <= start_time:
                 break
         collected.sort(key=lambda r: str(r.get("datetime") or ""))
-        return collected
+        return collected, complete
 
     # ---- full_minute ----
     def get_intraday_batch(

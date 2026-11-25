@@ -36,7 +36,11 @@ logger = logging.getLogger(__name__)
 
 # 自定义分钟源流式落盘的块大小(标的数): 每块拉完立即 on_segment 写盘,
 # 长任务中断只丢当前块; 与 cnfree 内部 _HIST_SYMBOL_BATCH 同量级。
-_CUSTOM_MINUTE_CHUNK = 50
+# 50 ⇒ 全市场 118 批, 每批落盘都是「读整个当日分区 → 合并 → 原子写回」,
+# 写放大 O(批数²): 118 批合计 ~8,400 万行的无效读写(9p 上 ~15 分钟纯落盘),
+# 把并发拉取的收益整个吃掉(2026-11-25 实测: 并发后 16.8s/批 vs 串行 14.6s/批,
+# 不升反降)。250 ⇒ 24 批, 写放大缩 ~24 倍; 单帧 250×1200 行 ≈ 50MB, 内存安全。
+_CUSTOM_MINUTE_CHUNK = 250
 
 # 流式日K落盘暂存的攒批块数(标的数)。逐块写盘会让「标的数 × 交易日数」个
 # 微型 parquet 文件爆炸(5890 只 × 250 天 ≈ 147 万个, 实测仅写盘就 >80 分钟,
@@ -1327,7 +1331,7 @@ def _quarantine_off_grid_duplicates(
 
 
 def _write_minute_partition(df: pl.DataFrame, minute_dir, *, origin: str = "unknown") -> int:
-    """按 _trade_date 分区落盘分钟 K (读旧→concat→unique→原子写)。返回**实际落盘行数**。
+    """按 _trade_date 分区落盘分钟 K (读旧→按 symbol 原子覆盖→原子写)。返回**实际落盘行数**。
 
     抽自原 sync_and_persist_minute 末尾的循环, 供流式落盘 (每段一次) 与一次性迁移共用。
 
@@ -1355,14 +1359,16 @@ def _write_minute_partition(df: pl.DataFrame, minute_dir, *, origin: str = "unkn
             existing = pl.read_parquet(out)
             if "datetime" in existing.columns:
                 existing = existing.filter(pl.col("datetime").is_not_null())
-            # 只对本次触及的 symbol 合并去重, 未触及行原样保留: 单股补齐时避免
-            # 为合并几行数据把全市场分区整体 unique 的写放大 (issue #305)。
+            # symbol 级原子覆盖: 本次触及的 symbol 一律用本次数据整体替换, 未触及行
+            # 原样保留。旧实现 concat+unique(keep=last) 是 merge-upsert, 隐含
+            # 「新行是旧行超集」的假设 —— 正常增量成立, 但中断/窗口变化留下半截
+            # symbol 时, keep=last 既补不全旧行缺的洞、也删不掉旧行多出来的行,
+            # 序列残留 gap (2026-11-25 反复中断重跑实测 2,893 只 bars≠240)。
+            # 覆盖把该 symbol 的权威数据整体交给本次调用; 上游 provider 已保证
+            # 半截的 symbol 不会进 new_rows (tdx._page_bars 的 complete 标志)。
             touched = new_rows["symbol"].unique().to_list()
-            same = existing.filter(pl.col("symbol").is_in(touched))
             tail = existing.filter(~pl.col("symbol").is_in(touched))
-            pool = pl.concat([same, new_rows], how="diagonal_relaxed").unique(
-                subset=["symbol", "datetime"], keep="last",
-            )
+            pool = new_rows
         else:
             pool, tail = new_rows, None
 
