@@ -9,7 +9,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { ChipTheory } from './ChipTheory'
-import { AGE_YEARS, DEGENERACY, H1_CELLS, H2_COMPS, H3_CELLS, H3_DOSE, H4_COND, H4_QUINTILES, HEATMAPS, LAYERS, PREDICTIONS, REINTERPRET } from './data'
+import { AGE_YEARS, DEGENERACY, H1_CELLS, H2_COMPS, H3_CELLS, H3_DOSE, H4_COND, H4_QUINTILES, H567_ROWS, H8_CELLS, HEATMAPS, LAYERS, PREDICTIONS, REINTERPRET } from './data'
 
 let host: HTMLDivElement
 let root: Root
@@ -32,8 +32,8 @@ it('首屏三个摘要全部可读', () => {
   const text = host.textContent ?? ''
   expect(text).toContain('均值场极限')
   expect(text).toContain('S(p, a)')
-  expect(text).toContain('四条已跑')
-  expect(text).toContain('一通过 · 三失败')
+  expect(text).toContain('七条 + 追击 + 杠杆')
+  expect(text).toContain('一个雪崩信号')
   expect(host.querySelectorAll('#degeneracy').length).toBe(1)
 })
 
@@ -71,13 +71,15 @@ it('七个预测：H1 部分通过，H2/H3/H4 失败，其余三条未测', () =
   expect(rows.length).toBe(PREDICTIONS.length)
   const text = host.querySelector('#predictions')?.textContent ?? ''
   expect(text).toContain('部分通过 / 已分解')
-  expect(text).toContain('未测')
   const st = (id: string) => PREDICTIONS.find(p => p.id === id)?.status ?? ''
   expect(st('H1')).toContain('部分通过')
   expect(st('H2')).toContain('合成失败')
   expect(st('H3')).toContain('雪崩格反向')
   expect(st('H4')).toContain('冲击深度混淆')
-  expect(PREDICTIONS.filter(p => !['H1', 'H2', 'H3', 'H4'].includes(p.id)).every(p => p.status === '未测')).toBe(true)
+  expect(st('H5')).toContain('方向相反')
+  expect(st('H6')).toContain('无阈值')
+  expect(st('H7')).toContain('比值是噪声')
+  expect(PREDICTIONS.every(p => p.status !== '未测')).toBe(true)
 })
 
 it('H3 结果：四格里雪崩格反向，置换与剂量反应都在', () => {
@@ -118,4 +120,40 @@ it('H1 结果：五档 D×T 表与两条主效应', () => {
 it('旧结论新读法八行', () => {
   const rows = host.querySelectorAll('#reinterpret tbody tr')
   expect(rows.length).toBe(REINTERPRET.length)
+})
+
+it('H5–H7 合并节：三条都失败，共享一条教训', () => {
+  const text = host.querySelector('#h567')?.textContent ?? ''
+  expect(text).toContain('网络中心度不是第二维度')
+  expect(text).toContain('无阈值')
+  expect(text).toContain('比值噪声')
+  expect(text).toContain('换手/久期是风险因子')
+  const rows = host.querySelectorAll('#h567 tbody tr')
+  expect(rows.length).toBe(H567_ROWS.length)
+})
+
+it('H8 追击：放量不是被迫卖，是反转放大', () => {
+  const text = host.querySelector('#h8')?.textContent ?? ''
+  expect(text).toContain('放量不是被迫卖')
+  expect(text).toContain('没有雪崩')
+  expect(text).toContain('−158.1bp')
+  const rows = host.querySelectorAll('#h8 tbody tr')
+  expect(rows.length).toBe(H8_CELLS.length)
+})
+
+it('H9 杠杆数据：融资代理，质押正交但不雪崩', () => {
+  const text = host.querySelector('#h9')?.textContent ?? ''
+  expect(text).toContain('融资是代理')
+  expect(text).toContain('质押正交但不雪崩')
+  expect(text).toContain('平仓线触发')
+  expect(text).toContain('-0.442')
+})
+
+it('H11 平仓线触发：全卷第一个雪崩信号', () => {
+  const text = host.querySelector('#h11')?.textContent ?? ''
+  expect(text).toContain('第一个雪崩信号')
+  expect(text).toContain('-0.976')
+  expect(text).toContain('券商风险定价')
+  const rows = host.querySelectorAll('#h11 tbody tr')
+  expect(rows.length).toBe(8)
 })

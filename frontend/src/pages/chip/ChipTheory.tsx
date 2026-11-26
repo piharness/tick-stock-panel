@@ -20,10 +20,10 @@ import { cn } from '@/lib/cn'
 import { useTheme } from '@/lib/theme'
 import {
   AGE_YEARS, CROSS, DEGENERACY, H1, H1_CELLS, H2, H2_COMPS, H3, H3_BUCKETS, H3_CELLS, H3_DOSE,
-  H4, H4_COND, H4_QUINTILES, HEATMAPS, KILL, LAYERS, META, PHASES, PREDICTIONS,
+  H4, H4_COND, H4_QUINTILES, H5, H567_ROWS, H6, H7, H8, H8_CELLS, H9, H11, H11_BUCKETS, HEATMAPS, KILL, LAYERS, META, PHASES, PREDICTIONS,
   REINTERPRET, SUMMARY, VERSIONS,
   type AgeYear, type DegeneracyRow, type H1Cell, type H2Comp, type H3Bucket, type H3Cell, type H3Dose,
-  type H4Cond, type H4Quintile, type Heatmap, type Phase, type Prediction, type ReinterpretRow,
+  type H4Cond, type H4Quintile, type H567Row, type H8Cell, type H11Bucket, type Heatmap, type Phase, type Prediction, type ReinterpretRow,
 } from './data'
 
 const fmtSigned = (v: number, d = 3) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(d)}`
@@ -48,6 +48,10 @@ const TOC = [
   { id: 'h2', label: 'H2' },
   { id: 'h3', label: 'H3' },
   { id: 'h4', label: 'H4' },
+  { id: 'h567', label: 'H5–H7' },
+  { id: 'h8', label: 'H8' },
+  { id: 'h9', label: 'H9' },
+  { id: 'h11', label: 'H11' },
   { id: 'reinterpret', label: '新读法' },
   { id: 'kill', label: '杀死条件' },
   { id: 'versions', label: '版本' },
@@ -167,6 +171,26 @@ const predictionCols: Col<Prediction>[] = [
   { head: '状态', w: '184px', render: r => <Tag tone={r.tone ?? 'muted'}>{r.status}</Tag> },
 ]
 
+const h11Cols: Col<H11Bucket>[] = [
+  { head: '平仓线 / 股价', w: '26%', render: r => <span className="text-[12px] text-foreground">{r.bucket}</span> },
+  { head: 'fwd20', align: 'right', render: r => <span className="font-mono text-[12px] tabular-nums">{fmtSigned(r.f20, 1)}bp</span> },
+  { head: 'fwd40', align: 'right', render: r => <span className="font-mono text-[12px] tabular-nums">{fmtSigned(r.f40, 1)}bp</span> },
+  { head: 'fwd60', align: 'right', render: r => <span className="font-mono text-[12px] tabular-nums">{fmtSigned(r.f60, 1)}bp</span> },
+]
+
+const h8Cols: Col<H8Cell>[] = [
+  { head: '格', w: '20%', render: r => <span className="text-[13px] text-foreground">{r.cell}</span> },
+  { head: 'fwd20', align: 'right', render: r => <span className="font-mono text-[12px] tabular-nums">{fmtSigned(r.bp, 1)}bp</span> },
+  { head: 't', align: 'right', render: r => <span className="font-mono text-[12px] tabular-nums text-muted">{fmtT(r.t, 2)}</span> },
+  { head: '读法', w: '120px', render: r => <Tag tone={r.tone}>{r.tone === 'danger' ? '反转放大' : r.tone === 'ok' ? '延续' : '反弹'}</Tag> },
+]
+
+const h567Cols: Col<H567Row>[] = [
+  { head: '假设', w: '110px', render: r => <span className="font-mono text-[12px] text-foreground">{r.id}</span> },
+  { head: '预注册预测', w: '34%', render: r => <span className="text-[12px] text-foreground">{r.claim}</span> },
+  { head: '实测', render: r => <span className="text-[12px] text-secondary">{r.actual}</span> },
+]
+
 const h3Cols: Col<H3Cell>[] = [
   { head: '格', w: '22%', render: r => <span className="text-[13px] text-foreground">{r.cell}</span> },
   { head: 'fwd20', align: 'right', render: r => <span className="font-mono text-[12px] tabular-nums">{fmtSigned(r.bp, 1)}bp</span> },
@@ -239,13 +263,13 @@ export function ChipTheory() {
           </h1>
           <p className="mt-3 max-w-[46em] text-[14px] leading-[1.8] text-secondary">
             旧页证明「密度不是信号」；本页说明为什么——密度是期限结构在价格上的边际。
-            新对象已建成：5,582 只 × 95 个月末的年龄面板；H1–H4 已跑，一条部分通过、三条失败。
+            新对象已建成：5,582 只 × 95 个月末的年龄面板；七条 + H8/H9 + H11 全部跑完。
           </p>
         </div>
         <div className="shrink-0 text-[11px] leading-[1.9] text-muted lg:text-right">
           <div className="font-mono tabular-nums">数据 {META.asOf}</div>
           <div>{META.sample}</div>
-          <div className="text-warning">H1–H4 已跑 · 一条部分通过</div>
+          <div className="text-warning">七条 + H8/H9/H11 · 一个雪崩信号</div>
         </div>
       </header>
 
@@ -396,7 +420,7 @@ export function ChipTheory() {
         id="predictions"
         no="05"
         title="七个预测"
-        lead="七条预注册草案：H1 部分通过并被拆成两条主效应；H2/H3/H4 失败。先写死判据，再看数；最低验收组合仍是 H1+H2+H3。"
+        lead="七条预注册草案全部跑完：H1 部分通过并被拆成两条主效应；H2–H7 全灭。最低验收组合（H1+H2+H3）未达到。"
         source="docs/structural-edge/chip-duration.md §13"
       >
         <DataTable
@@ -593,8 +617,145 @@ export function ChipTheory() {
       </Section>
 
       <Section
-        id="reinterpret"
+        id="h567"
         no="10"
+        title="H5 / H6 / H7：三条尾巴，共享一条教训"
+        lead={`H5 网络中心度不是第二维度——它是一条「大盘蓝筹」轴（与规模 ${H5.corrSize}、与久期 ${H5.corrD}），且尾部方向相反：高中心度在崩盘里更稳，不是更易传染。H6 没有相变——阈值 BIC 差只有 ${H6.bicDiff}，且低久期时结构更强。H7 的 Θ 是比值噪声——系数 ${fmtSigned(H7.bThetaFrag, 4)}（t ${fmtT(H7.tThetaFrag, 2)}），但分子 Π（换手）单独就能预测脆弱性（t ${fmtT(H7.tPIFrag, 2)}）。`}
+        source="analysis/_diag_chip_h5.py · _diag_chip_h5_net.py · _diag_chip_h6.py · _diag_chip_h7.py"
+      >
+        <StatGrid
+          cols={4}
+          items={[
+            { k: 'H5 · 尾部共动', v: `${fmtSigned(H5.bTailMarket, 4)}`, d: `市场 CoVaR · t ${fmtT(H5.tTailMarket, 2)}；网络版 ${fmtSigned(H5.bTailNet, 4)}（t ${fmtT(H5.tTailNet, 2)}）` },
+            { k: 'H6 · 阈值 BIC 差', v: `${H6.bicDiff.toFixed(1)}`, d: `需 ≥ ${H6.needBic}；低 D_m 段 ρ ${fmtSigned(H6.rhoLow, 3)} vs 高段 ${fmtSigned(H6.rhoHigh, 3)}` },
+            { k: 'H7 · Θ 系数', v: `${fmtSigned(H7.bThetaFrag, 4)}`, d: `t ${fmtT(H7.tThetaFrag, 2)}；分子 Π t ${fmtT(H7.tPIFrag, 2)}` },
+            { k: 'H7 · corr(Θ, D0)', v: H7.corrThetaD0.toFixed(3), d: `比值被分母主导；H5 真值比 40 次置换都更负` },
+          ]}
+        />
+        <DataTable
+          cols={h567Cols}
+          rows={H567_ROWS}
+          rowKey={r => r.id}
+          reason="三条都是「标签被拆掉」：H5 中心度=规模/蓝筹，H6 相变=线性，H7 比值=分子换手。判据在杀死条件第 11–13 条。"
+        />
+        <Callout tone="danger" label="裁决">
+          H5、H6、H7 全部失败。H5 的中心度不是第二个维度，它是规模/蓝筹轴，且尾部方向相反——系统性持有人
+          （指数基金、国家队、主权基金）是稳定器，不是传染放大器；真正的被迫卖家（带杠杆的基金、融资散户）
+          不在十大流通股东里。H6 无相变，结构随久期线性增强而非塌缩。H7 的比值 Θ 是噪声，分子 Π（换手）才是风险变量。
+        </Callout>
+        <Callout tone="warn" label="整卷的结论">
+          七条预注册跑完：只有 H1 活了半条（D 和 T 是两条风险主效应）。筹码对象最终塌缩成一条轴——
+          <span className="text-foreground">换手/久期是风险因子，不是收益因子</span>。所有「筹码结构」的华丽标签
+          （伽马、吸收/雪崩、分散度、网络、相变、滚续）拆开后，都是换手、规模、波动、涨跌幅的重新包装。
+          唯一反复出现的正向线索是：A 股的边际持有人是抄底的，不是被迫卖的；雪崩需要杠杆数据才能测。
+        </Callout>
+      </Section>
+
+      <Section
+        id="h8"
+        no="11"
+        title="H8 追击：放量不是被迫卖，是反转放大"
+        lead={`「雪崩需要杠杆数据」这句话被数据修正了。个股融资/质押/赎回不在库里，但被迫卖有一个价格量痕迹——放量。实测：放量下跌比缩量下跌差 ${fmtSigned(H8.l1, 1)}bp（t ${fmtT(H8.t1, 2)}），方向对了；但放量对上涨的伤害（${fmtSigned(H8.upHiMinusLo, 1)}bp）和对下跌几乎一样，不对称只有 ${fmtSigned(H8.interaction, 1)}bp（t ${fmtT(H8.tInt, 2)}）。放量下跌到 40/60 日仍反弹为正——没有雪崩。`}
+        source="analysis/_diag_chip_h8.py"
+      >
+        <StatGrid
+          cols={4}
+          items={[
+            { k: '放量 vs 缩量（下跌）', v: `${fmtSigned(H8.l1, 1)}bp`, d: `t ${fmtT(H8.t1, 2)} · 放量更差，方向对了` },
+            { k: '方向不对称', v: `${fmtSigned(H8.interaction, 1)}bp`, d: `t ${fmtT(H8.tInt, 2)} · 放量对上下伤害一样` },
+            { k: '放量下跌 40/60 日', v: `${fmtSigned(H8.dnHiF40, 1)} / ${fmtSigned(H8.dnHiF60, 1)}bp`, d: `仍反弹为正，无持续阴跌` },
+            { k: '控制后', v: `${fmtSigned(H8.bHiControlled, 1)}bp`, d: `t ${fmtT(H8.tHiCtl, 2)} · 大半效应是换手轴` },
+          ]}
+        />
+        <DataTable
+          cols={h8Cols}
+          rows={H8_CELLS}
+          rowKey={r => r.cell}
+          reason="事件 = 5 日 |cum5| ≥ 5%，放量 = 近 5 日换手 / 基线换手 ≥ 2（相对放量，剥离高换手股）。入场 t+1 开盘、20 日。连续剂量反应：下跌侧 b(log 换手比) −63bp（t −2.02），不对称 −35bp（t −1.39）。"
+        />
+        <Callout tone="danger" label="裁决">
+          H8 失败：没有雪崩。放量下跌仍反弹（40/60 日 +38/+55bp），只是比缩量下跌弹得少。放量对上涨、下跌的伤害
+          几乎相等（−183 vs −158bp，交互 t 1.17）——它是「换手放大反转」的对称放大器，不是「被迫卖」的方向性信号。
+          控制换手/波动/规模后效应减半（t −1.9），说明大半就是 H1 的换手轴。
+        </Callout>
+        <Callout tone="warn" label="结论：边际持有人是抄底的，这条活了">
+          H8 补上了最后一块：即使在「放量急跌」这个最像被迫卖的极端子集里，股价仍然反弹。总量层面（H3）、
+          持有人层面（H2、H5）、价格量层面（H8）三处独立测量一致——A 股边际持有人是抄底的，雪崩在公开的
+          价格、量、持有人数据里找不到痕迹。要测真正的杠杆通道（融资强平、质押平仓、基金赎回），只能去接
+          个股融资余额、质押比例、基金份额这类**不在本仓库**的外部数据。
+        </Callout>
+      </Section>
+
+      <Section
+        id="h9"
+        no="12"
+        title="H9 杠杆数据：融资是代理，质押正交但不雪崩"
+        lead={`接了两个外部杠杆数据源（东财 datacenter）。融资余额占比是换手/久期的代理（vs D ${H9.marginCorrD}、vs 换手 ${H9.marginCorrTurn}、vs 脆弱性 ${H9.marginCorrFrag}）——第 9 次撞墙。质押比例与换手/波动/规模/久期全部正交（|ρ| 小于 0.1），是全卷第一个正交外部变量；但 H9 实测它不预测雪崩：高质押股下跌后反弹反而更多，控制后翻负不显著。`}
+        source="analysis/_fetch_leverage_snapshot.py · _fetch_pledge_full.py · _diag_chip_h9.py"
+      >
+        <StatGrid
+          cols={4}
+          items={[
+            { k: '融资 vs 久期', v: H9.marginCorrD.toFixed(3), d: `换手 ${H9.marginCorrTurn.toFixed(3)} · 脆弱性 ${H9.marginCorrFrag.toFixed(3)} → 代理` },
+            { k: '质押 vs 久期', v: H9.pledgeCorrD.toFixed(3), d: `换手 ${H9.pledgeCorrTurn.toFixed(3)} · 脆弱性 ${H9.pledgeCorrFrag.toFixed(3)} → 正交` },
+            { k: '高质押 fwd40/60', v: `${fmtSigned(H9.f40, 1)} / ${fmtSigned(H9.f60, 1)}bp`, d: `t ${fmtT(H9.tF40, 2)} / ${fmtT(H9.tF60, 2)} · 反弹更多，非雪崩` },
+            { k: '控制后', v: `${fmtSigned(H9.bControlled, 1)}bp`, d: `t ${fmtT(H9.tControlled, 2)} · 翻负不显著，是短久期效应` },
+          ]}
+        />
+        <Callout tone="danger" label="裁决">
+          两条杠杆通道都没有产生雪崩。融资余额占比 = 换手/久期代理（第 9 次撞墙）；质押比例虽正交，
+          但高质押股下跌后反弹**更多**（fwd40/60 +45/+61bp），控制后翻负不显著——这是短久期效应
+          （高质押组久期 50 天 vs 无质押 67 天，规模/波动/换手无差异），不是质押本身。
+        </Callout>
+        <Callout tone="warn" label="弱否定，下一步是平仓线触发">
+          事件定义排除了封板日（|ret| 小于 9.5%），但质押强平发生在**连续跌停**里（无法成交 → 继续跌停），
+          最可能雪崩的样本被排除了。下一步用 `OPENLINE` 构建股票级加权平仓线，测「跌破平仓线后是否加速下跌」，
+          且不排除封板——这是「被迫卖」最后的物理检验。
+        </Callout>
+      </Section>
+
+      <Section
+        id="h11"
+        no="13"
+        title="H11 平仓线触发：全卷第一个雪崩信号"
+        lead={`改用「股价距质押平仓线的物理距离」ratio = 平仓线 / 股价，而不是「补充质押」标签。ratio 越高 = 越接近（或已跌破）平仓线。剂量反应几乎完美单调（Spearman ${H11.spearmanF20}），near vs far 差 fwd20 ${fmtSigned(H11.f20, 1)}bp（t ${fmtT(H11.tF20, 2)}）、fwd60 ${fmtSigned(H11.f60, 1)}bp（t ${fmtT(H11.tF60, 2)}），控制后仍 ${fmtSigned(H11.bNear, 1)}bp/月（t ${fmtT(H11.tNear, 2)}）。`}
+        source="analysis/_diag_chip_h10.py · _diag_chip_h11.py · _diag_chip_h12.py · 预注册 prereg-pledge-drift.md"
+      >
+        <StatGrid
+          cols={4}
+          items={[
+            { k: 'near − far · fwd20', v: `${fmtSigned(H11.f20, 1)}bp`, d: `t ${fmtT(H11.tF20, 2)}` },
+            { k: 'near − far · fwd60', v: `${fmtSigned(H11.f60, 1)}bp`, d: `t ${fmtT(H11.tF60, 2)} · 差距随期限扩大` },
+            { k: '控制后', v: `${fmtSigned(H11.bNear, 1)}bp/月`, d: `t ${fmtT(H11.tNear, 2)} · 控换手/波动/规模/久期/动量` },
+            { k: '剂量单调', v: H11.spearmanF60.toFixed(3), d: `fwd20 ${H11.spearmanF20} · 8 桶几乎无回撤` },
+          ]}
+        />
+        <DataTable
+          cols={h11Cols}
+          rows={H11_BUCKETS}
+          rowKey={r => r.bucket}
+          reason="事件 = 质押公告（openline/close ∈ [0.3,1.2]，剔除除权噪声），去重到股票-日；入场公告次日开盘。near 组绝对收益 fwd20 仍 +49bp，但 fwd40/60 转负（−44/−68bp）——不是暴跌，是持续阴跌。"
+        />
+        <Callout tone="warn" label="全卷第一个雪崩信号">
+          这是八次证伪之后第一个「单调、显著、控制后仍显著」的负向信号：股价距质押平仓线越近，未来跑输越多
+          （fwd60 从 +656bp 单调降到 −177bp），且与换手/波动/规模/久期/质押比例全部正交（corr 0.06）。
+        </Callout>
+        <Callout tone="warn" label="因果已拆解（H12）">
+          用质押日/公告日前复权价拆成两个分量：折算（平仓线定多高）对未来收益无效（t 0.62 / −0.46）；
+          涨幅（质押后跌了多少，中位 −14.6%）强有效（t 5.06 / 6.78），且与动量/换手/波动/规模/久期全部正交。
+          所以这是**「质押存续期内的下跌趋势延续」**（真·雪崩形态：阴跌而非暴跌），不是「券商风险定价」。
+          已固化为预注册（冻结规格下 design +426bp / holdout +915bp，控制后 t 8.8，四判据全过，评估日 2027-03-31）。
+          交叉检验：深跌质押股是 1,345 只个股，买点六问第 1 问「载体=行业 ETF，不买个股」——两者交集恒为空，
+          误杀机会成本 = 0（结构性为零，非「可能有限」）。故升级为「硬排除」，但对当下 ETF 买点增量约束 = 0：
+          它是「若未来买点扩展到个股」才生效的排除规则 + 独立的个股风险结论。
+          效果模拟（逐日前向回放）：多-空对冲年化 +30%、7 年全正，但 Sharpe 4.66 是「动量暴露 + 假设可做空」的上界；
+          可执行的纯做多「回避」增量仅 +172bp/60 日。
+        </Callout>
+      </Section>
+
+      <Section
+        id="reinterpret"
+        no="14"
         title="旧结论的新读法"
         lead="旧页的三个描述不是被推翻，而是被重新定位：它们仍然是事实，但不再是理论的终点，而是新理论的边界条件。"
       >
@@ -612,7 +773,7 @@ export function ChipTheory() {
 
       <Section
         id="kill"
-        no="11"
+        no="15"
         title="什么会杀死这套理论"
         lead="六条写在跑数之前，防止跑完再讲故事。任何一条成立，对应的部分就降级。"
         actions={<span className="text-[11px] text-muted">预注册 · 只追加</span>}
@@ -628,13 +789,13 @@ export function ChipTheory() {
           ))}
         </ol>
         <Callout tone="danger" label="现状">
-          本页跑了 H1–H4：H1 部分通过 / 已分解；H2 合成失败、分项反转；H3 雪崩格反向且密集区不做事；H4 是冲击深度混淆。H5–H7 未跑。旧页的冻结数字保留，角色从「裁决」变成了「退化证据」。
+          本页跑完了 H1–H7：H1 部分通过 / 已分解；H2–H7 全部失败。旧页的冻结数字保留，角色从「裁决」变成了「退化证据」。
         </Callout>
       </Section>
 
       <Section
         id="versions"
-        no="12"
+        no="16"
         title="版本与文件"
         lead="同一天走完四个版本。每一版都保留原文，只追加修订，不覆盖旧结论。"
         actions={<span className="text-[11px] text-muted">只追加</span>}

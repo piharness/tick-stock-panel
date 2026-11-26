@@ -43,10 +43,10 @@ export const SUMMARY = [
     note: '对象已建成：5,582 只 × 95 个月末；中位久期 97.5d→38.5d。理论未验证。',
   },
   {
-    label: '四条已跑',
-    value: '一通过 · 三失败',
-    verdict: 'danger' as Verdict,
-    note: 'H1 拆成 D/T 两条风险主效应；H2 合成失败；H3 雪崩格反向、密集区不做事；H4 是冲击深度混淆。三条未测。',
+    label: '七条 + 追击 + 杠杆',
+    value: '一通过 · 一个雪崩信号',
+    verdict: 'warn' as Verdict,
+    note: 'H1 拆成 D/T 两条风险主效应；其余全灭。H11/H12 找到雪崩信号：质押后累计跌幅驱动未来跑输（趋势延续，非券商定价）。',
   },
 ]
 
@@ -461,6 +461,119 @@ export const H4_COND: H4Cond[] = [
   { tercile: '深', drop: -4.10, rec20: 0.02, t: 0.01, half: -1.26 },
 ]
 
+export const H5 = {
+  n: 40859, quarters: 8, symbols: 5111, start: '2024-12-31', end: '2026-09-30',
+  corrD: 0.235, corrSize: 0.295, corrTurn: -0.242,
+  bTailMarket: -0.0849, tTailMarket: -2.29,
+  bTailNet: -0.2098, tTailNet: -11.26,
+  bAvgNet: 0.2522,
+  placeboPercentile: 0.0,
+  verdict: '失败 · 方向相反',
+} as const
+
+export const H6 = {
+  months: 93, dLo: 33.4, dHi: 150.0,
+  bicDiff: -4.5, needBic: 10,
+  rhoLow: -0.388, rhoHigh: -0.346,
+  bLinear: 0.001, tLinear: 2.69,
+  corrDmMkt: -0.015,
+  byYear: '2019 −0.341 → 2026 −0.445',
+  verdict: '失败 · 无阈值 · 方向反',
+} as const
+
+export const H7 = {
+  n: 1142209, months: 24, symbols: 5218, start: '2024-11-14', end: '2026-10-22',
+  thetaMedian: 0.76, thetaP90: 4.0,
+  corrThetaD0: -0.492, corrThetaPI: 0.223, corrThetaCum5: 0.054, corrThetaTo: 0.049,
+  bThetaFrag: 0.0018, tThetaFrag: 0.78,
+  bPIFrag: 0.0662, tPIFrag: 12.18,
+  bD0Frag: -0.0238, tD0Frag: -2.84,
+  bThetaFwd: -0.0064, tThetaFwd: -1.41,
+  verdict: '失败 · 比值是噪声',
+} as const
+
+export interface H567Row {
+  id: string
+  claim: string
+  pred: string
+  actual: string
+  tone: Verdict
+}
+
+/** 三条尾巴：都是失败，共享一条教训。 */
+export const H567_ROWS: H567Row[] = [
+  { id: 'H5', claim: '网络中心度 → 尾部传染', pred: '高中心度崩盘里跌得更一致', actual: '反向：高中心度崩盘里更稳（−0.085，t −2.3）', tone: 'danger' },
+  { id: 'H6', claim: '记忆相变，不是线性衰减', pred: '低 D_m 时结构失去预测力', actual: '无阈值（BIC 差 −4.5）；低 D_m 结构更强', tone: 'danger' },
+  { id: 'H7', claim: 'Θ 是滚续成本 → 脆弱性', pred: 'Θ 高 → 更脆', actual: 'Θ 预测力为零；分子 Π（换手）才做事', tone: 'danger' },
+]
+
+export const H8 = {
+  n: 574828, months: 115, down: 292160, downHi: 61367, downHiShare: 0.21,
+  upHi: -140.3, upLo: 42.2, dnHi: 51.1, dnLo: 209.3,
+  l1: -158.1, t1: -5.72,
+  interaction: 24.4, tInt: 1.17,
+  upHiMinusLo: -182.6, tUp: -8.92,
+  dnHiF40: 37.8, dnLoF40: 274.8, dnHiF60: 54.5, dnLoF60: 325.0,
+  bLvrDown: -63.0, tLvr: -2.02,
+  asymCont: -34.8, tAsymCont: -1.39,
+  bHiControlled: -56.7, tHiCtl: -1.9,
+  verdict: '失败 · 无雪崩',
+} as const
+
+export interface H8Cell {
+  cell: string
+  bp: number
+  t: number
+  tone: Verdict
+}
+
+/** 放量/缩量 × 上涨/下跌 四格。放量让反转更大，但方向对称。 */
+export const H8_CELLS: H8Cell[] = [
+  { cell: '上涨 · 放量', bp: -140.3, t: -2.18, tone: 'danger' },
+  { cell: '上涨 · 缩量', bp: 42.2, t: 0.70, tone: 'ok' },
+  { cell: '下跌 · 放量', bp: 51.1, t: 0.72, tone: 'muted' },
+  { cell: '下跌 · 缩量', bp: 209.3, t: 3.01, tone: 'ok' },
+]
+
+export const H9 = {
+  marginCorrD: -0.442, marginCorrTurn: 0.384, marginCorrFrag: 0.264,
+  pledgeCorrD: 0.047, pledgeCorrTurn: -0.037, pledgeCorrFrag: -0.024,
+  n: 247290, months: 91, pledgePos: 0.38, pledgeQ2: 12.57,
+  q0: 165.5, q1: 251.7, q2: 200.1,
+  f40: 45.2, tF40: 2.57, f60: 61.3, tF60: 3.3,
+  bControlled: -4.5, tControlled: -1.68,
+  verdict: '融资代理 · 质押正交但不雪崩',
+} as const
+
+export const H11 = {
+  n: 26627, months: 89, near: 7004, far: 16474,
+  f20: -131.2, tF20: -4.02, f40: -348.4, tF40: -5.53, f60: -474.3, tF60: -5.41,
+  bNear: -130.8, tNear: -4.24,
+  nearF20: 49.0, nearF40: -44.2, nearF60: -67.7,
+  spearmanF20: -0.952, spearmanF60: -0.976,
+  corrRatioAccum: 0.06,
+  verdict: '第一个单调雪崩信号',
+} as const
+
+export interface H11Bucket {
+  bucket: string
+  f20: number
+  f40: number
+  f60: number
+}
+
+/** 股价距平仓线（ratio=平仓线/股价）的剂量反应：越近跑输越多。 */
+export const H11_BUCKETS: H11Bucket[] = [
+  { bucket: '0.3–0.4 最安全', f20: 253.7, f40: 426.3, f60: 656.4 },
+  { bucket: '0.4–0.5', f20: 195.9, f40: 349.6, f60: 481.8 },
+  { bucket: '0.5–0.6', f20: 139.3, f40: 265.3, f60: 357.9 },
+  { bucket: '0.6–0.7', f20: 137.7, f40: 180.0, f60: 170.3 },
+  { bucket: '0.7–0.8', f20: 42.1, f40: 50.4, f60: 43.1 },
+  { bucket: '0.8–0.9', f20: 107.3, f40: 17.4, f60: 53.2 },
+  { bucket: '0.9–1.0', f20: -2.1, f40: -72.7, f60: -128.4 },
+  { bucket: '1.0–1.2 最危险', f20: 1.7, f40: -115.1, f60: -176.9 },
+]
+
 export interface Phase {
   key: string
   d: string
@@ -490,9 +603,9 @@ export const PREDICTIONS: Prediction[] = [
   { id: 'H2', claim: '伽马符号决定密度符号', test: 'dens×Γ 交互 ≥100bp，两组符号相反，|t|≥2', status: '合成失败 · 分项反转', tone: 'danger' },
   { id: 'H3', claim: '进入方向决定吸收/崩塌', test: '上/下 × 快/慢四格符号符合 2×2，极差 ≥80bp', status: '失败 · 雪崩格反向', tone: 'danger' },
   { id: 'H4', claim: '年龄熵 → 恢复半衰期', test: '高熵组恢复快 ≥30%，控制 β/市值后仍成立', status: '失败 · 冲击深度混淆', tone: 'danger' },
-  { id: 'H5', claim: '网络中心度 → 尾部传染', test: '下行相关每 +1sd ≥+0.10，平均相关不变', status: '未测' },
-  { id: 'H6', claim: '记忆相变，不是线性衰减', test: '阈值模型 BIC 优于线性 ≥10，OOS 分段同号', status: '未测' },
-  { id: 'H7', claim: 'Θ 是滚续成本 → 脆弱性', test: '与下行偏度负相关、t≥2；与 fwd20 无关', status: '未测' },
+  { id: 'H5', claim: '网络中心度 → 尾部传染', test: '下行相关每 +1sd ≥+0.10，平均相关不变', status: '失败 · 方向相反', tone: 'danger' },
+  { id: 'H6', claim: '记忆相变，不是线性衰减', test: '阈值模型 BIC 优于线性 ≥10，OOS 分段同号', status: '失败 · 无阈值', tone: 'danger' },
+  { id: 'H7', claim: 'Θ 是滚续成本 → 脆弱性', test: '与下行偏度负相关、t≥2；与 fwd20 无关', status: '失败 · 比值是噪声', tone: 'danger' },
 ]
 
 export interface ReinterpretRow {
