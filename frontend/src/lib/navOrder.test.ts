@@ -24,9 +24,9 @@ import {
 //   旧路径 /long-strategy、/structural-edge 与 /position-art 只做 router 重定向, 不再占默认序 ——
 //   已保存 nav_order 的用户由 Layout 的「插回默认前驱之后」逻辑放回 /common-sense 之后。
 describe('navOrder: 迁移前默认排序基准', () => {
-  it('覆盖迁移前全部内置路径 (拆出 /library 后共 25 个) 且无重复', () => {
-    expect(DEFAULT_NAV_PATHS).toHaveLength(25)
-    expect(new Set(DEFAULT_NAV_PATHS).size).toBe(25)
+  it('覆盖迁移前全部内置路径 (拆出 /library、新增 /chip 后共 26 个) 且无重复', () => {
+    expect(DEFAULT_NAV_PATHS).toHaveLength(26)
+    expect(new Set(DEFAULT_NAV_PATHS).size).toBe(26)
   })
 
   it('关键位置与迁移前核心导航数组一致', () => {
@@ -43,6 +43,8 @@ describe('navOrder: 迁移前默认排序基准', () => {
     expect(DEFAULT_NAV_PATHS[23]).toBe('/handbook')
     // 2026-11-24: 手册拆成两页，图书馆（理论沉淀）排在机会雷达之后。
     expect(DEFAULT_NAV_PATHS[24]).toBe('/library')
+    // 2026-11-26: 筹码久期是独立研究线（理论稿），排在图书馆之后收尾。
+    expect(DEFAULT_NAV_PATHS[25]).toBe('/chip')
   })
 
   it('已合并的旧路径不再占默认序 (只做路由重定向)', () => {

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>筹码介质 · 一页审计（卷二）</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #ececea;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: #22221f; -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    width: 210mm; min-height: 297mm; margin: 0 auto; padding: 11mm 13mm 8mm;
+    background: #fff; display: flex; flex-direction: column;
+  }
+  .kick { font-size: 7.2pt; letter-spacing: .2em; color: #9a9484; text-transform: uppercase; margin-bottom: 3.2mm; }
+  h1 { font-size: 20pt; font-weight: 500; letter-spacing: -.01em; line-height: 1.12; margin-bottom: 2.6mm; }
+  .lead { font-size: 10.2pt; line-height: 1.58; color: #3a3a34; padding-left: 3.8mm; border-left: 2.6pt solid #A32D2D; margin-bottom: 1.8mm; }
+  .meta { font-size: 7.4pt; color: #9a9484; padding-left: 4.4mm; }
+  .rule { height: .5pt; background: #e2e0d8; margin: 3.6mm 0 3.2mm; }
+  h2 { font-size: 7.6pt; font-weight: 500; letter-spacing: .16em; color: #9a9484; margin: 2.8mm 0 1.4mm; }
+  .fig svg { width: 100%; height: auto; display: block; }
+  .cap { font-size: 7.1pt; color: #8a8578; margin-top: 1.4mm; line-height: 1.5; }
+
+  .verdict { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3.2mm; }
+  .v { padding: 2.6mm 3mm; border-radius: 1.2mm; }
+  .v.a { background: #E1F5EE; }
+  .v.b { background: #FCEBEB; }
+  .v.c { background: #FAEEDA; }
+  .v .lab { font-size: 6.7pt; letter-spacing: .16em; margin-bottom: 1.4mm; }
+  .v.a .lab { color: #0F6E56; } .v.b .lab { color: #A32D2D; } .v.c .lab { color: #854F0B; }
+  .v .big { font-size: 13pt; font-weight: 500; line-height: 1.05; margin-bottom: 1.2mm; }
+  .v.a .big { color: #085041; } .v.b .big { color: #7a1f1f; } .v.c .big { color: #633806; }
+  .v .s { font-size: 7.4pt; line-height: 1.5; color: #4a4a42; }
+  .v .s em { font-style: normal; font-weight: 500; }
+
+  .survive {
+    margin-top: 2.4mm; padding: 2.6mm 3.6mm; background: #E6F1FB; border-left: 2.2pt solid #185FA5;
+    display: grid; grid-template-columns: 1.25fr 1fr; gap: 4mm; align-items: center;
+  }
+  .survive .t { font-size: 9.4pt; font-weight: 500; color: #0C447C; margin-bottom: 1mm; }
+  .survive .b { font-size: 7.7pt; line-height: 1.58; color: #33465c; }
+  .survive .nums { display: flex; gap: 4mm; }
+  .survive .n { text-align: left; }
+  .survive .n b { display: block; font-size: 13pt; font-weight: 500; color: #0C447C; letter-spacing: -.01em; }
+  .survive .n span { font-size: 6.6pt; color: #6b7c92; letter-spacing: .04em; }
+
+  .method { display: grid; grid-template-columns: 1.35fr 1fr; gap: 4.2mm; margin-top: 2.8mm; }
+  .method .box { font-size: 7.6pt; line-height: 1.5; color: #4a4a42; }
+  .method .box b { display: block; font-size: 8.3pt; font-weight: 500; color: #22221f; margin-bottom: 1.2mm; }
+  .method .box code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 7.2pt; background: #f3f1ea; padding: 0 1mm; }
+
+  table.mini { width: 100%; border-collapse: collapse; font-size: 7.2pt; }
+  table.mini th { text-align: left; font-weight: 400; color: #9a9484; border-bottom: .5pt solid #ddd9cc; padding: 1mm 0; }
+  table.mini td { padding: 1mm 0; border-bottom: .4pt solid #eeebe1; color: #3a3a34; }
+  table.mini td.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .quote { margin-top: 2.4mm; padding: 2.4mm 4.4mm; background: #faf9f5; border-left: 2pt solid #5F5E5A; }
+  .quote p { font-size: 9.4pt; line-height: 1.6; color: #2c2c2a; }
+  .quote span { display: block; font-size: 7pt; color: #9a9484; margin-top: 1.2mm; }
+
+  footer { margin-top: auto; padding-top: 4.5mm; border-top: .5pt solid #e2e0d8; font-size: 6.7pt; color: #a8a294; line-height: 1.6; display: flex; justify-content: space-between; gap: 6mm; }
+  footer code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 6.5pt; }
+  @media print { body { background: #fff; } .page { margin: 0; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="kick">一页审计 · 卷二 · 2026-11-26</div>
+  <h1>位置死了，形状是换手率的影子</h1>
+  <p class="lead">负控成立，时钟成立。但「介质」扛不住联合控制：11 个变量一起放进去，dens 的单调性归零。</p>
+  <p class="meta">全市场 242 万股票-日 · 2024-11~2026-11 · 逐日分位 · fwd20 = close[t+21]/open[t+1]−1</p>
+
+  <div class="rule"></div>
+
+  <div class="fig">
+    <svg viewBox="0 0 680 214" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>dens 效应的四步拆解</title>
+      <desc>单变量 +136bp，只留换手 +122bp，只留形状 +54bp，联合控制残差 −4bp。</desc>
+      <line x1="196" y1="18" x2="196" y2="188" stroke="#b9b4a4" stroke-width="0.8"/>
+
+      <text x="0" y="40" style="font-family:inherit;font-size:9px;fill:#3a3a34">dens 单变量（15 日窗）</text>
+      <rect x="196" y="26" width="316" height="22" fill="#185FA5"/>
+      <text x="520" y="42" style="font-family:inherit;font-size:9.5px;fill:#185FA5">+136  t 4.60</text>
+
+      <text x="0" y="80" style="font-family:inherit;font-size:9px;fill:#3a3a34">只留换手率 TO15</text>
+      <rect x="196" y="66" width="283" height="22" fill="#5B9BD5"/>
+      <text x="487" y="82" style="font-family:inherit;font-size:9.5px;fill:#3d7ab5">+122  t 3.57</text>
+
+      <text x="0" y="120" style="font-family:inherit;font-size:9px;fill:#3a3a34">只留形状 q15（走廊内份额）</text>
+      <rect x="196" y="106" width="125" height="22" fill="#BA7517"/>
+      <text x="329" y="122" style="font-family:inherit;font-size:9.5px;fill:#854F0B">+54  t 4.39</text>
+
+      <text x="0" y="160" style="font-family:inherit;font-size:9px;fill:#3a3a34">11 个控制联合回归后的残差</text>
+      <rect x="187" y="146" width="9" height="22" fill="#A32D2D"/>
+      <text x="176" y="162" text-anchor="end" style="font-family:inherit;font-size:9.5px;fill:#A32D2D">−4  t −0.60</text>
+
+      <line x1="196" y1="184" x2="600" y2="184" stroke="#e2e0d8" stroke-width="0.5"/>
+      <text x="600" y="205" text-anchor="end" style="font-family:inherit;font-size:8px;fill:#9a9484">Q1−Q5，bp</text>
+    </svg>
+    <p class="cap">同一批股票-日、同一收益口径。第一步到第二步说明：dens 的 69% 方差是换手率（<code>R²(log dens ~ log TO) = 0.69</code>，秩相关 0.78）。第二步到第三步说明：形状只剩 54bp。第四步：联合控制后归零。</p>
+  </div>
+
+  <h2>三格判决</h2>
+  <div class="verdict">
+    <div class="v a">
+      <div class="lab">复核 · 成立</div>
+      <div class="big">势场已死</div>
+      <div class="s">−0.125 vs 随机游走 −0.107；半衰期 5.2 / 6.1 天。换手五分位 b 恒为 −0.132~−0.117，理论要求 −0.008~−0.045。<em>比原文更强。</em></div>
+    </div>
+    <div class="v b">
+      <div class="lab">审计 · 未过</div>
+      <div class="big">介质 = 换手率</div>
+      <div class="s">+136 → −4bp。四重控制是四次单变量双排序；九宫格里效应只在<em>高换手 × 高波动</em>格（+253，t 13.7），低换手格符号是反的（−27）。</div>
+    </div>
+    <div class="v c">
+      <div class="lab">审计 · 未过</div>
+      <div class="big">P2 没赢</div>
+      <div class="s">同 cum5 桶内 Θ 五档的 Q5−Q1：+24/+14/+6/+12/+71/−22。六桶只有一格 t&gt;2。<em>「放量上涨更好」不成立。</em></div>
+    </div>
+  </div>
+
+  <div class="survive">
+    <div>
+      <div class="t">唯一活下来的：一个条件效应，不是介质</div>
+      <div class="b">高换手 ∩ 高波动格（样本 12%）内，控制 log TO 与 log vol 后，dens 残差 Q1−Q5 = +115bp（t 6.3），三年同号。但它只在最活跃的 12% 里有效，正是成本最高、容量最差、且 <code>surge-all</code> 已判「越换手越差」的格子——<b>可观察，不可部署</b>。</div>
+    </div>
+    <div class="nums">
+      <div class="n"><b>+115</b><span>bp · t 6.3</span></div>
+      <div class="n"><b>+198</b><span>2024（37 日）</span></div>
+      <div class="n"><b>+114</b><span>2025</span></div>
+      <div class="n"><b>+100</b><span>2026</span></div>
+    </div>
+  </div>
+
+  <h2>两条被洗清的嫌疑</h2>
+  <table class="mini">
+    <tr><th>卷二最担心的坑</th><th>读数</th><th style="text-align:right">判决</th></tr>
+    <tr><td>dens 只是尾盘成交密集（tc_close）</td><td>ρ = −0.34；控制后残差 +152（t 7.14），低尾盘组更强 +230 → +53</td><td class="n">清白</td></tr>
+    <tr><td>dens 只是 1/ivd（低波动）</td><td>固定核宽保留 87%（+136 → +119）</td><td class="n">清白</td></tr>
+    <tr><td>dens 只是离 15 日均线的距离</td><td>ρ(dens, |g|) = −0.14；|g| 单独 −31（t −1.54）</td><td class="n">清白</td></tr>
+    <tr><td>P1：递推能否救回大市值</td><td>cap Q5：+36（t 0.72）→ +74（t 4.73），判据 ≥ +80</td><td class="n">差 6bp</td></tr>
+  </table>
+
+  <h2>方法上真正该记的一条</h2>
+  <div class="method">
+    <div class="box">
+      <b>「四重控制」不是四重控制</b>
+      它每次只固定一个维度，其余维度仍在组内自由变化。只要被检验量与某个未固定的维度有交互，它就会「存活」。本仓库已在因子研究里付过一次学费：回归残差 +7.8bp，行业内孪生 +0.2bp（t 0.01）。正确顺序是：<code>联合线性控制 → 匹配孪生 → 分格看条件效应</code>，并且格子与方向必须预注册。
+    </div>
+    <div class="box">
+      <b>Θ 的正交是算术</b>
+      <code>Θ = (TO₅/TO₁₅ᵖʳᵉ)·(q_now/q_pre)</code>。分子分母同尺度，水平项自动约掉——与涨幅、换手正交是构造的必然结果。方差主要在分母：sd(logΘ)=1.04，sd(logD0)=1.34，ρ(logΘ,logD0)=−0.51。它更像 dens 的区间积分，不是「付了多少钱」。
+    </div>
+  </div>
+
+  <div class="quote">
+    <p>它不是势，也不是介质。它是换手率穿了件核密度的衣服，只在最热的 12% 股票里还剩一点条件信息。</p>
+    <span>负控成立　·　时钟成立（135d → 50d）　·　Θ 量纲校准成立（中位 0.75~0.79）　·　主押注不成立</span>
+  </div>
+
+  <footer>
+    <span>脚本 <code>analysis/_diag_chip_medium_verify.py</code> · <code>analysis/_diag_chip_medium_audit.py</code></span>
+    <span>文档 <code>docs/structural-edge/chip-medium-audit.md</code></span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -31,6 +31,8 @@ const CommonSense = lazy(() => import('./pages/CommonSense').then(m => ({ defaul
 // 手册两页：/handbook = 机会雷达（每天看），/library = 策略图书馆（低频查）。
 const DailyRadar = lazy(() => import('./pages/StructuralEdge').then(m => ({ default: m.Daily })))
 const StrategyLibrary = lazy(() => import('./pages/StructuralEdge').then(m => ({ default: m.Library })))
+// 筹码久期是独立研究线（理论稿，未验证），不并进「事件低吸」图书馆：两者的对象与读者都不同。
+const ChipTheory = lazy(() => import('./pages/chip/ChipTheory').then(m => ({ default: m.ChipTheory })))
 const Dev = lazy(() => import('./pages/Dev').then(m => ({ default: m.Dev })))
 // Onboarding 只在首次使用时进入, Auth 只在登录页用到 — 均改按需加载
 const Onboarding = lazy(() => import('./pages/Onboarding').then(m => ({ default: m.Onboarding })))
@@ -55,6 +57,7 @@ const CORE_ROUTE_PATHS = new Set([
   '/common-sense',
   '/handbook',
   '/library',
+  '/chip',
   // 旧路径仍在用（书签/文档），保留在冲突清单里；它们只做重定向。
   '/long-strategy',
   '/structural-edge',
@@ -179,6 +182,7 @@ export const router = createBrowserRouter([
     { path: 'common-sense', element: <CommonSense /> },
     { path: 'handbook', element: <DailyRadar /> },
     { path: 'library', element: <StrategyLibrary /> },
+    { path: 'chip', element: <ChipTheory /> },
     { path: 'long-strategy', element: <LegacyHandbookRedirect /> },
     { path: 'structural-edge', element: <LegacyHandbookRedirect /> },
     { path: 'position-art', element: <LegacyHandbookRedirect /> },

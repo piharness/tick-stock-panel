@@ -75,6 +75,7 @@ const CORE_ARCH: Record<CoreNavPath, { kind: ArchKind; reason: string }> = {
   '/common-sense':   { kind: 'core', reason: '市场常识 — 行业内规则/博弈/法规的确定性沉淀' },
   '/handbook':       { kind: 'core', reason: '机会雷达 — 每日盘后：判定/指令/明细/账本/反例' },
   '/library':        { kind: 'core', reason: '策略图书馆 — 理论沉淀：总则/证据/规则/反证/工具' },
+  '/chip':           { kind: 'core', reason: '筹码久期 — 独立研究线的理论稿：期限结构/久期/七条未测预测' },
 }
 
 const ARCH_CLASS: Record<string, { kind: ArchKind; reason: string }> = {

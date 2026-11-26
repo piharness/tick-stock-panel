@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>筹码介质 · 一页理论摘要（卷二）</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #ececea;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: #22221f;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    width: 210mm; min-height: 297mm; margin: 0 auto; padding: 14mm 14mm 10mm;
+    background: #fff; display: flex; flex-direction: column;
+  }
+  .kick {
+    font-size: 7.2pt; letter-spacing: .2em; color: #9a9484;
+    text-transform: uppercase; margin-bottom: 3.4mm;
+  }
+  h1 { font-size: 21pt; font-weight: 500; letter-spacing: -.01em; line-height: 1.1; margin-bottom: 3mm; }
+  .lead {
+    font-size: 10.6pt; line-height: 1.6; color: #3a3a34;
+    padding-left: 3.8mm; border-left: 2.6pt solid #0F6E56; margin-bottom: 2mm;
+  }
+  .meta { font-size: 7.4pt; color: #9a9484; padding-left: 4.4mm; }
+
+  .rule { height: .5pt; background: #e2e0d8; margin: 5.6mm 0 4.6mm; }
+
+  .fig svg { width: 100%; height: auto; display: block; }
+  .cap { font-size: 7.2pt; color: #8a8578; margin-top: 1.6mm; line-height: 1.5; }
+
+  h2 {
+    font-size: 7.6pt; font-weight: 500; letter-spacing: .16em; color: #9a9484;
+    margin: 5mm 0 2.4mm;
+  }
+
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3.6mm; }
+  .card { border-top: 1.6pt solid #d8d5c9; padding-top: 2.4mm; }
+  .card .n { font-size: 6.8pt; color: #b6b0a0; letter-spacing: .08em; }
+  .card .t { font-size: 9.6pt; font-weight: 500; margin: .8mm 0 1mm; }
+  .card .big { font-size: 12pt; font-weight: 500; color: #0C447C; margin-bottom: 1.2mm; letter-spacing: -.01em; }
+  .card .b { font-size: 8.1pt; line-height: 1.62; color: #4a4a42; }
+  .card .b em { font-style: normal; color: #854F0B; font-weight: 500; }
+
+  .verdict { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3.6mm; }
+  .v { padding: 2.8mm 3mm; border-radius: 1.4mm; }
+  .v.a { background: #F1EFE8; }
+  .v.b { background: #E1F5EE; }
+  .v.c { background: #FAEEDA; }
+  .v .lab { font-size: 6.9pt; letter-spacing: .16em; margin-bottom: 1.6mm; }
+  .v.a .lab { color: #5F5E5A; }
+  .v.b .lab { color: #0F6E56; }
+  .v.c .lab { color: #854F0B; }
+  .v .big { font-size: 12.6pt; font-weight: 500; line-height: 1.05; margin-bottom: 1.4mm; }
+  .v.a .big { color: #2C2C2A; }
+  .v.b .big { color: #085041; }
+  .v.c .big { color: #633806; }
+  .v .s { font-size: 7.5pt; line-height: 1.55; color: #4a4a42; }
+
+  .limits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3.6mm; }
+  .lim { font-size: 7.8pt; line-height: 1.58; color: #4a4a42; }
+  .lim b { display: block; font-weight: 500; color: #22221f; font-size: 8.4pt; margin-bottom: 1mm; }
+
+  .quote {
+    margin-top: 5mm; padding: 3.4mm 5mm; background: #faf9f5;
+    border-left: 2.2pt solid #0C447C;
+  }
+  .quote p { font-size: 10pt; line-height: 1.65; color: #1f3a56; }
+  .quote span { display: block; font-size: 7.2pt; color: #9a9484; margin-top: 1.6mm; }
+
+  footer {
+    margin-top: auto; padding-top: 8mm;
+    border-top: .5pt solid #e2e0d8;
+    font-size: 6.8pt; color: #a8a294; line-height: 1.65;
+    display: flex; justify-content: space-between; gap: 6mm;
+  }
+  footer code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 6.6pt; }
+
+  @media print {
+    body { background: #fff; }
+    .page { margin: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="kick">一页理论摘要 · 卷二 · 2026-11-26</div>
+  <h1>筹码介质</h1>
+  <p class="lead">没有势，只有介质。价格不被成本重心吸引，它只是在密度里走得快或走得慢。</p>
+  <p class="meta">对「筹码势」的一次随机游走负控 + 四重改名检验 · 数据 2019–2026</p>
+
+  <div class="rule"></div>
+
+  <div class="fig">
+    <svg viewBox="0 0 680 262" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>筹码介质相图</title>
+      <desc>横轴为局部密度，纵轴为过路费率。四域为真空结清、新血密集、真空欠账、陈旧密集。</desc>
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+
+      <rect x="76" y="40" width="270" height="95" fill="#E1F5EE"/>
+      <rect x="346" y="40" width="270" height="95" fill="#E6F1FB"/>
+      <rect x="76" y="135" width="270" height="95" fill="#F4F3EC"/>
+      <rect x="346" y="135" width="270" height="95" fill="#FAEEDA" stroke="#BA7517" stroke-width="2"/>
+
+      <line x1="76" y1="230" x2="616" y2="230" stroke="#5F5E5A" stroke-width="1"/>
+      <line x1="76" y1="230" x2="76" y2="36" stroke="#5F5E5A" stroke-width="1"/>
+      <text x="76" y="24" style="font-family:inherit;font-size:11px;fill:#5F5E5A">Θ 过路费率（这层被换过几遍）</text>
+      <text x="616" y="252" text-anchor="end" style="font-family:inherit;font-size:11px;fill:#5F5E5A">dens 局部密度（现价处有多少筹码）</text>
+
+      <line x1="346" y1="40" x2="346" y2="230" stroke="#888780" stroke-width="0.5" stroke-dasharray="4 4"/>
+      <line x1="76" y1="135" x2="616" y2="135" stroke="#888780" stroke-width="0.5" stroke-dasharray="4 4"/>
+      <text x="353" y="52" style="font-family:inherit;font-size:10px;fill:#8a8578">Θ = 1</text>
+
+      <text x="88" y="68" style="font-family:inherit;font-size:13px;font-weight:500;fill:#085041">真空 · 已结清</text>
+      <text x="88" y="88" style="font-family:inherit;font-size:11px;fill:#0F6E56">主升候选 · 未测</text>
+      <text x="604" y="68" text-anchor="end" style="font-family:inherit;font-size:13px;font-weight:500;fill:#185FA5">新血密集</text>
+      <text x="604" y="88" text-anchor="end" style="font-family:inherit;font-size:11px;fill:#185FA5">刚换过一遍 · 新支撑</text>
+      <text x="88" y="163" style="font-family:inherit;font-size:13px;font-weight:500;fill:#5F5E5A">真空 · 欠账</text>
+      <text x="88" y="183" style="font-family:inherit;font-size:11px;fill:#5F5E5A">突破失败的高发区</text>
+      <text x="604" y="163" text-anchor="end" style="font-family:inherit;font-size:13px;font-weight:500;fill:#854F0B">陈旧密集</text>
+      <text x="604" y="183" text-anchor="end" style="font-family:inherit;font-size:11px;fill:#BA7517">−236bp · 最差格</text>
+
+      <path d="M 146 106 C 244 122, 322 142, 400 166 C 450 180, 500 194, 548 204"
+            fill="none" stroke="#A32D2D" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar2)"/>
+    </svg>
+    <p class="cap">两个轴都能直接测。卷一的两个轴（势场深度、能量通量）从未被估计过——Λ=1 那条线是手画的。红色虚线是 P4 的预测脊。</p>
+  </div>
+
+  <h2>三次读数</h2>
+  <div class="three">
+    <div class="card">
+      <div class="n">01 · 否 势</div>
+      <div class="t">向心拉力是均线算术</div>
+      <div class="big">−0.108 / −0.107</div>
+      <div class="b">缺口回复（实测 / 随机游走），半衰期 6.4 / 6.5 天。换手五分位下 b 恒为 −0.122~−0.123，<em>理论要求差 8 倍</em>。没有力。</div>
+    </div>
+    <div class="card">
+      <div class="n">02 · 存 形</div>
+      <div class="t">密度扛住四重控制</div>
+      <div class="big">+434bp</div>
+      <div class="b">dens Q1−Q5，249 万股票-日。按距离 / 波动 / 动量 / 换手切开，组内最低一格仍有 <em>+181bp</em>；而距离 |g| 单独只有 ±14bp。</div>
+    </div>
+    <div class="card">
+      <div class="n">03 · 变 时</div>
+      <div class="t">换手时钟走了 2.8 倍</div>
+      <div class="big">133d → 47d</div>
+      <div class="b">中位个股的筹码记忆（1/TO），2019→2026。15 日窗覆盖率 10.7%→27.6%。<em>只有 3.7% 的股票记忆短于 15 天</em>。</div>
+    </div>
+  </div>
+
+  <h2>三格判决</h2>
+  <div class="verdict">
+    <div class="v a">
+      <div class="lab">已否决</div>
+      <div class="big">势场</div>
+      <div class="s">「价格被成本重心拉住」被负控整条否决。卷一 §4 说它只描述供给侧——比这更弱：连势都不存在。</div>
+    </div>
+    <div class="v b">
+      <div class="lab">已校准</div>
+      <div class="big">Θ = 0.77</div>
+      <div class="s">温和 ramp（cum5 0–3%）的过路费率中位。与涨幅 ρ=0.025、与换手 ρ=−0.040——<em>几乎正交</em>。旧阈值是无量纲条件的粗投影。</div>
+    </div>
+    <div class="v c">
+      <div class="lab">待押注</div>
+      <div class="big">放量上涨更好</div>
+      <div class="s">同一涨幅内，付清的那一半更好。与「放量出货」直觉相反，也与 surge-all 的「换手越高越差」相反——这一格输了，整卷退回描述层。</div>
+    </div>
+  </div>
+
+  <h2>它在哪里会错</h2>
+  <div class="limits">
+    <div class="lim"><b>只拆了第一根柱子</b>密度仍是相关性证据，不是机制证据。要等阻抗检验：λ·S 是否近似常数。</div>
+    <div class="lim"><b>尾盘效应没控</b>「密度高」可能只是「尾盘成交密集」。这是最容易被骗的地方，必须控 tc_close。</div>
+    <div class="lim"><b>新高处 Θ 退化</b>没有成交过就没有存量，Θ→∞ 不是「付清」而是「没有债」。必须单独成格。</div>
+  </div>
+
+  <div class="quote">
+    <p>位置没有信息，形状有信息。价格不是在势阱里被拉，是在密度里被挡。</p>
+    <span>dens 低 + Θ 高（真空已结清）　·　dens 高 + Θ 低（陈旧密集，−236bp）　·　两者之间是脊</span>
+  </div>
+
+  <footer>
+    <span>脚本 <code>analysis/_diag_chip_toll.py</code> · 产物 <code>data/.scratch/chip_toll.json</code></span>
+    <span>文档 <code>docs/structural-edge/chip-medium.md</code></span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>筹码势 · 一页理论摘要</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #ececea;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: #22221f;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    width: 210mm; min-height: 297mm; margin: 0 auto; padding: 14mm 14mm 10mm;
+    background: #fff; display: flex; flex-direction: column;
+  }
+  .kick {
+    font-size: 7.2pt; letter-spacing: .2em; color: #9a9484;
+    text-transform: uppercase; margin-bottom: 3.4mm;
+  }
+  h1 { font-size: 21pt; font-weight: 500; letter-spacing: -.01em; line-height: 1.1; margin-bottom: 3mm; }
+  .lead {
+    font-size: 10.6pt; line-height: 1.6; color: #3a3a34;
+    padding-left: 3.8mm; border-left: 2.6pt solid #BA7517; margin-bottom: 2mm;
+  }
+  .meta { font-size: 7.4pt; color: #9a9484; padding-left: 4.4mm; }
+
+  .rule { height: .5pt; background: #e2e0d8; margin: 5.6mm 0 4.6mm; }
+
+  .fig svg { width: 100%; height: auto; display: block; }
+  .cap { font-size: 7.2pt; color: #8a8578; margin-top: 1.6mm; line-height: 1.5; }
+
+  h2 {
+    font-size: 7.6pt; font-weight: 500; letter-spacing: .16em; color: #9a9484;
+    margin: 6mm 0 2.8mm;
+  }
+
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3.6mm; }
+  .card { border-top: 1.6pt solid #d8d5c9; padding-top: 2.4mm; }
+  .card .n { font-size: 6.8pt; color: #b6b0a0; letter-spacing: .08em; }
+  .card .t { font-size: 9.6pt; font-weight: 500; margin: .8mm 0 1.4mm; }
+  .card .b { font-size: 8.1pt; line-height: 1.62; color: #4a4a42; }
+  .card .b em { font-style: normal; color: #854F0B; font-weight: 500; }
+
+  .verdict { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3.6mm; }
+  .v { padding: 2.8mm 3mm; border-radius: 1.4mm; }
+  .v.a { background: #E1F5EE; }
+  .v.b { background: #F1EFE8; }
+  .v.c { background: #FAEEDA; }
+  .v .lab { font-size: 6.9pt; letter-spacing: .16em; margin-bottom: 1.6mm; }
+  .v.a .lab { color: #0F6E56; }
+  .v.b .lab { color: #5F5E5A; }
+  .v.c .lab { color: #854F0B; }
+  .v .big { font-size: 13.2pt; font-weight: 500; line-height: 1.05; margin-bottom: 1.4mm; }
+  .v.a .big { color: #085041; }
+  .v.b .big { color: #2C2C2A; }
+  .v.c .big { color: #633806; }
+  .v .s { font-size: 7.5pt; line-height: 1.55; color: #4a4a42; }
+
+  .limits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3.6mm; }
+  .lim { font-size: 7.8pt; line-height: 1.58; color: #4a4a42; }
+  .lim b { display: block; font-weight: 500; color: #22221f; font-size: 8.4pt; margin-bottom: 1mm; }
+
+  .quote {
+    margin-top: 7mm; padding: 4mm 5mm; background: #faf9f5;
+    border-left: 2.2pt solid #0C447C;
+  }
+  .quote p { font-size: 10pt; line-height: 1.65; color: #1f3a56; }
+  .quote span { display: block; font-size: 7.2pt; color: #9a9484; margin-top: 1.6mm; }
+
+  footer {
+    margin-top: auto; padding-top: 11mm;
+    border-top: .5pt solid #e2e0d8;
+    font-size: 6.8pt; color: #a8a294; line-height: 1.65;
+    display: flex; justify-content: space-between; gap: 6mm;
+  }
+  footer code { font-family: "SFMono-Regular", Consolas, monospace; font-size: 6.6pt; }
+
+  @media print {
+    body { background: #fff; }
+    .page { margin: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="kick">一页理论摘要 · 2026-11-26</div>
+  <h1>筹码势</h1>
+  <p class="lead">筹码决定阻力，能量决定方向；两者之比，决定这只股票现在听谁的。</p>
+  <p class="meta">对「筹码熵」的三次重构 + 18 项实测 · 数据 2005–2026</p>
+
+  <div class="rule"></div>
+
+  <div class="fig">
+    <svg viewBox="0 0 680 272" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+      <title>筹码势相图</title>
+      <desc>横轴能量通量，纵轴势场深度，四域为锁死、硬突破、噪声、主升。</desc>
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <rect x="64" y="34" width="278" height="94" fill="#E6F1FB"/>
+      <rect x="342" y="34" width="278" height="94" fill="#FAEEDA"/>
+      <rect x="64" y="128" width="278" height="94" fill="#E6F1FB"/>
+      <rect x="342" y="128" width="278" height="94" fill="#FAEEDA" stroke="#BA7517" stroke-width="2"/>
+      <line x1="64" y1="222" x2="628" y2="222" stroke="#5F5E5A" stroke-width="1"/>
+      <line x1="64" y1="222" x2="64" y2="30" stroke="#5F5E5A" stroke-width="1"/>
+      <text x="64" y="22" style="font-family:inherit;font-size:11px;fill:#5F5E5A">势场深度 D（筹码有多集中）</text>
+      <text x="628" y="242" text-anchor="end" style="font-family:inherit;font-size:11px;fill:#5F5E5A">能量通量 Λ = 注入 / 耗散</text>
+      <line x1="342" y1="34" x2="342" y2="222" stroke="#888780" stroke-width="0.5" stroke-dasharray="4 4"/>
+      <text x="349" y="46" style="font-family:inherit;font-size:11px;fill:#5F5E5A">Λ = 1</text>
+
+      <text x="76" y="56" style="font-family:inherit;font-size:13px;font-weight:500;fill:#0C447C">锁死</text>
+      <text x="76" y="74" style="font-family:inherit;font-size:11px;fill:#185FA5">锁仓横盘无超额 · 粒子不动</text>
+      <text x="606" y="56" text-anchor="end" style="font-family:inherit;font-size:13px;font-weight:500;fill:#854F0B">硬突破</text>
+      <text x="606" y="74" text-anchor="end" style="font-family:inherit;font-size:11px;fill:#BA7517">强 ramp 之后 −89bp · 耗散巨大</text>
+      <text x="76" y="200" style="font-family:inherit;font-size:13px;font-weight:500;fill:#0C447C">噪声</text>
+      <text x="76" y="218" style="font-family:inherit;font-size:11px;fill:#185FA5">dens Q1 仅 +34bp · 无结构可用</text>
+      <text x="606" y="200" text-anchor="end" style="font-family:inherit;font-size:13px;font-weight:500;fill:#854F0B">主升</text>
+      <text x="606" y="218" text-anchor="end" style="font-family:inherit;font-size:11px;fill:#BA7517">温和 ramp +59bp · 自由流</text>
+
+      <path d="M 104 102 C 200 88, 280 90, 360 94 C 440 98, 498 112, 522 150 C 534 170, 544 180, 554 186"
+            fill="none" stroke="#A32D2D" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+    </svg>
+    <p class="cap">龙头的路径不是位置，是方向：从左上出发，经右上，落右下。横截面永远识别不出，因为它是路径依赖的。</p>
+  </div>
+
+  <h2>三次升级</h2>
+  <div class="three">
+    <div class="card">
+      <div class="n">01 → 02</div>
+      <div class="t">熵 → 势</div>
+      <div class="b">宽度是二阶矩，漏了一阶矩。同一个宽度，在现价上方和在现价下方，供给弹性相反。<em>加「位置」</em>：标量熵换成函数 S(p)。</div>
+    </div>
+    <div class="card">
+      <div class="n">02 → 03</div>
+      <div class="t">势 → 自洽场</div>
+      <div class="b">价格穿过一层筹码，那层就被解套释放，地形当场改写。<em>加「反馈」</em>：温和 ramp 边穿边压实，强 ramp 一步跳过、什么都没消化。</div>
+    </div>
+    <div class="card">
+      <div class="n">03 → 04</div>
+      <div class="t">自洽场 → 相变</div>
+      <div class="b">只有地形没有温度，解释不了 dens 的样本外归零。<em>加「温度」</em>：T = ε²/2γ，需求侧被恒等式约束，不再自由假设。</div>
+    </div>
+  </div>
+
+  <h2>实测读数</h2>
+  <div class="verdict">
+    <div class="v a">
+      <div class="lab">活</div>
+      <div class="big">+132.5bp</div>
+      <div class="s">dens Q1−Q5，t 4.60，样本外。但逐年衰减（2023–25 近零），大市值组仅 +41bp / t 0.84。<br>只能当状态变量，不可部署。</div>
+    </div>
+    <div class="v b">
+      <div class="lab">死</div>
+      <div class="big">样本外归零</div>
+      <div class="s">高换手 × 窄成本带：样本内 +61.9bp (t 3.88) → 样本外 +14.0bp (t 0.66)。<br>宽度单变量「窄→好」同样失效。</div>
+    </div>
+    <div class="v c">
+      <div class="lab">不成立</div>
+      <div class="big">ρ = 0.065</div>
+      <div class="s">大宗折价率与事前振幅的 Spearman。组内方差仅占 9.4%，收益侧控制后 −26.8bp。<br>它标的是「谁在接盘」。</div>
+    </div>
+  </div>
+
+  <h2>边界：它在哪里会失效</h2>
+  <div class="limits">
+    <div class="lim"><b>Λ &gt; 1 时沉默</b>能量主导，势场失效，价格由流决定。模型不作预测，而不是预测错。</div>
+    <div class="lim"><b>大市值组无效</b>池子太大，注入被摊薄，Λ 上不去。与小盘龙头寿命更短的推论一致。</div>
+    <div class="lim"><b>类比而非推导</b>朗之万方程借自物理，白噪声假设与厚尾冲突，T 的恒等式可能失真。</div>
+  </div>
+
+  <div class="quote">
+    <p>它不预测涨跌。它只告诉你：现在这只股票，是听筹码的，还是听钱的。</p>
+    <span>Λ &lt; 1 听筹码（势场有效）　·　Λ &gt; 1 听钱（势场失效）　·　Λ ≈ 1 两者拉扯（龙头在这条线上）</span>
+  </div>
+
+  <footer>
+    <span>脚本 <code>_diag_chip_entropy.py</code> · <code>_diag_chip_width_fwd.py</code> · <code>_diag_block_trade_min.py</code></span>
+    <span>文档 <code>docs/structural-edge/chip-potential.md</code> · <code>block-trade-source.md</code></span>
+  </footer>
+
+</div>
+</body>
+</html>

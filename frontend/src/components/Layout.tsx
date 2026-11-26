@@ -48,6 +48,7 @@ import {
   HardDriveDownload,
   Layers,
   BookOpen,
+  Boxes,
 } from 'lucide-react'
 import {
   IconDashboard,
@@ -113,6 +114,8 @@ const CORE_NAV_ICONS: Record<CoreNavPath, (props: BrandIconProps) => ReactNode> 
   // 机会雷达（每日）与策略图书馆（理论沉淀）：手册 2026-11-24 拆成两页。
   '/handbook': (props) => <Layers {...props} />,
   '/library': (props) => <BookOpen {...props} />,
+  // 筹码久期：研究结论页，用堆叠方块表示「筹码」。
+  '/chip': (props) => <Boxes {...props} />,
 }
 
 // 博弈链路紧跟看板：它是"今天该看什么"的入口，先有流程再有页面。

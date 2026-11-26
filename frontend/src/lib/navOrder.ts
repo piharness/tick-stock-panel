@@ -11,7 +11,7 @@
 export const CORE_NAV_PATHS = [
   '/', '/battle', '/watchlist', '/screener', '/factors', '/backtest',
   '/regime', '/indices', '/data', '/decisions', '/case-lab', '/common-sense',
-  '/handbook', '/library',
+  '/handbook', '/library', '/chip',
 ] as const
 
 export type CoreNavPath = (typeof CORE_NAV_PATHS)[number]
@@ -39,6 +39,7 @@ export const CORE_NAV_LABELS: Record<CoreNavPath, string> = {
   '/common-sense': '市场常识',
   '/handbook': '机会雷达',
   '/library': '策略图书馆',
+  '/chip': '筹码久期',
 }
 
 /**
@@ -81,6 +82,10 @@ export const DEFAULT_NAV_PATHS = [
   // 「策略图书馆」，冻结低频，单独成页；每天找机会的动态部分是「机会雷达」(/handbook)。
   // 图书馆排在其后：动线是 每天看机会 → 偶尔翻理论。
   '/library',
+  // 2026-11-26 明确决策：/chip（筹码久期）排在图书馆之后。
+  // 它是独立研究线，不并进「事件低吸」图书馆；页面从「已关闭的裁决记录」
+  // 升级为「理论稿（未验证）」，仍放在理论沉淀之后作为收尾。
+  '/chip',
 ] as const
 
 const INDEX = new Map<string, number>(DEFAULT_NAV_PATHS.map((p, i) => [p, i]))
