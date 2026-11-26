@@ -6,6 +6,9 @@
 """
 from __future__ import annotations
 
+import json
+import os
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -298,3 +301,108 @@ def test_run_with_capacity_runs_when_slot_free(monkeypatch, tmp_path):
     assert pipeline_jobs.run_with_capacity(jid, lambda: "ok") == "ok"
     # succeed() 由调用方(API task)负责; run_with_capacity 只负责 start
     assert store.get(jid)["status"] == "running"
+
+
+# ── 重启后的幽灵任务(2026-11-26 现场: 永远 0%, 停止按钮无效) ────────────
+#
+# 现场证据: 卡住的 job.owner_instance=ebafe789, 其租约 mtime 16:55:23;
+# 新容器 16:55:39 启动 —— 相隔 16s < TTL 90s, 启动补录判「所有者仍存活」
+# 而跳过。旧实现只在 __init__ 判一次, 该记录从此永远 running: reap_stale
+# 只看内存 _active_id(新进程为空), cancel 走 fail() 内存 pop 不到 → 直接 return。
+# 三层都失灵, 所以「卡住」不可自愈, 只能重启(重启后依然卡, 因为又留下一份)。
+
+def test_restart_ghost_is_reaped_after_lease_ttl(monkeypatch, tmp_path):
+    """重启瞬间租约仍新鲜 → 不误杀; 心跳停了 → 轮询路径必须补录终态。"""
+    monkeypatch.setattr(preferences, "load", lambda: {})
+    d = tmp_path / "jobs"
+
+    monkeypatch.setattr(pipeline_jobs, "_INSTANCE", "old00001")
+    old = JobStore(store_dir=d)
+    jid = _make_running_job(old, timeout_s=60)
+    old_lease = old._lease_path
+    assert old_lease.exists()
+
+    # 旧进程被 SIGTERM 杀掉(没走 shutdown): 租约留在原地且 mtime 新鲜
+    monkeypatch.setattr(pipeline_jobs, "_INSTANCE", "new00002")
+    fresh = JobStore(store_dir=d)
+    # 首次判定: 不能把可能仍在跑的旧任务判死(2026-11-13 的教训)
+    assert fresh.get(jid)["status"] == "running"
+    assert jid in fresh._deferred_orphans
+
+    # TTL 过去仍未刷新心跳 ⇒ 所有者已死
+    stale = time.time() - (pipeline_jobs.OWNER_LEASE_TTL_S + 5)
+    os.utime(old_lease, (stale, stale))
+    fresh._last_orphan_check = 0.0  # 绕过节流, 模拟下一次轮询
+    j = fresh.get(jid)
+    assert j["status"] == "failed"
+    assert "复查补录" in j["error"]
+    assert jid not in fresh._deferred_orphans
+    # finished_at 必须补上, 否则历史面板显示「进行中」时长
+    assert j["finished_at"] is not None and j["duration_s"] is not None
+
+
+def test_live_owner_is_never_reaped(monkeypatch, tmp_path):
+    """另一进程持续交租时, 复查不得把它判死(多实例/宿主脚本共存的底线)。"""
+    monkeypatch.setattr(preferences, "load", lambda: {})
+    d = tmp_path / "jobs"
+
+    monkeypatch.setattr(pipeline_jobs, "_INSTANCE", "live0001")
+    other = JobStore(store_dir=d)
+    jid = _make_running_job(other, timeout_s=60)
+
+    monkeypatch.setattr(pipeline_jobs, "_INSTANCE", "watch001")
+    watcher = JobStore(store_dir=d)
+    other._touch_lease(force=True)  # 对方还在心跳
+    watcher._last_orphan_check = 0.0
+    watcher._recheck_deferred_orphans()
+    assert watcher.get(jid)["status"] == "running"
+
+
+def test_shutdown_closes_own_jobs_and_drops_lease(monkeypatch, tmp_path):
+    """优雅退出必须自己认账: 记录转 failed + 删租约, 不给下个进程留幽灵。"""
+    monkeypatch.setattr(preferences, "load", lambda: {})
+    store = JobStore(store_dir=tmp_path / "jobs")
+    jid = _make_running_job(store, timeout_s=60)
+
+    closed = store.shutdown("服务重启,任务中断")
+    assert closed == [jid]
+    j = store.get(jid)
+    assert j["status"] == "failed"
+    assert "服务重启" in j["error"]
+    assert not store._lease_path.exists()
+
+
+def test_cancel_works_on_orphan_record(monkeypatch, tmp_path):
+    """孤儿记录(不在本进程内存)也要能被「停止」写终态 —— 用户唯一的自救入口。"""
+    monkeypatch.setattr(preferences, "load", lambda: {})
+    d = tmp_path / "jobs"
+    store = JobStore(store_dir=d)
+
+    # 构造之后才出现的 running 记录 = 别的进程遗留、本进程不认识的孤儿
+    jid = "ghost12345"
+    (d / f"{jid}.json").write_text(json.dumps({
+        "id": jid, "kind": "pipeline", "status": "running", "stage": "init",
+        "progress": 0, "stage_pct": 0, "log": [],
+        "started_at": "2026-11-26T08:43:21Z",
+        "last_progress_at": "2026-11-26T08:43:21Z",
+        "finished_at": None, "duration_s": None, "result": None, "error": None,
+        "timeout_s": 1200, "owner_instance": "dead0000", "owner_pid": 61,
+    }), encoding="utf-8")
+    assert store.active_id() is None
+
+    store.terminate(jid, "用户手动取消")
+
+    j = store.get(jid)
+    assert j["status"] == "failed"
+    assert "手动取消" in j["error"]
+    assert j["duration_s"] is not None
+
+
+def test_queue_message_names_the_holder():
+    """排队提示要说出「在等谁」, 否则 0% 与卡死无法区分。"""
+    from app.services.heavy_job_limiter import HeavyJobLimiter
+
+    hog = HeavyJobLimiter(capacity=2)
+    assert pipeline_jobs._queue_message(hog) == "等待其他计算任务完成…"
+    assert hog.acquire("exclusive", owner="矩阵缓存预热") is True
+    assert "矩阵缓存预热" in pipeline_jobs._queue_message(hog)

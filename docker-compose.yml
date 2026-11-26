@@ -32,3 +32,7 @@ services:
       # Windows PowerShell/CMD 下 HOME 常未设置, 可通过 .env 里 CODEX_HOME_HOST 覆盖。
       - ${CODEX_HOME_HOST:-${HOME}/.codex}:/root/.codex:ro
     restart: unless-stopped
+    # 退出时要把进行中的任务结转成「重启中断」(见 job_store.shutdown)。前端常驻
+    # SSE 行情流会让 uvicorn 等连接自然结束, Docker 默认 10s 就到 SIGKILL ——
+    # 那几条终态写不下去, 下次启动只能靠 TTL 兜底(页面最长卡 90s)。留足窗口。
+    stop_grace_period: 30s

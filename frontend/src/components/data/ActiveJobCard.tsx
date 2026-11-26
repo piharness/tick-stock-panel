@@ -71,6 +71,13 @@ export function ActiveJobCard({ job }: { job: PipelineJob }) {
   const Icon = meta.icon
   const isDone = job.status === 'succeeded' || job.status === 'failed'
   const stageLabel = isDone ? meta.label : (STAGE_LABELS[job.stage] ?? job.stage)
+  // 停滞提示: 百分比 + 一句「等待其他计算任务完成…」分不清「在跑」和「卡死」。
+  // 超过 2 分钟没有心跳才提示（分钟级同步本来就可能长时间停在 88%）;
+  // 阈值取任务自己的 timeout_s, 分钟K 这类长任务的 30 分钟不会被误报成 20 分钟。
+  const stalledMin = !isDone && job.last_progress_at
+    ? Math.floor((Date.now() - new Date(job.last_progress_at).getTime()) / 60000)
+    : 0
+  const stallLimitMin = Math.round((job.timeout_s ?? 1200) / 60)
 
   return (
     <div className={`rounded-card border ${meta.border} ${meta.bg} p-5`}>
@@ -106,6 +113,12 @@ export function ActiveJobCard({ job }: { job: PipelineJob }) {
             <div className="flex items-center justify-between mt-1">
               <span className="text-[10px] text-muted">当前阶段</span>
               <span className="text-[10px] font-mono text-secondary">{job.stage_pct}%</span>
+            </div>
+          )}
+          {stalledMin >= 2 && (
+            <div className="mt-1.5 text-[10px] text-danger/90">
+              已 {stalledMin} 分钟没有进度。超过 {stallLimitMin} 分钟未推进会自动取消并说明原因；
+              若确实在等前置任务，日志里会写明占用者。
             </div>
           )}
         </div>

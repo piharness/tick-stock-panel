@@ -7140,6 +7140,10 @@ export interface PipelineJob {
   started_at: string | null
   finished_at: string | null
   duration_s: number | null
+  /** 最后一次进度心跳：停滞判定的基准（旧记录可能缺省） */
+  last_progress_at?: string | null
+  /** 停滞阈值（秒）：普通任务 1200，分钟K等长任务 1800；超时自动取消 */
+  timeout_s?: number | null
   result: {
     integrity_report?: IntegrityReport
     universe_size?: number

@@ -273,7 +273,12 @@ def run_now(
 
     # Step 0: 先同步个股维表, 再解析标的池 — 确保标的池基于最新 instruments
     emit("sync_instruments", 2, "同步个股维表…")
-    inst_rows = instrument_sync.sync_instruments(repo.store.data_dir)
+    inst_rows = instrument_sync.sync_instruments(
+        repo.store.data_dir,
+        # 只换文案、不涨百分比: 阶段总进度仍是 2%→8%, 但三家交易所逐个可见,
+        # 不会在 2% 上静默两三分钟。
+        on_progress=lambda msg: emit("sync_instruments", 2, msg, skip_log=True),
+    )
     if inst_rows > 0:
         _refresh_instruments_view(repo)
     emit("sync_instruments", 8, f"个股维表同步完成,{inst_rows} 只标的")
@@ -673,7 +678,12 @@ def run_now(
         try:
             if pull_index:
                 emit("sync_index", 88, "同步指数维表…")
-                index_count = index_sync.sync_index_instruments(repo, pull_index=True, pull_etf=False)
+                index_count = index_sync.sync_index_instruments(
+                    repo, pull_index=True, pull_etf=False,
+                    # 免费接口超时是这一段「不动」的主因: 逐交易所回报, 至少能看见
+                    # 它是在重试而不是死了。
+                    on_progress=lambda msg: emit("sync_index", 88, msg, skip_log=True),
+                )
                 emit("sync_index", 88, f"指数维表完成,{index_count} 只")
                 index_dir = repo.store.data_dir / "kline_index_enriched"
                 index_dates = sorted(

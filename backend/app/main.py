@@ -571,9 +571,12 @@ async def _application_lifespan(app: FastAPI):
                     logger.info("matrix cache prewarm skipped: no stock enriched data")
                     return
 
+                # owner 只用于诊断: 排队中的任务会把「占用中：矩阵缓存预热」写进
+                # 进度日志, 用户才知道自己在等什么, 而不是看到一个永动的 0%。
                 with shared_heavy_job_limiter.slot(
                     "exclusive",
                     cancel_event=matrix_prewarm_owner.cancel_event,
+                    owner="矩阵缓存预热",
                 ):
                     result = prewarm_matrix_cache(
                         BacktestEngine(repo),
@@ -650,6 +653,17 @@ async def _application_lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # 最先做: 把本进程正在跑的任务结转成「重启中断」。晚于下面各项会拖到
+        # 容器 stop 超时(SIGKILL), 那几条终态就写不下去 —— 上一个进程正是这样
+        # 留下 running 记录, 前端永远 0% 且「停止」无效。
+        try:
+            from app.services.pipeline_jobs import job_store
+
+            closed = job_store.shutdown_if_active()
+            if closed:
+                logger.warning("job_store shutdown: 结转 %d 个任务", len(closed))
+        except Exception:  # noqa: BLE001 —— 退出路径不得因收尾失败中断
+            logger.exception("job_store shutdown 失败")
         repo._on_refresh_done = None  # noqa: SLF001
         wd = getattr(app.state, "watchdog", None)
         if wd:

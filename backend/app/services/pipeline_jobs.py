@@ -118,6 +118,8 @@ OWNER_LEASE_TTL_S = 90
 OWNER_LEASE_HEARTBEAT_S = 30
 # 进度回调里刷新租约的最小间隔(9p 上单次写 ~3.6ms, 按分块回调刷太浪费)
 _LEASE_TOUCH_MIN_INTERVAL_S = 10
+# 孤儿复查节流: 前端每 2s 轮询, 每次都读盘解析不值当; TTL 是 90s, 5s 粒度足够。
+_ORPHAN_RECHECK_INTERVAL_S = 5.0
 
 
 def _lease_dir(store_dir: Path) -> Path:
@@ -139,6 +141,9 @@ class JobStore:
         self._last_touch = 0.0
         self._heartbeat: threading.Thread | None = None
         self._heartbeat_stop = threading.Event()
+        #: 启动补录时「租约还新鲜、暂判活着」的 job。不能一锤定音 —— 见 `_recheck_deferred_orphans`。
+        self._deferred_orphans: dict[str, None] = {}
+        self._last_orphan_check = 0.0
         self._store_dir.mkdir(parents=True, exist_ok=True)
         self._touch_lease()
         self._cleanup_stale_leases()
@@ -326,6 +331,12 @@ class JobStore:
         与「任何脚本 import 本模块都会实例化 job_store」两种情况下都不成立,
         实测会把线上正在跑的任务判死。finished_at 仍取文件 mtime(最后一次
         落盘 = 最后已知处于该状态), 避免拿下次开机时间虚增 duration。
+
+        **判活的记录只登记、不结论**: 重启(容器重建 / uvicorn reload)时旧进程
+        最后一次心跳可能只过去几秒 —— 小于 ``OWNER_LEASE_TTL_S``, 于是被判
+        「仍存活」而永久跳过。反向错误的代价比误杀更高: 误杀有可读错误可重试,
+        幽灵记录会让页面永远停在 0%、连「停止」按钮都无效(记录不在内存)。
+        故判活的转入 ``_deferred_orphans``, 由轮询路径在 TTL 过后复查。
         """
         for f in self._store_dir.glob("*.json"):
             try:
@@ -336,29 +347,84 @@ class JobStore:
             if not j.get("id") or orig_status not in ("pending", "running"):
                 continue
             if self._owner_alive(j):
+                self._deferred_orphans[j["id"]] = None
                 logger.info(
-                    "job_store: 跳过 %s —— 所有者进程仍存活(instance=%s)",
+                    "job_store: 暂判 %s 存活(instance=%s, 租约未过期), 登记 TTL 后复查",
                     j["id"], j.get("owner_instance"),
                 )
                 continue
-            j["status"] = "failed"
-            j["error"] = "后端重启,任务中断(启动时补录)"
             try:
-                mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=UTC)
-                end = mtime.strftime("%Y-%m-%dT%H:%M:%SZ")
+                end = datetime.fromtimestamp(f.stat().st_mtime, tz=UTC)
             except Exception:
-                end = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-            # mtime 早于 started_at(时钟回拨等)时夹住, 避免 duration 为负
-            if j.get("started_at") and end < j["started_at"]:
-                end = j["started_at"]
-            j["finished_at"] = end
-            j["duration_s"] = _duration_s(j)
-            logger.warning(
-                "job_store: 补录中断任务 %s (上个进程遗留 %s 记录)",
-                j["id"],
-                orig_status,
-            )
-            self._write_file(j)
+                end = datetime.now(UTC)
+            self._mark_orphan_failed(j, end, "后端重启,任务中断(启动时补录)")
+
+    def _recheck_deferred_orphans(self) -> None:
+        """复查启动时判活的记录 —— 心跳停了就必须补录, 不能永远等下去。
+
+        ``_owner_alive`` 只看租约 mtime 是否在 TTL 内; 而判活之后进程完全可能
+        立刻死亡(被打断的重启、被 kill 的 reload)。构造时一次性判定会让这类
+        记录永远停在 running: `reap_stale` 只处理本进程的 ``_active_id``,
+        磁盘孤儿不在它的视野里。这里用「租约是否仍在推进」补齐: TTL 过后
+        仍未刷新 ⇒ 所有者已死 ⇒ 补录终态, 前端轮询即可自愈。
+        """
+        now = time.monotonic()
+        with self._lock:
+            if not self._deferred_orphans:
+                return
+            if now - self._last_orphan_check < _ORPHAN_RECHECK_INTERVAL_S:
+                return
+            self._last_orphan_check = now
+            candidates = list(self._deferred_orphans)
+        for jid in candidates:
+            try:
+                j = self._read_file(jid)
+            except Exception:  # noqa: BLE001 —— 复查失败不得影响轮询
+                logger.exception("job_store: 复查孤儿 %s 读盘失败", jid)
+                continue
+            if not j or j.get("status") not in ("pending", "running"):
+                self._deferred_orphans.pop(jid, None)
+                continue
+            if self._owner_alive(j):
+                continue
+            self._deferred_orphans.pop(jid, None)
+            self._mark_orphan_failed(j, datetime.now(UTC), "后端重启,任务中断(复查补录)")
+
+    def _mark_orphan_failed(
+        self, job: dict[str, Any], end: datetime, reason: str,
+    ) -> None:
+        """把磁盘上的孤儿记录补写成失败终态(启动补录 / TTL 复查 / 手动取消共用)。
+
+        唯一的终态写入点: 三条路径的字段口径必须一致, 之前分散写会漏 duration
+        或漏 finished_at 夹取。end 由调用方给 —— 启动补录用文件 mtime(最后已知
+        存活时刻, 不虚增时长), 复查/手动取消用当前时刻(心跳已确认停止)。
+        """
+        prev = job.get("status")
+        job["status"] = "failed"
+        job["error"] = reason
+        end_iso = end.strftime("%Y-%m-%dT%H:%M:%SZ")
+        # mtime 早于 started_at(时钟回拨等)时夹住, 避免 duration 为负
+        if job.get("started_at") and end_iso < job["started_at"]:
+            end_iso = job["started_at"]
+        job["finished_at"] = end_iso
+        job["duration_s"] = _duration_s(job)
+        with self._lock:
+            self._active_jobs.pop(job["id"], None)
+            if self._active_id == job["id"]:
+                self._active_id = None
+            self._write_file(job)
+        logger.warning(
+            "job_store: 补录中断任务 %s (%s, 原状态 %s)",
+            job["id"], reason, prev,
+        )
+
+    def _stop_heartbeat(self) -> None:
+        """停租约心跳并删除自己的租约文件。删除后别的进程立即能判死本实例。"""
+        self._heartbeat_stop.set()
+        try:
+            self._lease_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     # ===== lifecycle =====
 
@@ -509,9 +575,17 @@ class JobStore:
                 j["log"].append(entry)
                 if len(j["log"]) > 200:
                     j["log"] = j["log"][-200:]
+            # 阶段切换时落一次盘: 平时只更新内存(高频), 但进程被杀后磁盘上就只剩
+            # start() 那一帧 —— 历史面板只能显示「中断 (原状态 running)」, 看不出
+            # 到底断在哪个阶段、跑到多少。每阶段一次写(全任务 ~20 次), 代价可忽略。
+            snapshot = (
+                {**j, "log": list(j["log"])} if previous_stage != stage else None
+            )
         # 进度回调是"我还在干活"的最强证据, 顺带交租(mtime 即心跳)。
         # 放在锁外: 9p 上一次写 ~3.6ms, 不该让轮询方的 get() 陪着等。
         self._touch_lease()
+        if snapshot is not None:
+            self._write_file(snapshot)
         # 锁外检查取消: reap 可能在本次更新刚结束后置位,下一次回调必然命中;
         # 在这里立即检查可以把终止延迟压缩到当次回调。
         ev = _CANCEL_FLAGS.get(job_id)
@@ -521,6 +595,8 @@ class JobStore:
     # ===== query =====
 
     def get(self, job_id: str) -> dict[str, Any] | None:
+        # 复查在锁外: 它自己要取锁, 嵌套会死锁。
+        self._recheck_deferred_orphans()
         # 取锁与 succeed()/fail() 的「pop 出内存 → 终态落盘」串行,
         # 避免轮询方恰好落在两者之间, 瞬时看到任务凭空消失。
         with self._lock:
@@ -532,6 +608,8 @@ class JobStore:
             return self._read_file(job_id)
 
     def list_recent(self, limit: int = 20) -> list[dict[str, Any]]:
+        # 轮询主路径之一: 磁盘孤儿在这里自愈, 不必等用户再点一次同步。
+        self._recheck_deferred_orphans()
         # 合并: 内存中的活跃 job + 磁盘文件
         all_jobs: list[dict[str, Any]] = list(self._active_jobs.values())
         all_jobs.extend(self._job_files_sorted())
@@ -576,6 +654,9 @@ class JobStore:
         缺失则回退 DEFAULT_JOB_TIMEOUT_S。分钟K长任务在 create 时存了更大阈值,
         不被普通任务的 1200s 误杀。
         """
+        # 孤儿复查先跑: 磁盘上「所有者已死」的记录不归本进程 _active_id 管,
+        # 但下一次点击/轮询就该看到它结束, 否则前端一直 0%。
+        self._recheck_deferred_orphans()
         with self._lock:
             jid = self._active_id
             if not jid:
@@ -639,7 +720,18 @@ class JobStore:
         # 先置 cancel flag 再标失败: fail() 弹出记录后,僵尸线程的 progress()
         # 依赖 flag(而非记录)感知取消。
         request_cancel(job_id)
-        self.fail(job_id, message)
+        with self._lock:
+            in_memory = job_id in self._active_jobs
+        if in_memory:
+            self.fail(job_id, message)
+        else:
+            # 磁盘孤儿(上个进程遗留, 本进程内存里没有): 旧实现走 fail() 直接
+            # return, 于是前端「运行中 0%」点多少次停止都没反应, 只能重启进程。
+            # 记录不在内存也必须能写终态 —— 这是用户唯一的自救入口。
+            j = self._read_file(job_id)
+            if j and j.get("status") in ("pending", "running"):
+                self._mark_orphan_failed(j, datetime.now(UTC), message)
+                self._deferred_orphans.pop(job_id, None)
         # 强制释放重任务槽(按所有权): 卡死线程可能永远回不来释放。
         # job 已标记 failed 且已请求终止; 僵尸线程即使后续短暂写盘,
         # 也会在下一个分块回调处自行退出, 下次拉取会覆盖, 安全。
@@ -651,6 +743,33 @@ class JobStore:
         release_publications(self._store_dir.parent, job_id)
         # 其余「任务持有、只在 finally 释放」的资源（行情暂停、手册链子进程）。
         _run_terminate_hooks(job_id)
+
+    def shutdown(self, reason: str = "服务重启,任务中断") -> list[str]:
+        """进程退出前主动结转: 本实例的活跃任务全部标中断, 并删除自己的租约。
+
+        走得到这里的退出(SIGTERM / 容器重建 / uvicorn reload)不该把「判定孤儿」
+        留给下一个进程 —— 那一刻旧租约还没过 TTL, 新进程会判活并留成幽灵(本次
+        卡死即此路径)。这里自己认账: 记录立刻变 failed, 前端下一次轮询就看到
+        可读原因, 用户不会看到永远停着的 0%。
+        SIGKILL / OOM 走不到这里, 由 ``_recheck_deferred_orphans`` 的 TTL 兜底。
+
+        不做 terminate() 的那套资源收回: 进程随即消失, 内存态(行情暂停等)随之
+        释放; 而 hooks 里的子进程清理/读盘会拖慢退出, 容器 stop 超时即 SIGKILL,
+        反而丢掉这几条终态写入。
+        """
+        with self._lock:
+            ids = [
+                jid for jid, j in self._active_jobs.items()
+                if j.get("status") in ("pending", "running")
+            ]
+        for jid in ids:
+            request_cancel(jid)
+            self.fail(jid, reason)
+        if ids:
+            logger.warning("job_store: 退出前结转 %d 个进行中的任务: %s",
+                           len(ids), ", ".join(ids))
+        self._stop_heartbeat()
+        return ids
 
     def clear(self, keep: str | None = None) -> None:
         """清空任务历史（内存 + 磁盘文件 + 取消标志）。
@@ -690,6 +809,10 @@ def _summary(j: dict[str, Any]) -> dict[str, Any]:
         "started_at": j["started_at"],
         "finished_at": j["finished_at"],
         "duration_s": j["duration_s"],
+        # 停滞提示要用: 列表页据此显示「已 N 分钟无进度」, 否则排队/卡死
+        # 在只有百分比时无法区分。
+        "last_progress_at": j.get("last_progress_at"),
+        "timeout_s": j.get("timeout_s"),
         "result": j["result"],
         "error": j["error"],
     }
@@ -740,10 +863,38 @@ class _LazyJobStore:
             raise AttributeError(name)
         return getattr(self._instance(), name)
 
+    def shutdown_if_active(self, reason: str = "服务重启,任务中断") -> list[str]:
+        """退出钩子专用: 只在 store 已经建起来时才结转。
+
+        走 ``__getattr__`` 会实例化 store, 而实例化会触发 ``_reap_orphans`` ——
+        「启动失败后立刻退出」这种场景不该在 finally 里制造一次磁盘写入。
+        """
+        store = self._store
+        if store is None:
+            return []
+        return store.shutdown(reason)
+
 
 job_store = _LazyJobStore()
 
 _Result = TypeVar("_Result")
+
+
+def _queue_message(limiter: Any) -> str:
+    """排队中的可读提示: 究竟在等谁。
+
+    「等待其他计算任务完成…」本身对用户是黑箱 —— 他看到的只有 0% 和一个
+    「停止」按钮, 分不清「在排队」和「卡死了」。把当前持有者的名字写进去,
+    至少能回答「要不要等」。持有者名为空(如外部脚本抢占)时不加后缀,
+    避免出现空括号。
+    """
+    try:
+        holders = limiter.holders
+    except Exception:  # noqa: BLE001 —— 诊断信息不许影响排队本身
+        holders = []
+    if not holders:
+        return "等待其他计算任务完成…"
+    return f"等待其他计算任务完成…（占用中：{'、'.join(holders)}）"
 
 
 def run_with_capacity(job_id: str, fn: Callable[[], _Result]) -> _Result:
@@ -759,7 +910,7 @@ def run_with_capacity(job_id: str, fn: Callable[[], _Result]) -> _Result:
         shared_heavy_job_limiter,
     )
 
-    job_store.progress(job_id, "init", 0, "等待其他计算任务完成…")
+    job_store.progress(job_id, "init", 0, _queue_message(shared_heavy_job_limiter))
     with _CANCEL_FLAGS_LOCK:
         cancel_event = _CANCEL_FLAGS.get(job_id)
     wait_s: float = DEFAULT_JOB_TIMEOUT_S

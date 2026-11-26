@@ -261,6 +261,13 @@ def test_api_jobs_wait_before_computing(
     monkeypatch.setattr(pipeline, "job_store", store)
     monkeypatch.setattr("app.tickflow.pools.get_pool", lambda *args: [])
     monkeypatch.setattr(daily_pipeline, "_refresh_single_view", lambda *args: None)
+    # extend_history 门控会真实探测除权因子数据源(注释明说「不看 capability 声明,
+    # 实测调用一次」), 无 Pro key 的环境返回 409, 与「排队/容量」无关。mock 成可用。
+    import app.services.extend_history as _extend_history
+    monkeypatch.setattr(
+        _extend_history, "check_adj_factor_source",
+        lambda capset, probe_symbol="000001.SZ": (True, ""),
+    )
     app = FastAPI()
     app.include_router(pipeline.router)
     app.include_router(kline.router)

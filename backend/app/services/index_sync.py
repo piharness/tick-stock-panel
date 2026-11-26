@@ -74,16 +74,26 @@ def _quotes_to_index_instruments(resp) -> pl.DataFrame:
     return result.unique(subset=["symbol"], keep="last").sort("symbol")
 
 
-def _fetch_instruments_by_type(instrument_type: str, asset_type_label: str) -> pl.DataFrame:
+def _fetch_instruments_by_type(
+    instrument_type: str,
+    asset_type_label: str,
+    on_progress: Callable[[str], None] | None = None,
+) -> pl.DataFrame:
     """用免费的 exchanges.get_instruments 拉取指定类型的标的列表。
 
     None/Free 档均可使用(标的信息查询免费开放)。
     instrument_type: 'index' / 'etf'
     asset_type_label: 写入 instruments 表的 asset_type 标记('index' / 'etf')
+
+    on_progress: 逐交易所回报。免费接口的 instruments 端点会「响应头 200、body
+    挂住」——SDK 内部 timeout=30s × max_retries=3 才报错, 单交易所可静默 2 分钟,
+    三家叠加就足够让页面停在 88% 上, 与真卡死无法区分。
     """
     tf = get_client()
     rows: list[dict] = []
-    for ex in _EXCHANGES:
+    for idx, ex in enumerate(_EXCHANGES, start=1):
+        if on_progress is not None:
+            on_progress(f"{asset_type_label} 维表 {ex}（{idx}/{len(_EXCHANGES)}）…")
         try:
             items = tf.exchanges.get_instruments(ex, instrument_type=instrument_type)
             for it in items or []:
@@ -97,6 +107,9 @@ def _fetch_instruments_by_type(instrument_type: str, asset_type_label: str) -> p
                 })
         except Exception as e:  # noqa: BLE001
             logger.warning("get_instruments(%s, type=%s) failed: %s", ex, instrument_type, e)
+            if on_progress is not None:
+                # 失败比沉默更需要解释: 用户看到的「不动」往往就是这次超时。
+                on_progress(f"{asset_type_label} 维表 {ex} 超时/失败，继续下一家…")
 
     if not rows:
         return pl.DataFrame()
@@ -116,22 +129,25 @@ def sync_index_instruments(
     repo: KlineRepository,
     pull_index: bool = True,
     pull_etf: bool = True,
+    on_progress: Callable[[str], None] | None = None,
 ) -> int:
     """同步指数 / ETF 标的维表,返回标的总数。
 
     新版物理分开保存: 指数写 instruments_index, ETF 写 instruments_etf。
     读取层仍兼容旧版 instruments_index 中 asset_type='etf' 的历史数据。
+
+    on_progress: 可选的逐交易所/逐子步骤进度文案(见 _fetch_instruments_by_type)。
     """
     index_parts: list[pl.DataFrame] = []
     etf_parts: list[pl.DataFrame] = []
 
     # 1) 免费通道:按开关分别拉 index / etf
     if pull_index:
-        index_df = _fetch_instruments_by_type("index", "index")
+        index_df = _fetch_instruments_by_type("index", "index", on_progress=on_progress)
         if not index_df.is_empty():
             index_parts.append(index_df)
     if pull_etf:
-        etf_df = _fetch_instruments_by_type("etf", "etf")
+        etf_df = _fetch_instruments_by_type("etf", "etf", on_progress=on_progress)
         if not etf_df.is_empty():
             etf_parts.append(etf_df)
 

@@ -13,7 +13,27 @@ from types import SimpleNamespace
 import pytest
 
 from app.api import data as data_api
-from app.services.pipeline_jobs import job_store
+from app.services import pipeline_jobs
+from app.services.pipeline_jobs import JobStore
+
+
+@pytest.fixture(autouse=True)
+def _isolate_job_store(tmp_path, monkeypatch):
+    """把 job_store 隔离到临时目录。
+
+    这些测试打桩 ``job_store.active_id/get``。若打桩的是 ``_LazyJobStore``,
+    monkeypatch 保存原属性时的 ``getattr`` 会触发惰性实例化到真实
+    ``settings.data_dir/job_store``, 扫到 running 任务就补录写盘, 触发沙箱
+    bulk-guard 的 ``SystemExit(1)``。换成 tmp 下的真实 store, 打桩安全且不碰生产数据。
+
+    注意两个入口都要换: ``_data_pipeline_busy`` 用模块级 ``data_api.job_store``,
+    而 ``status`` 链上的 ``_last_finished`` 用函数内
+    ``from app.services.pipeline_jobs import job_store``(读模块属性)。
+    """
+    store = JobStore(store_dir=tmp_path / "job_store")
+    monkeypatch.setattr(data_api, "job_store", store)
+    monkeypatch.setattr(pipeline_jobs, "job_store", store)
+    yield
 
 
 @pytest.fixture()
@@ -99,13 +119,13 @@ def test_busy_when_indicators_warming(clean_caches):
 
 
 def test_busy_follows_active_job(monkeypatch, clean_caches):
-    monkeypatch.setattr(job_store, "active_id", lambda: None)
+    monkeypatch.setattr(data_api.job_store, "active_id", lambda: None)
     assert data_api._data_pipeline_busy(_req()) is False
-    monkeypatch.setattr(job_store, "active_id", lambda: "abc123")
-    monkeypatch.setattr(job_store, "get", lambda jid: {"status": "running"})
+    monkeypatch.setattr(data_api.job_store, "active_id", lambda: "abc123")
+    monkeypatch.setattr(data_api.job_store, "get", lambda jid: {"status": "running"})
     assert data_api._data_pipeline_busy(_req()) is True
     # 终态任务不算 busy (防僵尸 active_id 把 /status 永久钉死在缓存)
-    monkeypatch.setattr(job_store, "get", lambda jid: {"status": "succeeded"})
+    monkeypatch.setattr(data_api.job_store, "get", lambda jid: {"status": "succeeded"})
     assert data_api._data_pipeline_busy(_req()) is False
 
 
@@ -140,8 +160,8 @@ def test_status_marks_cold_stats_pending_until_job_finishes(
     req = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
         repo=repo, scheduler=None, indicators_ready=True,
     )))
-    monkeypatch.setattr(job_store, "active_id", lambda: "repair-job")
-    monkeypatch.setattr(job_store, "get", lambda jid: {"status": job_status})
+    monkeypatch.setattr(data_api.job_store, "active_id", lambda: "repair-job")
+    monkeypatch.setattr(data_api.job_store, "get", lambda jid: {"status": job_status})
     calls = []
 
     def aggregate():
@@ -156,7 +176,7 @@ def test_status_marks_cold_stats_pending_until_job_finishes(
     assert busy["daily"] is None and busy["enriched"] is None
     assert calls == []
 
-    monkeypatch.setattr(job_store, "get", lambda jid: {"status": "succeeded"})
+    monkeypatch.setattr(data_api.job_store, "get", lambda jid: {"status": "succeeded"})
     ready = data_api.status(req)
     assert ready["stats_pending"] is False
     assert ready["daily"]["trading_days"] == 240

@@ -15,6 +15,23 @@ from app.enriched_generation import (
     EnrichedGenerationUnavailableError,
     get_enriched_generation,
 )
+from app.services import pipeline_jobs
+from app.services.pipeline_jobs import JobStore
+
+
+@pytest.fixture(autouse=True)
+def _isolate_job_store(tmp_path, monkeypatch):
+    """把 job_store 隔离到临时目录。
+
+    `_stub_clear_side_effects` 与 `_clear_data_impl` 都是函数内
+    ``from app.services.pipeline_jobs import job_store``, 打桩 ``job_store.clear``
+    会触发 ``_LazyJobStore`` 惰性实例化到真实目录, 扫到 running 任务就补录写盘,
+    触发沙箱 bulk-guard 的 ``SystemExit(1)``。这里换成 tmp 下的真实 store。
+    """
+    monkeypatch.setattr(
+        pipeline_jobs, "job_store", JobStore(store_dir=tmp_path / "job_store")
+    )
+    yield
 
 
 class _RepoStub:

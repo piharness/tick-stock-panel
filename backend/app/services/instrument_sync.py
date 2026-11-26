@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -79,10 +80,17 @@ def _fetch_instruments_via_provider() -> list[dict] | None:
     return rows
 
 
-def sync_instruments(data_dir: Path) -> int:
+def sync_instruments(
+    data_dir: Path,
+    on_progress: Callable[[str], None] | None = None,
+) -> int:
     """全量同步标的维表 → data/instruments/instruments.parquet。
 
     返回写入的行数。
+
+    on_progress: 可选的逐交易所进度回调(只传一句人读文案)。全市场维表同步在
+    进度条上只占 2%→8%, 而三家交易所各要 30-40s —— 没有这条链路时, 页面会
+    在外观上「卡在 2%」两三分钟, 和真卡死无法区分。
 
     ## 为什么必须逐交易所补齐 (2026-11-13)
 
@@ -109,7 +117,11 @@ def sync_instruments(data_dir: Path) -> int:
         # 免费接口的限价来自历史行情，不能盖上同步日期当作当日权威价。
         current_limits = tf_client.current_mode() == "api_key"
         all_rows = []
-        for ex in _EXCHANGES:
+        for idx, ex in enumerate(_EXCHANGES, start=1):
+            # 单个交易所实测可占 30-40s(响应头已 200, 慢在 body 解析), 三家的
+            # 沉默加起来足够让页面停在 2% 三分钟。逐交易所回报, 用户能看出在动。
+            if on_progress is not None:
+                on_progress(f"个股维表 {ex}（{idx}/{len(_EXCHANGES)}）…")
             rows = _fetch_exchange_rows(tf, ex, current_limits=current_limits)
             if rows is None:
                 failed.append(ex)

@@ -14,6 +14,25 @@ from fastapi.testclient import TestClient
 
 from app.api import maintenance as api
 from app.services import maintenance as svc
+from app.services import pipeline_jobs
+from app.services.pipeline_jobs import JobStore
+
+
+@pytest.fixture(autouse=True)
+def _isolate_job_store(tmp_path: Path, monkeypatch):
+    """把 job_store 隔离到临时目录，杜绝触碰真实 data/job_store。
+
+    这里的测试多用 ``monkeypatch.setattr(svc.job_store, ...)`` 或
+    ``pipeline_jobs.job_store`` 打桩。monkeypatch 保存原属性时要先 ``getattr``，
+    而 ``_LazyJobStore`` 会因此惰性实例化到 ``settings.data_dir/job_store``
+    （真实数据目录）；实例化的 ``_reap_orphans`` 一旦扫到 running 任务文件就会
+    补录写盘，触发沙箱 bulk-guard 的 ``SystemExit(1)`` —— 6 条测试同时爆掉，
+    且只在生产数据更新进行中才复现。换成 tmp 下的真实 store，打桩与调用都安全。
+    """
+    store = JobStore(store_dir=tmp_path / "job_store")
+    monkeypatch.setattr(svc, "job_store", store)
+    monkeypatch.setattr(pipeline_jobs, "job_store", store)
+    yield
 
 
 def _audit(**facts) -> dict:
