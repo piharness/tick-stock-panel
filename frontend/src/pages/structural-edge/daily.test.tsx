@@ -164,7 +164,25 @@ it('接口未就绪时给命令与占位数字，不空白也不报错', async (
   const text = el.textContent ?? ''
   expect(text).toContain('还没有盘后扫描结果')
   expect(text).toContain('python analysis/etf_watch.py')
+  // 空态必须顺手说清「不要回测」——否则读者会用回测去填这 3 个坑
+  expect(text).toContain('不要回测')
   expect(text).toContain('账户指令')
+})
+
+// 这两条从 StructuralEdge.test.tsx 搬来（2026-11-27）：拆页后判定表与账本口径归雷达，
+// 那边只剩快照，断言跟着组件走，否则守的是一个已经不渲染这些东西的页面。
+it('判定表把被拦的理由原样带出，而不是只留一个状态标签', async () => {
+  const el = await render()
+  const text = el.textContent ?? ''
+  expect(text).toContain('未到位置')
+  expect(text).toContain('理由')
+})
+
+it('账本口径写明「数簇不数行」，折叠收起时也在 DOM 里', async () => {
+  const el = await render()
+  const text = el.textContent ?? ''
+  expect(text).toContain('数簇不数行')
+  expect(text).toContain('同月多行业记为 1 簇')
 })
 
 it('有数据时：日期 + 判定数 + 候选卡 + 三项微指标', async () => {

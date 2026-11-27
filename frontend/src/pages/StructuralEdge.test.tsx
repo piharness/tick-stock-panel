@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
-// 结构优势页的「盘后扫描」活数据区 —— 只测两件事：
-// 1. 读到 API 时把判定/理由/V1 进度如实渲染（不内联数字，数字只能来自 payload）；
-// 2. 没跑过扫描时给可执行的下一步（命令行 + 「不要回测」的边界），而不是空白或报错页。
+// 图书馆（/library）的活读数区 —— 只测两件事：
+// 1. 读到 API 时，页头快照日与证据章的当日广度如实渲染，且数字只来自 payload；
+// 2. 没跑过扫描时降级成「—」＋可执行的下一步（命令行），不空白也不报错。
+//
+// 2026-11-24 手册拆页后，「盘后扫描」的判定表 / 理由 / V1 进度 / 数簇不数行
+// 连同空态命令行一起搬到了机会雷达（Daily.tsx）。那部分断言由 daily.test.tsx 守；
+// 本文件只守图书馆仍然承担的那一半 —— 快照。两边都不留空档，也不重复守同一件事。
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -108,27 +112,29 @@ async function render() {
   return host.textContent ?? ''
 }
 
-it('读到扫描结果时渲染判定、理由与按簇计数的 V1 进度', async () => {
+it('读到扫描结果时：页头快照日与证据章的当日广度都来自 payload', async () => {
   const text = await render()
-  expect(text).toContain('盘后扫描')
-  expect(text).toContain('下行·低波')
+  // 页头「最近更新」：数据日 + 快照来源，不是今天
+  expect(text).toContain('最近更新')
+  expect(text).toContain('扫描快照')
   expect(text).toContain('2026-11-20')
-  // 区间内 / 高波信号 / 四条全过 —— 6 个行业信号只等于 1 簇
-  expect(text).toContain('0/3')
-  expect(text).toContain('1 簇 / 6 个行业信号')
-  expect(text).toContain('科创半导体ETF华夏')
-  expect(text).toContain('四条全过')
-  expect(text).toContain('F6 成交额 3555 万')
-  // 口径提示必须和数字一起出现
-  expect(text).toContain('数簇不数行')
+  // 证据章「当日读数」：区间内 8 / 四条全过 6 / 记 1 个事件簇 —— 三个数只能来自 payload
+  expect(text).toContain('区间内 8 个行业')
+  expect(text).toContain('四条全过 6 个')
+  expect(text).toContain('记 1 个事件簇')
+  // 历史分档仍在（它不随当日变化，不能因为活读数来了就被顶掉）
+  expect(text).toContain('历史分档')
 })
 
-it('没跑过扫描时给出命令行，并明确「不要回测」', async () => {
+it('没跑过扫描时：图书馆降级成「—」与命令行，且不把 payload 的数字写进页面', async () => {
   fake.fail = true
   const text = await render()
-  expect(text).toContain('还没有盘后扫描结果')
+  expect(text).toContain('扫描快照')
+  expect(text).toContain('当日读数未就绪')
   expect(text).toContain('analysis/etf_watch.py')
-  expect(text).toContain('不要回测')
+  // 负控：接口挂了还能读到 8 / 6 这类数，只可能是内联在页面里 —— 那是这一类 bug 的起点
+  expect(text).not.toContain('区间内 8 个行业')
+  expect(text).not.toContain('四条全过 6 个')
 })
 
 // 成本核算节：三件事必须同时在场——硬账、二手信息五类、以及唯一跨规模稳定的那个维度。
