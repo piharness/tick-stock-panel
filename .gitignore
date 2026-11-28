@@ -165,6 +165,8 @@ frontend/dist.bak.*/
 # 研究报告目录：HTML 图表页由 `analysis/_gen_*_report.py` 生成、随时可重出；
 # 手写的 .md 仍随仓库走 —— 那是文档，不是生成物。
 reports/*.html
+# 页面验收用的一次性截图（/chip 等页面随时可重出）；curated 截图放 assets/，或 git add -f。
+screenshots/chip-*.png
 # 一次性研究的中间缓存（研究面板 / 可转债清单）：脚本可重拉，结论已落在
 # `_*_result.json`。只挡这三个具名路径，不用 `analysis/*.parquet` 通配。
 analysis/_cache_*.parquet
