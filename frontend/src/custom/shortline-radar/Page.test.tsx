@@ -474,35 +474,42 @@ it('情绪：先报近 120 日分位，再报晋级率绝对值', async () => {
   expect(t.indexOf('分位')).toBeLessThan(t.indexOf('晋级率'))
 })
 
-// ===== 跨年妖候选池：实时计算，替换旧「锁仓 + 上方无抛压」=====
+// ===== 跨年妖温度计：实时计算，替换旧「锁仓 + 上方无抛压」=====
 //
 // 8 画像 → 4 门槛 + 1 排序 + 1 徽标，后端 focus.cross_year 实时筛出，分两梯队（位置干净 / 位置偏高）。
 // 测试锁住：块存在、两梯队分组、情绪温度读数、记忆点标记、切标签后不再出现。
 
-it('跨年妖候选池：分两梯队、带情绪温度与记忆点标记', async () => {
+it('跨年妖温度计：两梯队、前向负读数、第二梯队默认收起', async () => {
   const el = await render()
-  expect(el.textContent).toContain('跨年妖候选池')
+  expect(el.textContent).toContain('跨年妖温度计')
   expect(el.textContent).toContain('8 画像 → 4 门槛 + 1 排序 + 1 徽标')
   expect(el.textContent).toContain('第一梯队 · 位置干净')
   expect(el.textContent).toContain('第二梯队 · 位置偏高')
   // 情绪温度计：全市场正在炒的票数 + 候选数合并成完整温度读数
   expect(el.textContent).toContain('市场温度')
-  // 关键候选（第一梯队 + 第二梯队）
+  // 关键候选：第一梯队可见；第二梯队默认收起（历史强负，先藏起来）
   expect(el.textContent).toContain('长虹美菱')
   expect(el.textContent).toContain('金新农')
+  expect(el.textContent).not.toContain('好当家')
+  const tier2 = Array.from(el.querySelectorAll('button')).find(b => b.textContent?.includes('第二梯队'))
+  await click(tier2 ?? null)
   expect(el.textContent).toContain('好当家')
   // 三类条件不能混读：门槛 / 排序 / 徽标
   expect(el.textContent).toContain('门槛 · 启动价低')
   expect(el.textContent).toContain('排序 · 位置干净')
   expect(el.textContent).toContain('徽标 · 名字记忆点')
-  // 负向说明：候选池不是买入名单
-  expect(el.textContent).toContain('候选池不是买入名单')
+  // 前向检验：第一梯队 −33.3bp、第二梯队 −320.6bp、同门槛未启动 +66.5bp
+  expect(el.textContent).toContain('−33.3bp')
+  expect(el.textContent).toContain('−320.6bp')
+  expect(el.textContent).toContain('同门槛「未启动」对照')
+  expect(el.textContent).toContain('温度计，不是候选名单')
+  expect(el.textContent).toContain('net_gain top15 更差')
 })
 
-it('跨年妖候选池：切到标签页后不再出现（与观察池同一屏规则）', async () => {
+it('跨年妖温度计：切到标签页后不再出现（与观察池同一屏规则）', async () => {
   const el = await render()
-  expect(el.textContent).toContain('跨年妖候选池')
+  expect(el.textContent).toContain('跨年妖温度计')
   await switchTo(el, 'bluechip')
-  expect(el.textContent).not.toContain('跨年妖候选池')
+  expect(el.textContent).not.toContain('跨年妖温度计')
 })
 

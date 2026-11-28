@@ -49,7 +49,7 @@ import {
   type ShortlineRadarTagSummary,
   type SortAudit,
 } from '@/lib/api'
-import { CROSS_YEAR_SCREEN } from './crossYearCandidates'
+import { CROSS_YEAR_SCREEN, CROSS_YEAR_STATS } from './crossYearCandidates'
 import { QK } from '@/lib/queryKeys'
 import { cn } from '@/lib/cn'
 import { fmtBigNum } from '@/lib/format'
@@ -655,6 +655,10 @@ function FocusBand({
   )
 }
 
+/** 前向读数的符号格式：统一用 Unicode 负号，避免和连字符混读。 */
+const sbp = (v: number) => `${v > 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}bp`
+const st = (v: number) => `${v > 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}`
+
 /**
  * 跨年妖候选池 —— 观察池之外的另一块，独立口径，实时计算（数据来自后端 focus.cross_year）。
  *
@@ -675,9 +679,12 @@ function CrossYearCandidates({
   onOpenStock: (s: string) => void
   onOpenMethod: () => void
 }) {
-  const [showTier2, setShowTier2] = useState(true)
+  const [showTier2, setShowTier2] = useState(false)
+  const [showAllTier1, setShowAllTier1] = useState(false)
   if (!watch) return null
   const { tier1, tier2, budget, criteria } = watch
+  const TIER1_PREVIEW = 12
+  const shownTier1 = showAllTier1 ? tier1 : tier1.slice(0, TIER1_PREVIEW)
 
   // 情绪温度：候选数 / 全市场正在炒数 = 跨年妖候选在当前热度里的密度。
   const density = hotCount > 0 ? budget.candidates / hotCount : 0
@@ -687,7 +694,7 @@ function CrossYearCandidates({
       {/* 头部：标题 + 情绪温度计 */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 pb-1.5 pt-2.5">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <h2 className="text-[13px] font-medium text-foreground">跨年妖候选池</h2>
+          <h2 className="text-[13px] font-medium text-foreground">跨年妖温度计</h2>
           <span className="text-[10px] text-muted">
             8 画像 → 4 门槛 + 1 排序 + 1 徽标 · 实时计算
           </span>
@@ -697,8 +704,8 @@ function CrossYearCandidates({
             市场温度 <b className="text-foreground/80">{hotCount.toLocaleString()}</b> 只正在炒
           </span>
           <span className="text-muted/40">·</span>
-          <span title={`候选占正在炒的比例 ${(density * 100).toFixed(1)}%`}>
-            候选 <b className="text-foreground/80">{budget.candidates}</b> 只
+          <span title={`形态命中占正在炒的比例 ${(density * 100).toFixed(1)}%`}>
+            命中 <b className="text-foreground/80">{budget.candidates}</b> 只
           </span>
         </span>
       </div>
@@ -718,17 +725,34 @@ function CrossYearCandidates({
         ))}
       </div>
 
+      {/* 前向检验：候选池整体为负，同门槛未启动为正 */}
+      <div className="mx-4 mb-1.5 rounded-btn border border-red-500/25 bg-red-500/[0.05] px-2.5 py-1.5 text-[10px] leading-relaxed text-red-700/90 dark:text-red-400/90">
+        历史读数（{CROSS_YEAR_STATS.window}，{CROSS_YEAR_STATS.months} 月）：
+        全池 <b>{sbp(CROSS_YEAR_STATS.all.ex20)}</b>/20日（t {st(CROSS_YEAR_STATS.all.t20)}）·
+        同门槛「未启动」对照 <b>{sbp(CROSS_YEAR_STATS.ctrl.ex20)}</b>（t {st(CROSS_YEAR_STATS.ctrl.t20)}）。
+        <b>「已启动」跑输「未启动」；这是温度计，不是候选名单。</b>
+      </div>
+
       {/* 第一梯队：位置干净 */}
       <div className="border-t border-purple-500/10">
         <div className="flex items-baseline gap-2 px-4 pb-1 pt-2">
           <span className="text-[11px] font-medium text-foreground">第一梯队 · 位置干净</span>
           <span className="text-[9.5px] text-muted/70">
-            60 日涨幅 &lt; {Math.round(criteria.ret60_clean * 100)}%，最近才启动 · {tier1.length} 只
+            60 日涨幅 &lt; {Math.round(criteria.ret60_clean * 100)}%，最近才启动 · {tier1.length} 只 ·
+            历史 {sbp(CROSS_YEAR_STATS.tier1.ex20)}/20日
           </span>
         </div>
         <div className="grid grid-cols-2 gap-1.5 px-2.5 pb-2 sm:grid-cols-3 lg:grid-cols-4">
-          {tier1.map(c => <CandidateCard key={c.symbol} c={c} onOpen={onOpenStock} />)}
+          {shownTier1.map(c => <CandidateCard key={c.symbol} c={c} onOpen={onOpenStock} />)}
         </div>
+        {tier1.length > TIER1_PREVIEW && (
+          <div className="px-2.5 pb-2">
+            <button type="button" onClick={() => setShowAllTier1(v => !v)}
+              className="w-full rounded-btn border border-purple-500/20 bg-purple-500/[0.03] px-2 py-1 text-[10px] text-muted hover:text-foreground">
+              {showAllTier1 ? `收起，只看前 ${TIER1_PREVIEW} 只` : `展开全部 ${tier1.length} 只（按 net_gain 排序，只用于浏览）`}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 第二梯队：位置偏高，默认收起 */}
@@ -740,7 +764,10 @@ function CrossYearCandidates({
           className="flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors hover:bg-purple-500/[0.03]"
         >
           <span className="text-[11px] font-medium text-foreground">第二梯队 · 位置偏高</span>
-          <span className="text-[9.5px] text-muted/70">60 日已涨过一轮，风险已显性化 · {tier2.length} 只</span>
+          <span className="text-[9.5px] text-muted/70">
+            默认收起 · 60 日已涨过一轮 · {tier2.length} 只 ·
+            历史 {sbp(CROSS_YEAR_STATS.tier2.ex20)}/20日（t {st(CROSS_YEAR_STATS.tier2.t20)}）
+          </span>
           <ChevronDown className={cn('ml-auto h-3 w-3 shrink-0 text-muted/60 transition-transform', showTier2 && 'rotate-180')} />
         </button>
         {showTier2 && (
@@ -753,8 +780,9 @@ function CrossYearCandidates({
       {/* 底部：诚实说明 */}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-purple-500/10 px-4 py-1.5 text-[9px] leading-relaxed text-muted/70">
         <span>
-          候选池不是买入名单：项目 20 年全样本里，首板后开盘买入 20 日超额中位 −1.85%（t −15.94），
-          见顶确认时买入 −26.9%。这是情绪温度计，不是选股筛子。
+          温度计，不是候选名单：net_gain top15 更差 {sbp(CROSS_YEAR_STATS.top15.ex20)}/20日
+          （t {st(CROSS_YEAR_STATS.top15.t20)}）；项目 20 年全样本里，
+          首板后开盘买入 20 日超额中位 −1.85%（t −15.94）。
         </span>
         <button type="button" onClick={onOpenMethod}
           className="text-accent underline underline-offset-2 hover:text-foreground">
