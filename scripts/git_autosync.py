@@ -604,6 +604,8 @@ def sync(
         previous = _state(repo)
         if previous.get("sig") == signature and time.time() - float(previous.get("ts", 0)) < 600:
             outcome.state = "deduped"
+            # 也记一笔：否则"钩子到底跑没跑"在日志里查不到，成了一次静默的绿灯。
+            _log(repo, {"mode": "sync", "state": "deduped"})
             return outcome
 
     if reasons:
