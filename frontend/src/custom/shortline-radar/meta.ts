@@ -10,4 +10,4 @@
 export const SHORTLINE_RADAR_PAGE_TITLE = '短线雷达'
 
 /** 页内副标题的固定部分；日期由页面拼在后面。 */
-export const SHORTLINE_RADAR_PAGE_SUBTITLE = '今天谁在动 · 博弈角色与流动性'
+export const SHORTLINE_RADAR_PAGE_SUBTITLE = '明日买什么 · 今天谁在动'

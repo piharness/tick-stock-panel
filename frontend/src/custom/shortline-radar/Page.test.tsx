@@ -20,7 +20,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { api, type ShortlineRadarData, type ShortlineRadarRow } from '@/lib/api'
+import { api, type DecisionLuCandidates, type ShortlineRadarData, type ShortlineRadarRow } from '@/lib/api'
 
 const { ShortlineRadar } = await import('./Page')
 
@@ -129,10 +129,38 @@ let host: HTMLDivElement
 let root: Root
 let client: QueryClient
 
+/**
+ * 明日买点：与 /decisions 的「砸盘反转」面板同一个接口（`/api/decision/lu-rebound/candidates`）。
+ * 夹具只放页面真正读的字段 —— 页面不重算信号，只读 rows/status/entry_date/warnings。
+ */
+const luFixture: DecisionLuCandidates = {
+  as_of: '2026-11-20',
+  entry_date: '2026-11-23',
+  strategy_id: 'lu_t1_crash_rebound',
+  status: 'ready',
+  drop_threshold: 0.05,
+  top_n: 40,
+  n_rows: 2,
+  truncated: 0,
+  rows: [
+    {
+      symbol: '000530.SZ', name: '冰山冷热', rank: 1, limit_price: 16.99, limit_up_price: 17,
+      prev_close_raw: 15.45, drop_pct: -8.472, lu_date: '2026-11-19', limit_pct: 0.1, day_amount_yi: 43.697,
+    },
+    {
+      symbol: '600229.SH', name: '城市传媒', rank: 2, limit_price: 6.63, limit_up_price: 6.64,
+      prev_close_raw: 6.04, drop_pct: -7.786, lu_date: '2026-11-19', limit_pct: 0.1, day_amount_yi: 5.32,
+    },
+  ],
+  caliber: {},
+  warnings: [],
+}
+
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.spyOn(api, 'shortlineRadar').mockResolvedValue(fixture)
   vi.spyOn(api, 'watchlistList').mockResolvedValue({ symbols: [] })
+  vi.spyOn(api, 'decisionLuCandidates').mockResolvedValue(luFixture)
   host = document.createElement('div')
   document.body.appendChild(host)
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
@@ -156,7 +184,10 @@ async function render(path = '/shortline-radar') {
       </QueryClientProvider>,
     )
   })
+  // 买点查询依赖雷达返回的 as_of（非交易日会被雷达回溯），所以它是第二跳。
+  // 两次 act 让 React 先把第一跳的结果刷进 DOM，再给第二跳留出调度时间。
   await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+  await act(async () => { await new Promise(r => setTimeout(r, 40)) })
   return host
 }
 
@@ -196,8 +227,9 @@ it('默认停在「全市场」：五个标签页带计数，状态条 / 观察�
   expect(tab(el, 'whitehorse').textContent).toContain('1')
 
   expect(el.textContent).toContain('今日观察池')
-  // 「执行窗口」不再是常驻卡片：压成一行「可执行动作只有两个」，完整规则在抽屉里
-  expect(el.textContent).toContain('可执行动作只有两个')
+  // 首屏先给唯一的买点，再给状态条与观察池；「执行窗口」仍是历史概念，不再出现
+  expect(el.textContent).toContain('明日买点')
+  expect(el.textContent).toContain('p10 −6.80%')
   expect(el.textContent).not.toContain('执行窗口')
   expect(el.textContent).toContain('机构主场')
   // 变化与风险从摘要变成入口：这两个数字旧版在页面上根本没有出口
@@ -449,11 +481,73 @@ it('席位背书：数据非当日时标披露日与滞后天数，不写「今�
   expect(el.textContent).not.toContain('今日被高声誉席位净买入')
 })
 
-it('可执行动作：今日封板名单链到连板梯队，并声明触发清单不在本页', async () => {
+// ===== 明日买点：全页唯一可执行的动作 =====
+//
+// 它读 `app/decision/lu_rebound.py` 的清单（与 /decisions 面板同一产地），页面只补代价、
+// 成本与仓位刻度。测试锁住四件事：清单渲染、0 只与「没成立」不能混读、标签页不出现、
+// 以及旧版那句「本页不提供触发清单」必须消失（事件在 T+1 收盘就已定稿）。
+
+it('明日买点：给出只数、挂单限价与代价，并声明这是唯一买点', async () => {
+  const el = await render()
+  const band = el.querySelector('[data-testid="lu-buy-point"]') as HTMLElement | null
+  expect(band).toBeTruthy()
+  const t = band!.textContent ?? ''
+  expect(t).toContain('明日买点')
+  expect(t).toContain('唯一')
+  expect(t).toContain('2')
+  expect(t).toContain('只挂单')
+  expect(t).toContain('2026-11-23 开盘')
+  expect(t).toContain('冰山冷热')
+  expect(t).toContain('16.99')
+  expect(t).toContain('−8.47%')
+  expect(t).toContain('开盘 ≤ 挂单限价才成交')
+  expect(t).toContain('p10 −6.80%')
+  expect(t).toContain('+69bp')
+  expect(t).toContain('若沿用手册六格')
+  expect(t).toContain('为什么只有这一个买点')
+})
+
+it('明日买点：0 只写成「次一交易日无买入」，不是加载失败', async () => {
+  vi.spyOn(api, 'decisionLuCandidates').mockResolvedValue({
+    ...luFixture, status: 'empty', n_rows: 0, rows: [], entry_date: '2026-11-23',
+  })
+  const el = await render()
+  const band = el.querySelector('[data-testid="lu-buy-point"]') as HTMLElement | null
+  const t = band?.textContent ?? ''
+  expect(t).toContain('次一交易日无买入')
+  expect(t).toContain('0 只是结论，不是管道没跑')
+  expect(t).not.toContain('加载失败')
+})
+
+it('明日买点：数据未收盘时给原因，不写成 0 只', async () => {
+  vi.spyOn(api, 'decisionLuCandidates').mockResolvedValue({
+    ...luFixture,
+    status: 'skipped_not_closed',
+    n_rows: 0,
+    rows: [],
+    entry_date: null,
+    reason: 'as_of=2026-11-20 不是收盘数据（盘中快照）',
+  })
+  const el = await render()
+  const t = el.querySelector('[data-testid="lu-buy-point"]')?.textContent ?? ''
+  expect(t).toContain('这份清单没有成立')
+  expect(t).toContain('不是收盘数据')
+  expect(t).not.toContain('次一交易日无买入')
+})
+
+it('明日买点只在全市场出现：标签页回到浏览模式', async () => {
+  const el = await render()
+  expect(el.querySelector('[data-testid="lu-buy-point"]')).toBeTruthy()
+  await switchTo(el, 'bluechip')
+  expect(el.querySelector('[data-testid="lu-buy-point"]')).toBeNull()
+})
+
+it('明日买点：封板卖出口链到连板梯队，不再声称触发清单不在本页', async () => {
   const el = await render()
   const link = Array.from(el.querySelectorAll('a')).find(a => a.textContent?.includes('连板梯队'))
   expect(link?.getAttribute('href')).toBe('/limit-ladder')
-  expect(el.textContent).toContain('本页不提供触发清单')
+  expect(el.textContent).toContain('今日封板 → 连板梯队（T+1 开盘卖）')
+  expect(el.textContent).not.toContain('本页不提供触发清单')
 })
 
 it('情绪：先报近 120 日分位，再报晋级率绝对值', async () => {

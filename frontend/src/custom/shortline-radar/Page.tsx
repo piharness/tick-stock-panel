@@ -1,24 +1,32 @@
 /**
- * 短线雷达 —— 一眼判断「今天该不该动手、动哪一类、按什么口径动」。
+ * 短线雷达 —— 先回答「明天买不买」，再回答「今天谁在动」。
  *
- * 定位：观察池，不是买入名单。实证（`docs/touchpoint-holding-drawdown.md`）：
- * heat 最高 1/5 的 20 日超额 −1.50%/t=−5.03（8/8 年负），按 heat 取前 15 买入是负期望。
- * 页面的价值在「今天谁在动、流动性够不够、有什么变化」，不在「买哪只」。
+ * 定位（2026-11-28 之后）：**一个买点 + 一张排除清单 + 一个观察池**。
+ * 这是筹码页的写法：结论先行、只留一个候选、其余进排除表。
+ *
+ *   买点：涨停次日砸盘反转（T 日换手板 + T+1 日内 ≤ −5% → T+2 开盘买、收盘卖）。
+ *         口径唯一产地 `app/decision/lu_rebound.py`；本页只读清单，不重算信号，
+ *         并补上账本面板没有的三件事：代价（p10）、成本（毛→净）、仓位刻度。
+ *   观察池：heat 最高 1/5 的 20 日超额 −1.50%/t=−5.03（8/8 年负），按 heat 取前 15
+ *         买入是负期望（`docs/touchpoint-holding-drawdown.md`）。所以它仍在，
+ *         但只回答「今天谁在动、流动性够不够」，不回答「买哪只」。
  *
  * 第四版的信息架构按**使用顺序**而不是研究顺序排：
  *
- *   0. 状态条  —— 今天能不能做、昨天到今天变了什么、哪些不能碰。
- *      情绪闸门 + 位次迁移 + 风险（含「ST 且今日无成交」）。原来这三类读数
- *      后端一直在算，页面只用了一个情绪行，迁移与风险完全没有出口。
+ *   0. 明日买点 —— 明天开盘做什么、按什么价、亏多少、什么时候必须走。
+ *      事件在 T+1 收盘定稿，不需要盘中盯 5%；旧版把它挡在页外是口径误读。
  *
- *   1. 观察池  —— 全市场漏斗 → 15 只候选。漏斗每一步都写「这一步筛掉多少、筛掉谁」，
+ *   1. 状态条  —— 今天能不能做、昨天到今天变了什么、哪些不能碰。
+ *      情绪闸门 + 位次迁移 + 风险（含「ST 且今日无成交」）。
+ *
+ *   2. 观察池  —— 全市场漏斗 → 15 只候选。漏斗每一步都写「这一步筛掉多少、筛掉谁」，
  *      并且**每步的分子分母同一批票**：旧版把全市场阶段计数（正在炒 763 / 退潮 508）
  *      混进「519 → 55」这一步，三项加起来比该步删掉的还多，属于跨口径相减。
  *
- *   2. 结构带 + 明细 —— 四个主场谁的地盘、各自历史读数、逐票明细。
+ *   3. 结构带 + 明细 —— 四个主场谁的地盘、各自历史读数、逐票明细。
  *      默认展开游资主场（短线的主场），不是四格全折叠。
  *
- *   3. 口径抽屉 —— 排序体检、可执行规则、定义与来源。研究依据默认收起：
+ *   4. 口径抽屉 —— 排序体检、动作对比、定义与来源。研究依据默认收起：
  *      它每天不变，不该和每天变的数字抢第一屏。
  *
  * 归属：扩展域官方页面，经 custom/shortline-radar/extension.tsx 注册路由与导航；
@@ -37,6 +45,8 @@ import {
   api,
   type CrossYearCandidate,
   type CrossYearWatch,
+  type DecisionLuCandidates,
+  type DecisionLuStatus,
   type ShortlineRadarArena,
   type ShortlineRadarArenaSummary,
   type ShortlineRadarData,
@@ -50,6 +60,7 @@ import {
   type SortAudit,
 } from '@/lib/api'
 import { CROSS_YEAR_SCREEN, CROSS_YEAR_STATS } from './crossYearCandidates'
+import { LU_EXCLUSIONS, LU_STUDY } from './luBuyPoint'
 import { QK } from '@/lib/queryKeys'
 import { cn } from '@/lib/cn'
 import { fmtBigNum } from '@/lib/format'
@@ -875,32 +886,243 @@ function SortAuditBanner({ audit, onOpen }: { audit: SortAudit | null | undefine
   )
 }
 
-/**
- * 可执行动作 —— 从一张常驻卡片压成一行。
- *
- * 它不随日期变化，属于**规则参考**而不是今天的数据；完整四行与「不要做」在口径抽屉里。
- * 留在首屏只为一件事：拦住「把观察池当买入名单」。
- * 旧版是一张 90px 的卡，占的是每天都不变的信息，却和当日读数抢同一屏。
- */
-function ActionLine({ onOpenMethod }: { onOpenMethod: () => void }) {
+/** 接口状态的文案。`ready` 是唯一「可以照着挂单」的状态，其余三种是「为什么今天没有清单」。 */
+const LU_STATUS_LABEL: Record<DecisionLuStatus, { label: string; tone: string }> = {
+  ready: { label: '清单就绪', tone: 'bg-accent/10 text-accent' },
+  empty: { label: '当日 0 只', tone: 'bg-elevated text-muted' },
+  skipped_not_closed: { label: '数据未收盘', tone: 'bg-amber-500/10 text-amber-700' },
+  skipped_no_data: { label: '无行情分区', tone: 'bg-red-500/10 text-red-600' },
+}
+
+/** 买点卡里的一格读数。与观察池的 FunnelStep 不同：这里只报「这笔交易的规格」。 */
+function Metric({ k, v, hint }: { k: string; v: string; hint?: string }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-card border border-border/70 bg-surface/30 px-4 py-1.5 text-[10.5px] leading-relaxed text-muted">
-      <span className="text-[10.5px] font-medium text-foreground">可执行动作只有两个</span>
-      <span>
-        全市场换手板口径，不是本页观察池：T 日封板 → T+1 开盘卖{' '}
-        <b className="text-foreground/85">+1.45%</b>；T+1 日内跌 &gt;5% → T+2 开盘买、收盘卖{' '}
-        <b className="text-foreground/85">+0.836%</b>
-      </span>
-      <Link to="/limit-ladder" className="text-accent underline underline-offset-2 hover:text-foreground">
-        今日封板名单 → 连板梯队
-      </Link>
-      <span className="text-[10px] text-muted/60">T+1 跌 5% 需盘中盯，本页不提供触发清单</span>
-      <span className="hidden text-amber-700/90 dark:text-amber-400/90 sm:inline">代价 p10 −6.80% · 22% 盘中破 −5%</span>
-      <button type="button" onClick={onOpenMethod}
-        className="ml-auto text-accent underline underline-offset-2 hover:text-foreground">
-        完整规则与「不要做」
-      </button>
+    <div className="min-w-0">
+      <div className="text-[9px] tracking-wide text-muted/70">{k}</div>
+      <div className="mt-0.5 font-mono text-[13px] font-medium leading-none tabular-nums text-foreground">{v}</div>
+      {hint && <div className="mt-1 text-[9px] leading-[1.4] text-muted/75">{hint}</div>}
     </div>
+  )
+}
+
+/**
+ * 明日买点 —— 全页唯一可执行的买点，形状与「机会雷达」的候选卡同一件事：
+ * 明天开盘做什么、按什么价、亏多少、什么时候必须走。
+ *
+ * 口径唯一产地是 `backend/app/decision/lu_rebound.py`：本组件不重算信号，
+ * 只读 `/api/decision/lu-rebound/candidates`，再补上账本面板没有的三件事 ——
+ * 代价（p10 盘中回撤）、成本（毛 → 净）、仓位刻度（沿用手册六格，非本腿规则）。
+ *
+ * 为什么它可以放在这一页：事件在 T+1 收盘就已定稿（T+2 开盘才成交），
+ * 不需要盘中盯 5%。旧版「本页不提供触发清单」把「盘中触发」和「收盘后清单」
+ * 混为一谈，于是把唯一有正期望的动作挡在了页外。
+ */
+function LuBuyPoint({
+  data, failed, error, onOpenStock, onOpenMethod,
+}: {
+  data: DecisionLuCandidates | undefined
+  failed: boolean
+  error?: string
+  onOpenStock: (s: string) => void
+  onOpenMethod: () => void
+}) {
+  const rows = data?.rows ?? []
+  const ready = data?.status === 'ready' || data?.status === 'empty'
+  const n = ready ? rows.length : 0
+  const entry = data?.entry_date ?? null
+  // 「次一交易日」与「2026-11-23」只差一个空格，但读起来是两件事：前者是未知，后者是已知。
+  const entryLabel = entry ? `${entry} 开盘` : '次一交易日开盘'
+  // 仓位不是本腿的规则：只有「若沿用手册六格」的换算，输入只有 n 与 p10。
+  const slotPct = n > 0 ? 100 / 6 / n : 0
+  const worstPct = slotPct * 0.068
+  /** 页内负号统一 U+2212；`fmtPct` 给的是 ASCII 连字符。 */
+  const signedPct = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v * 100).toFixed(2)}%`
+
+  return (
+    <section
+      data-testid="lu-buy-point"
+      aria-label="明日买点"
+      className="overflow-hidden rounded-card border border-accent/25 bg-accent/[0.03]"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 pb-1 pt-2.5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <h2 className="text-[13px] font-medium text-foreground">明日买点</h2>
+          <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-accent">唯一</span>
+          <span className="text-[10px] text-muted">被砸的换手板 · 不赌形态，赌时点错配</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[9.5px] text-muted">
+          {data?.as_of && <span className="font-mono">{data.as_of} 收盘定稿</span>}
+          {data && (
+            <span className={cn('rounded px-1.5 py-0.5', LU_STATUS_LABEL[data.status].tone)}>
+              {LU_STATUS_LABEL[data.status].label}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {!data ? (
+        <p className="px-4 pb-3 pt-1 text-[11px] text-muted">
+          {failed
+            ? `买点清单读不到${error ? `（${error}）` : ''}；下方观察池不受影响。`
+            : '正在读明日挂单…'}
+        </p>
+      ) : !ready ? (
+        <div className="px-4 pb-3 pt-1">
+          <div className="text-[13px] text-foreground">这份清单没有成立</div>
+          <p className="mt-1 max-w-[60em] text-[11px] leading-relaxed text-muted">
+            {data.reason ?? data.warnings[0] ?? '没有记录原因——这本身是缺陷'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-1 px-4">
+            <span className={cn(
+              'font-mono text-[40px] font-semibold leading-none tracking-[-0.03em] tabular-nums',
+              n > 0 ? 'text-accent' : 'text-muted/40',
+            )}>
+              {n}
+            </span>
+            <div className="pb-0.5">
+              <div className="text-[13px] font-medium text-foreground">
+                {n > 0 ? '只挂单' : '只 · 次一交易日无买入'}
+              </div>
+              <div className="mt-0.5 text-[10.5px] text-secondary">
+                {n > 0
+                  ? `${entryLabel} ≤ 挂单限价才成交 · 当日收盘卖 · 不留隔夜`
+                  : '全市场没有被砸的换手板 —— 0 只是结论，不是管道没跑'}
+                {data.truncated > 0 && ` · 另有 ${data.truncated} 只被容量截断`}
+              </div>
+            </div>
+          </div>
+
+          {n > 0 && (
+            <>
+              <div className="mx-4 mt-2.5 max-h-[320px] overflow-auto rounded-btn border border-border/60 bg-surface/50">
+                <table className="w-full min-w-[330px] text-left text-[11px]">
+                  <thead className="sticky top-0 z-[1] bg-surface text-muted">
+                    <tr className="border-b border-border/60">
+                      <th className="w-7 px-2 py-1.5 font-medium">#</th>
+                      <th className="px-2 py-1.5 font-medium">名称 / 代码</th>
+                      <th className="w-[80px] px-2 py-1.5 text-right font-medium sm:w-[92px]" title="T+1 日内 open→close，不是隔夜跌幅">T+1 日内</th>
+                      <th className="w-[80px] px-2 py-1.5 text-right font-medium sm:w-[92px]" title="涨停价的下一分：开盘 ≤ 它才成交（= 开盘没封涨停）">挂单限价</th>
+                      <th className="hidden w-[96px] px-2 py-1.5 text-right font-medium sm:table-cell" title="T+1 成交额；截断到 20/40/60/100 只时逐日超额不变，所以它是容量约束">T+1 成交额</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.symbol} className="border-b border-border/40 last:border-0">
+                        <td className="px-2 py-1.5 font-mono text-muted">{r.rank}</td>
+                        <td className="px-2 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onOpenStock(r.symbol)}
+                            className="text-left text-foreground underline decoration-dotted underline-offset-2 hover:text-accent"
+                          >
+                            {r.name ?? r.symbol}
+                          </button>
+                          <span className="ml-1.5 font-mono text-[9.5px] text-muted">{r.symbol}</span>
+                        </td>
+                        {/* 跌幅保持中性色：这是入选条件，不是看空信号。染绿会让
+                            「跌得越多越该买」读成「跌得越多越危险」。 */}
+                        <td className="px-2 py-1.5 text-right font-mono tabular-nums text-secondary">
+                          {signedPct(r.drop_pct / 100)}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono font-medium tabular-nums text-foreground">
+                          {r.limit_price.toFixed(2)}
+                        </td>
+                        <td className="hidden px-2 py-1.5 text-right font-mono tabular-nums text-muted sm:table-cell">
+                          {r.day_amount_yi == null ? '—' : `${r.day_amount_yi.toFixed(1)} 亿`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mx-4 mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-accent/15 pt-2 lg:grid-cols-4">
+                <Metric
+                  k="日超额（毛）" v={`${LU_STUDY.excessPct}/日`}
+                  hint={`t ${LU_STUDY.t} · ${LU_STUDY.window} ${LU_STUDY.years} 年正 · 样本前 ${LU_STUDY.preYears} 年正`}
+                />
+                <Metric
+                  k="扣成本（双边 15bp）" v={`+${LU_STUDY.netBp}bp`}
+                  hint="佣金 5 + 印花 5（卖）+ 滑点 5；未计冲击成本"
+                />
+                <Metric
+                  k="代价" v={`p10 ${LU_STUDY.mddP10}`}
+                  hint={`T+2 开盘后日内最低点：中位 ${LU_STUDY.mddMedian}、${LU_STUDY.breach5} 盘中破 −5%`}
+                />
+                <Metric
+                  k="成交率" v={LU_STUDY.fillRate}
+                  hint="开盘 ≤ 挂单限价才成交；开盘封涨停就买不到，不追"
+                />
+              </div>
+
+              <p className="mt-1.5 px-4 text-[9.5px] leading-relaxed text-muted">
+                仓位（<b className="text-foreground/80">若沿用手册六格</b>）：一格 = 权益/6，均分 {n} 只 ⇒
+                单只 {slotPct.toFixed(1)}% 权益；按 p10 {LU_STUDY.mddP10} 计，单只最坏 ≈ {worstPct.toFixed(2)}% 权益。
+                本腿未单独验证仓位规则，别把这一行当成本腿的结论。
+              </p>
+            </>
+          )}
+
+          <details className="mt-2 border-t border-accent/15 px-4 py-1.5 text-[10px] leading-relaxed text-secondary">
+            <summary className="cursor-pointer select-none text-[10px] text-muted hover:text-foreground">
+              为什么只有这一个买点
+            </summary>
+            <div className="mt-1.5 space-y-1.5">
+              <p>
+                它赚的不是形态，是时点：T+1 交割 + 次日开盘出货，卖压必须在 T+1 卖完；
+                T+2 买盘回来，日内修复。所以它不需要排队、不需要盘感，只需要 T+1 的收盘数据。
+                「T 日封板 → T+1 开盘卖」2026 年名义上 +1.45%，但要在涨停板上排队，成交率不可测 ——
+                那不叫可执行，所以这里说「唯一」。
+              </p>
+              <p>
+                与筹码页同一个问题 —— <b className="text-foreground/80">谁必须在某个时点卖出</b>。
+                筹码页的答案是贴近平仓线的大股东，这里的答案是 T+1 开盘要出货的资金；
+                两处赚的都是被迫卖出者的价格让步，不是预测。
+              </p>
+              <p>
+                因此 −5% 是<b className="text-foreground/80">触发条件</b>，不是排序键：这条腿不按「跌得深浅」选股，
+                只按成交额取容量。真正的约束只有三条：可成交（开盘没封板）、容量（成交额前 40）、
+                制度（T+1、涨跌停、ST/次新）。它也不能推广成「跌 5% 就买」—— 同样的 T+1 日内跌幅，
+                没有涨停的票只有 +0.05%（<code className="font-mono text-[9px]">_diag_board_shape.py</code> 的同跌幅对照），溢价来自
+                「涨停 + 次日砸盘」这个组合。
+              </p>
+              <p>
+                它是右尾交易：命中中位 52.7%，单笔中位很薄，均值靠分布右尾 ——
+                需要足够多的独立交易日，不能单票重仓。
+              </p>
+              <ul className="list-disc space-y-0.5 pl-4 text-[9.5px] text-muted">
+                {LU_EXCLUSIONS.map(x => (
+                  <li key={x.action}><span className="text-secondary">{x.action}</span> — {x.read}</li>
+                ))}
+              </ul>
+            </div>
+          </details>
+        </>
+      )}
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-accent/15 px-4 py-1.5 text-[9.5px] text-muted">
+        <span>口径：换手板（非一字）→ T+1 日内 ≤ −5% → 成交额前 40 → 开盘 ≤ 限价</span>
+        <span className="hidden sm:inline">剔除 ST / 次新 / 一字板</span>
+        <Link to="/limit-ladder" className="text-accent underline underline-offset-2 hover:text-foreground">
+          今日封板 → 连板梯队（T+1 开盘卖）
+        </Link>
+        <Link to="/decisions" className="text-accent underline underline-offset-2 hover:text-foreground">
+          账本与结算
+        </Link>
+        <button type="button" onClick={onOpenMethod}
+          className="ml-auto text-accent underline underline-offset-2 hover:text-foreground">
+          完整口径
+        </button>
+      </div>
+      {data?.warnings?.length ? (
+        <p className="border-t border-accent/10 px-4 py-1 text-[9px] text-muted/75">
+          {data.warnings.slice(0, 2).join(' · ')}
+        </p>
+      ) : null}
+    </section>
   )
 }
 
@@ -1531,7 +1753,10 @@ function MethodDrawer({
           </div>
 
           <div>
-            <div className="mb-1 text-[10px] font-medium text-foreground">可执行规则（全市场换手板口径，不是本页观察池）</div>
+            <div className="mb-1 text-[10px] font-medium text-foreground">可执行规则（全市场换手板口径）</div>
+            <p className="mb-1.5 text-[9.5px] text-muted/75">
+              今日清单、代价与仓位在上方「明日买点」；这张表只做动作之间的对比，不重复清单。
+            </p>
             <div className="max-w-[860px] text-[9.5px]">
               <div className="grid grid-cols-[minmax(0,1fr)_64px_minmax(0,1fr)] gap-x-3 border-b border-border/40 pb-1 text-muted/60">
                 <span>动作</span>
@@ -1541,7 +1766,7 @@ function MethodDrawer({
               {[
                 ['T 日封板 → T+1 开盘卖', '+1.45%', '2026 · 17 年唯一稳定为正'],
                 ['T 日封板 → 持有 5 日', '+0.78%', '低于 T+1；carry 恒为负'],
-                ['T+1 日内跌 >5% → T+2 开盘买、收盘卖', '+0.836%', 't 12.69 · 2018-26 九年全正'],
+                ['T+1 日内跌 >5% → T+2 开盘买、收盘卖', LU_STUDY.excessPct, `t ${LU_STUDY.t} · ${LU_STUDY.window} ${LU_STUDY.years} 年正`],
                 ['同上，剔除 T+2 低开 >9%', '+0.764%', 't 9.21 · 近似跌停开盘卖不掉'],
               ].map(r => (
                 <div key={r[0]} className="grid grid-cols-[minmax(0,1fr)_64px_minmax(0,1fr)] gap-x-3 border-b border-border/25 py-1 text-secondary last:border-0">
@@ -1607,6 +1832,20 @@ export function ShortlineRadar() {
     staleTime: 60_000,
   })
   const data = q.data
+
+  // 明日买点：与 /decisions 的「砸盘反转」面板读同一个接口、同一个产地
+  // （`app/decision/lu_rebound.py`），这里只是把它放到「今天该做什么」的位置上。
+  // 日期用**雷达解析后的** `data.as_of`，不用 URL 上的原始值：用户选周末时雷达会回溯到
+  // 上一个交易日，而买点接口对非交易日返回「无行情分区」—— 两边必须同一天。
+  // 标签页是浏览模式，不发这个请求。
+  const resolvedAsOf = data?.as_of ?? null
+  const luQ = useQuery<DecisionLuCandidates>({
+    queryKey: ['decision', 'lu-rebound', resolvedAsOf ?? 'pending'],
+    queryFn: () => api.decisionLuCandidates(resolvedAsOf ?? undefined),
+    staleTime: 60_000,
+    retry: false,
+    enabled: activeTag === null && resolvedAsOf != null,
+  })
 
   // 自选只用于「只看自选」这一个开关；接口失败就当没有自选，不影响主表。
   const watchQ = useQuery({
@@ -1838,7 +2077,19 @@ export function ShortlineRadar() {
                 </div>
               )}
 
-              {/* ② 状态条：所有视图共用 —— 今天能不能做、变了什么、哪些不能碰 */}
+              {/* ② 明日买点：全页唯一可执行的动作。放在状态条之前 ——
+                  先回答「明天买不买」，再回答「今天什么状态」。 */}
+              {activeTag === null && (
+                <LuBuyPoint
+                  data={luQ.data}
+                  failed={luQ.isError}
+                  error={luQ.error?.message}
+                  onOpenStock={setPreview}
+                  onOpenMethod={openMethod}
+                />
+              )}
+
+              {/* ③ 状态条：所有视图共用 —— 今天能不能做、变了什么、哪些不能碰 */}
               <StatusBar
                 focus={data.focus}
                 summary={data.summary}
@@ -1865,7 +2116,6 @@ export function ShortlineRadar() {
                     onOpenStock={setPreview}
                     onOpenMethod={openMethod}
                   />
-                  <ActionLine onOpenMethod={openMethod} />
                   <MarketBand
                     arenas={data.summary.arenas}
                     total={total}
