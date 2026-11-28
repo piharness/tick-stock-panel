@@ -20,50 +20,51 @@ export type Verdict = 'ok' | 'warn' | 'danger' | 'muted'
 
 export const META = {
   asOf: '2026-11-28',
-  sample: '389 个概念 · 371 个交易日 · 每日 30 只主线',
-  universe: '2025-05-08 ~ 2026-11-13（成分快照口径，只做近端）',
-  convention: '概念等权 · 基准=同日全概念中位 · t 按日聚簇 NW(5) · 单边成本 20bp',
-  source: 'analysis/_diag_narrative_heat.py → data/.scratch/narrative_heat.json',
+  sample: '389 个概念 · 371 个交易日 · 16,928 个解禁事件',
+  universe: '叙事 2025-05-08 ~ 2026-11-13；解禁 2019-01 ~ 2026-06',
+  convention: '概念等权 · 基准=同日全概念中位 / 同日全市场等权 · t 按日聚簇 NW(5) · 单边成本 20bp',
+  source: 'analysis/_diag_narrative_heat.py + _diag_narrative_events.py → data/.scratch/*.json',
 } as const
 
 export const VERDICT = {
-  tag: '三条腿 · 零个信号',
+  tag: '三条腿 · 一条可用的排除',
   tone: 'warn' as Verdict,
-  line: '叙事不是账单，是收据——它记录谁已经付过钱。',
+  line: '叙事是收据，解禁是账单——但这张账单也在到期前就付完了。',
   body:
     '把 /chip 的定律搬到大盘：一笔约束要产生漂移，需要「未结算的余额」与「结算周期 > 0」。' +
-    '叙事的结算周期是 0——涨停在收盘那一刻就撮合完，溢价被提前支付在隔夜。于是热度只剩两件事可读：' +
-    '谁站在最后一棒，以及钱从哪条腿来。检验给出 −17bp 的剂量跨度（1 个涨停 → ≥10 个）与 1.10 vs 1.10 的波动比：' +
-    '方向弱负、方差无差，两头都小于单边成本 20bp 的两倍。',
-  action: '当前可执行动作：0',
-  actionValue: '0',
-  actionNote: '热度只用于仓位（波动率目标），不用于方向。',
+    '叙事腿的结算周期是 0（涨停在收盘撮合完），剂量跨度只有 −17bp，小于成本；' +
+    '事件腿终于有了余额与日期：解禁占流通比 ≥10% 的股票，解禁前 20 日比同日等权市场低 ' +
+    '276bp（t −12.0），且按比例单调（−37 → −94 → −172 → −276）；解禁后 20 日反而 +51bp。' +
+    '抛压是提前支付的，到期日不是卖点，是结算点。这条只够做排除：解禁前 20 日不买，不做空。',
+  action: '当前可执行动作：1 条排除',
+  actionValue: '1',
+  actionNote: '未来 20 日解禁占流通比 ≥10% 的票不进候选池；其余动作仍为 0。',
 } as const
 
 export const SUMMARY = [
   {
     label: '三条腿',
-    value: '零个信号',
+    value: '一条可用',
     verdict: 'warn' as Verdict,
-    note: '方向、方差、容量都没有稳定符号。唯一活口仍在 /chip 的质押贴线，不在这页。',
+    note: '解禁前负漂移可做排除；叙事腿与日结算腿仍然是零。活口仍在 /chip 的质押贴线。',
   },
   {
-    label: '剂量跨度',
-    value: '−17bp',
+    label: '解禁前 20 日',
+    value: '−276bp',
     verdict: 'warn' as Verdict,
-    note: '1 个涨停 39.9bp → ≥10 个 22.6bp（20 日超额）。方向为负，量级不到单边成本。',
+    note: '解禁占流通比 ≥10% 组，相对同日等权市场，t −12.0；四档单调。',
   },
   {
-    label: '方差',
-    value: '1.10 vs 1.10',
+    label: '解禁后 20 日',
+    value: '+51bp',
     verdict: 'muted' as Verdict,
-    note: '热度也不定价波动：未来/过去 20 日波动比，与同日随机 30 个概念无差。',
+    note: '结算完成后的回补，t 2.08，幅度刚过双边成本 —— 不构成买点。',
   },
   {
     label: '证据等级',
-    value: 'B · 单 regime',
+    value: 'B · 单市场',
     verdict: 'warn' as Verdict,
-    note: '371 天、一个上行 regime、成分是当前快照；所有 |t| < 2。',
+    note: '16,928 个事件 / 2019–2026；安慰剂 + 动量控制后仍有 −262bp；但只有一个市场、一个制度周期。',
   },
 ]
 
@@ -86,10 +87,10 @@ export const LAW: LawRow[] = [
   },
   {
     cadence: '事件盯市',
-    who: '质押、定增、大宗、指数调样',
+    who: '质押、解禁、定增、大宗、指数调样',
     when: '到处置日',
     balance: '有——按账龄摊销',
-    read: '质押贴线 +291bp（唯一活口）；大宗符号不迁移；调样 −10.5bp 无 edge',
+    read: '质押贴线 +291bp；解禁前 −276bp / 后 +51bp；大宗符号不迁移；调样 −10.5bp',
   },
   {
     cadence: '从不盯市',
@@ -127,9 +128,9 @@ export const LEGS: LegRow[] = [
   {
     leg: '事件腿',
     object: '质押、大宗、调样、退市',
-    tests: 'H11 贴线、大宗迁移 225k 条、调样 1,471 事件、退市清仓',
-    read: '贴线 +291bp（唯一）；大宗拆买卖方后符号翻转；调样 −10.5bp；退市负 EV',
-    use: '只有贴线一条可跟，已归 /chip，不在本页重复。',
+    tests: 'H11 贴线、解禁 16,928 件、大宗迁移 225k 条、调样 1,471 事件、退市清仓',
+    read: '解禁前 −276bp / 后 +51bp（本次新测）；贴线 +291bp；大宗符号翻转；调样 −10.5bp；退市负 EV',
+    use: '只做排除：解禁前 20 日不买。贴线候选归 /chip，不在这页重复。',
   },
 ]
 
@@ -199,7 +200,7 @@ export const BOUNDS = [
   '概念成分是当前快照（ext_gn_ths，本地 2026-07 起留存），没有历史版本；早年归属漂移，只做 2025-05 之后。',
   '样本是一个上行 regime（2025-05 ~ 2026-11），含 2026-11-27 的单日 428 只涨停；换到下行段，符号可能翻。',
   '超额基准是「同日全体概念中位」，概念数 389 个等权；成员数门槛 5 只，小概念（<5）被剔除。',
-  '所有 |t| < 2。剂量反应只在 2026 分段单调，2025 不单调——方向一致不等于剂量关系成立。',
+  '叙事腿所有 |t| < 2；解禁腿到 t −12.0（16,928 个事件）。但解禁只有一个市场、一个制度周期，注册制后的稳定性要每年重测（K7）。',
   'fwd 用概念等权净值（收盘到收盘），未计涨跌停无法成交、未计冲击成本；可实施性比读数更差。',
 ]
 
@@ -241,7 +242,97 @@ export const KILL: KillRow[] = [
     claim: '榜一持续',
     kill: '同一概念连续 3 日 rank=1 之后的 20 日超额 > 0 且 t > 2 ⇒ 主线有延续性，本页的「收据」结论死。',
   },
+  {
+    id: 'K7',
+    claim: '解禁前负漂移',
+    kill: '注册制后（2023 起）样本里 ≥10% 组的解禁前超额转正，或解禁后 20 日跌破 −100bp ⇒ ' +
+      '「提前支付、到期结算」死，改回「供给压力持续」。每年重跑一次，两个条件任一触发即撤规则。',
+  },
 ]
+
+
+// ---------------------------------------------------------------- 事件腿（解禁）
+
+export interface EventBucketRow {
+  bucket: string
+  events: number
+  days: number
+  pre: number
+  preT: number
+  post: number
+  postT: number
+  didPre: number
+  didPost: number
+}
+
+/**
+ * 解禁：按「本次解禁股数 / 流通股数」分档。
+ *
+ * 读法：解禁前 20 日（open[t-20] → close[t-1]）与解禁后 20 日（open[t+1] → close[t+20]）
+ * 相对**同日全市场等权收益**的超额。DiD = 事件 − 同股票 ±120 交易日随机日（安慰剂）。
+ * 基准从「中位」换成「等权均值」，是因为收益分布右偏，中位口径会把所有个股超额
+ * 系统性抬高约 +400bp/20日 —— 价差仍可读，但水平不可读。
+ */
+export const EVENT_BUCKETS: EventBucketRow[] = [
+  { bucket: '<1%', events: 6384, days: 1696, pre: -37.4, preT: -1.64, post: 62.9, postT: 2.64, didPre: -29.5, didPost: 65.2 },
+  { bucket: '1–3%', events: 2540, days: 1228, pre: -93.8, preT: -2.29, post: 32.4, postT: 0.94, didPre: -69.2, didPost: 60.3 },
+  { bucket: '3–10%', events: 2574, days: 1267, pre: -172.2, preT: -6.15, post: 127.7, postT: 3.67, didPre: -156.3, didPost: 141.5 },
+  { bucket: '≥10%', events: 5430, days: 1583, pre: -276.5, preT: -12.02, post: 50.8, postT: 2.08, didPre: -261.6, didPost: 56.6 },
+]
+
+export interface EventMomentumRow {
+  terc: string
+  hi: number
+  lo: number
+  diff: number
+  m120Hi: number
+  m120Lo: number
+}
+
+/** 前期动量控制：同一「过去 120 日超额」三分位内，比较 ≥10% 与 <1%。差仍在 −200 ~ −408bp。 */
+export const EVENT_MOMENTUM: EventMomentumRow[] = [
+  { terc: '低动量', hi: -694.6, lo: -492.7, diff: -201.9, m120Hi: -26.8, m120Lo: -26.6 },
+  { terc: '中动量', hi: -330.8, lo: -135.3, diff: -195.6, m120Hi: -10.3, m120Lo: -7.5 },
+  { terc: '高动量', hi: 182.0, lo: 589.7, diff: -407.7, m120Hi: 13.6, m120Lo: 20.6 },
+]
+
+export interface EventKindRow {
+  kind: string
+  events: number
+  pre: number
+  preT: number
+  post: number
+  postT: number
+}
+
+/** ≥10% 桶按限售类型拆：三类同向，说明不是某一种股份的 artifact。 */
+export const EVENT_KIND: EventKindRow[] = [
+  { kind: '定增解禁', events: 1408, pre: -304.7, preT: -9.44, post: 81.3, postT: 2.22 },
+  { kind: '首发原股东', events: 2828, pre: -318.1, preT: -11.75, post: 34.1, postT: 1.12 },
+  { kind: '其他（含股权激励）', events: 1190, pre: -248.6, preT: -4.09, post: 81.9, postT: 1.41 },
+]
+
+/** 定增：近 12 个月存量。发行价是合约面值，破发率是「面值 − 市价」的存量读数。 */
+export const SEO_READ = {
+  deals12m: 318,
+  stocks12m: 295,
+  raiseYi: 6732,
+  breakRate: 49.1,
+  vsIssueMed: 0.7,
+  nValid: 318,
+  note: '近 12 个月上市的定增（ISSUE_LISTING_DATE 口径）。破发率 = 现价 < 发行价的比例；' +
+    '发行价是合约面值，但它不产生漂移——锁定期内不能卖，到期才结算（解禁那一段已单独测）。',
+} as const
+
+/** 371 日逐日表里「剔除事件股」的读数：剂量跨度不变，说明叙事结论不靠事件股撑着。 */
+export const EXCLUSION_CHECK = {
+  doseAll: -15.9,
+  doseExcluded: -15.9,
+  days: 371,
+  deltaMed: 0.1,
+  note: '剔除规则：某股票在未来 20 个交易日内有解禁，或过去 20 个交易日内有定增上市，' +
+    '则从当日的概念等权收益里去掉。371 天里逐日重算，剂量跨度 −15.9bp 未变。',
+} as const
 
 export const SCOPE = {
   can: [

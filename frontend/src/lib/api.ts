@@ -1260,6 +1260,27 @@ export interface NarrativeWord extends NarrativeBlock {
   rows?: { word: string; n: number; net_yi: number }[]
 }
 
+export interface NarrativeEventDeal {
+  date: string
+  symbol: string
+  name: string
+  kind: string
+  mcap_yi: number
+  ratio_pct: number
+}
+
+export interface NarrativeEvents extends NarrativeBlock {
+  next?: {
+    days: number
+    mcap_yi: number
+    n: number
+    by_day: { d: string; n: number; mcap_yi: number }[]
+  }
+  top?: NarrativeEventDeal[]
+  recent30?: { mcap_yi: number; n: number }
+  seo90?: { n: number; raise_yi: number }
+}
+
 export interface NarrativeLedger {
   as_of: string | null
   blocks: {
@@ -1268,6 +1289,7 @@ export interface NarrativeLedger {
     flows: NarrativeFlows
     index: NarrativeIndex
     words: NarrativeWord
+    events: NarrativeEvents
   }
   disclaimer: string
 }

@@ -53,6 +53,7 @@ def test_build_单块失败不影响其余块(monkeypatch, tmp_path):
     monkeypatch.setattr(nl, "_flows", lambda _d: {"ok": True, "as_of": "2026-11-25"})
     monkeypatch.setattr(nl, "_index", lambda _d: {"ok": False, "error": 'no data'})
     monkeypatch.setattr(nl, "_words", lambda *_a, **_k: {"ok": True, "as_of": None, "rows": []})
+    monkeypatch.setattr(nl, "_events", lambda _d: {"ok": True, "as_of": "2026-11-27", "next": {"n": 0}})
 
     repo = SimpleNamespace(store=SimpleNamespace(data_dir=str(tmp_path)))
     out = nl.build(repo)
@@ -63,4 +64,5 @@ def test_build_单块失败不影响其余块(monkeypatch, tmp_path):
     assert 'boom' in out['blocks']['mainline']['error']
     assert out['blocks']['index']['ok'] is False
     assert out['blocks']['words']['ok'] is True
+    assert out['blocks']['events']['ok'] is True
     assert 'disclaimer' in out

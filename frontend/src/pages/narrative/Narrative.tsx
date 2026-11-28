@@ -24,7 +24,9 @@ import {
 } from '../structural-edge/ui'
 import {
   META, VERDICT, SUMMARY, LAW, LEGS, DOSE, PAIR, TIERS, BOUNDS, KILL, SCOPE, LIVE_BLOCKS,
+  EVENT_BUCKETS, EVENT_MOMENTUM, EVENT_KIND, SEO_READ, EXCLUSION_CHECK,
   type LawRow, type LegRow, type DoseRow, type PairRow, type TierRow, type KillRow,
+  type EventBucketRow, type EventMomentumRow, type EventKindRow,
 } from './data'
 
 const sgn = (v: number, d = 1) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(d)}`
@@ -33,6 +35,16 @@ const num = (v: number | null | undefined, d = 0) =>
   v == null || Number.isNaN(v) ? '—' : v.toLocaleString('zh-CN', { maximumFractionDigits: d })
 
 /** 分位条：一条 100% 的轨道 + 一个游标。比再写一个数字更快被读到。 */
+/** 解禁类型缩写：原始文本「定向增发机构配售股份」在 64px 列里会折三行。 */
+const kindShort = (k: string) =>
+  k.includes('定向增发') ? '定增解禁'
+    : k.includes('首发原股东') ? '首发原股东'
+      : k.includes('首发战略') ? '首发战略'
+        : k.includes('首发机构') ? '首发配售'
+          : k.includes('股权激励') ? '股权激励'
+            : k.includes('追加承诺') ? '追加承诺'
+              : '其他'
+
 function RankBar({ pct, label }: { pct: number | null | undefined; label?: string }) {
   if (pct == null || Number.isNaN(pct)) return null
   const w = Math.max(0, Math.min(100, pct))
@@ -113,6 +125,58 @@ const tierCols: Col<TierRow>[] = [
   { head: '20 日配对差', align: 'right', render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.diff))}>{sgn(r.diff)}bp</span> },
   { head: 't', align: 'right', render: r => <span className="font-mono text-[12px] tabular-nums text-muted">{sgn(r.t, 2)}</span> },
   { head: '天数', align: 'right', render: r => <span className="font-mono text-[11.5px] tabular-nums text-muted">{r.days}</span> },
+]
+
+const evBucketCols: Col<EventBucketRow>[] = [
+  { head: '解禁 / 流通', w: '14%', render: r => <span className="text-[12px] font-medium text-foreground">{r.bucket}</span> },
+  { head: '事件', render: r => <span className="font-mono text-[11.5px] tabular-nums text-muted">{num(r.events)}</span> },
+  {
+    head: '解禁前 20 日',
+    align: 'right',
+    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.pre))}>{sgn(r.pre)}<span className="ml-1 text-[10px] text-muted">t {sgn(r.preT, 2)}</span></span>,
+  },
+  {
+    head: '解禁后 20 日',
+    align: 'right',
+    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.post))}>{sgn(r.post)}<span className="ml-1 text-[10px] text-muted">t {sgn(r.postT, 2)}</span></span>,
+  },
+  {
+    head: 'DiD 前',
+    align: 'right',
+    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.didPre))}>{sgn(r.didPre)}</span>,
+  },
+  {
+    head: 'DiD 后',
+    align: 'right',
+    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.didPost))}>{sgn(r.didPost)}</span>,
+  },
+]
+
+const evMomCols: Col<EventMomentumRow>[] = [
+  { head: '前期 120 日动量', w: '20%', render: r => <span className="text-[12px] text-foreground">{r.terc}</span> },
+  { head: '≥10% 组', align: 'right', render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.hi))}>{sgn(r.hi)}</span> },
+  { head: '<1% 组', align: 'right', render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.lo))}>{sgn(r.lo)}</span> },
+  { head: '差（排除前买）', align: 'right', render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.diff))}>{sgn(r.diff)}</span> },
+  {
+    head: '前期超额',
+    align: 'right',
+    render: r => <span className="font-mono text-[11px] tabular-nums text-muted">{sgn(r.m120Hi, 1)}% / {sgn(r.m120Lo, 1)}%</span>,
+  },
+]
+
+const evKindCols: Col<EventKindRow>[] = [
+  { head: '限售类型（≥10% 桶）', w: '26%', render: r => <span className="text-[12px] text-foreground">{r.kind}</span> },
+  { head: '事件', align: 'right', render: r => <span className="font-mono text-[11.5px] tabular-nums text-muted">{num(r.events)}</span> },
+  {
+    head: '解禁前 20 日',
+    align: 'right',
+    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.pre))}>{sgn(r.pre)}<span className="ml-1 text-[10px] text-muted">t {sgn(r.preT, 2)}</span></span>,
+  },
+  {
+    head: '解禁后 20 日',
+    align: 'right',
+    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.post))}>{sgn(r.post)}<span className="ml-1 text-[10px] text-muted">t {sgn(r.postT, 2)}</span></span>,
+  },
 ]
 
 const killCols: Col<KillRow>[] = [
@@ -198,6 +262,7 @@ export function Narrative() {
           ['legs', '一 · 三条腿'],
           ['dose', '二 · 剂量反应'],
           ['pair', '二 · 配对安慰剂'],
+          ['event', '二 · 事件腿'],
           ['bounds', '二 · 边界'],
           ['live', '三 · 今日账本'],
           ['judge', '四 · 判据'],
@@ -266,8 +331,9 @@ export function Narrative() {
       >
         <DataTable cols={legCols} rows={LEGS} rowKey={r => r.leg} minWidth={1000} swipeHint />
         <Callout tone="muted" label="结论">
-          三条腿全部为零或不可识别；唯一活口（质押贴线）在负债端，已归 /chip。
-          所以这一页产出的是排除清单，不是候选。
+          三条腿里只有事件腿有符号：解禁前 20 日 −276bp（≥10% 组），而且漂移在到期前就付完了。
+          叙事腿仍是零，日结算腿只定价方差。所以这一页产出的是<span className="text-foreground">一条排除规则 + 一份排除清单</span>，
+          不是候选。
         </Callout>
       </Section>
 
@@ -339,7 +405,71 @@ export function Narrative() {
         </div>
       </Section>
 
-      <Section id="bounds" no="2C" title="边界：五条会改变结论的东西" source="写在这里，是为了下一次不用重新想">
+      <Section
+        id="event"
+        no="2C"
+        title="事件腿：解禁的漂移在到期前就付完了"
+        asOf="2026-06-30"
+        source="events/lockup.parquet（东财 RPT_LIFT_STAGE，16,928 件）· analysis/_diag_narrative_events.py"
+        lead={
+          <>
+            解禁是三条腿里唯一同时具备「余额、日期、方向」的约束：解禁股数 / 流通股数就是余额，
+            FREE_DATE 就是结算日，方向只能是卖。按 /chip 的读法，它应该产生漂移——
+            问题只是漂移发生在到期前还是到期后。
+          </>
+        }
+      >
+        <DataTable cols={evBucketCols} rows={EVENT_BUCKETS} rowKey={r => r.bucket} minWidth={880} swipeHint />
+        <div className="mt-3 text-[11px] leading-[1.7] text-muted">
+          pre20 = open[t−20] → close[t−1]；post20 = open[t+1] → close[t+20]；超额 = 相对同日全市场等权收益。
+          DiD = 事件 − 同股票 ±120 交易日随机日（安慰剂）。事件扎堆，t 按日聚簇 NW(5)。
+        </div>
+        <div className="mt-8 grid gap-x-8 gap-y-6 lg:grid-cols-2">
+          <DataTable
+            cols={evMomCols}
+            rows={EVENT_MOMENTUM}
+            rowKey={r => r.terc}
+            reason="前期动量控制：高比例解禁的股票往往早就涨过。在同一「过去 120 日超额」分位内比较，差仍在 −196 ~ −408bp——不是均值回归。"
+            minWidth={520}
+          />
+          <DataTable
+            cols={evKindCols}
+            rows={EVENT_KIND}
+            rowKey={r => r.kind}
+            reason="按限售类型拆：定增解禁、首发原股东、其他三类同向，说明不是某一种股份的 artifact。"
+            minWidth={420}
+          />
+        </div>
+        <Callout tone="warn" label="结论：提前支付，到期结算">
+          <p>
+            解禁前 20 日的超额随比例单调下降（−37 → −94 → −172 → −276bp），解禁后 20 日转为 +51bp。
+            也就是说，抛压不是在解禁日释放的，而是在解禁日之前被定价完的；到期日不是卖点，是结算点。
+            这与 /chip 的 P3 同构：支付之后漂移归零。
+          </p>
+          <p className="mt-1.5">
+            解禁效应是<span className="text-foreground">横截面</span>的，不是择时的：371 个交易日里，当日解禁市值 / 流通市值
+            与概念未来 20 日超额的相关是 −0.006（几乎没有）。所以它只能用来筛掉个股，不能用来判断「今天该不该买」。
+          </p>
+          <p className="mt-1.5">
+            可执行的只有排除：<span className="text-foreground">未来 20 日解禁占流通比 ≥10% 的股票，不进候选池。</span>
+            解禁后的 +51bp（t 2.08）刚过双边成本，不构成买点；也不建议做空——融券成本与借券可得性都不在这个读数里。
+          </p>
+        </Callout>
+        <Callout tone="muted" label="剔除事件股后：结论不变">
+          把「未来 20 日内有解禁 / 过去 20 日内有定增上市」的股票从概念等权收益里去掉，371 天逐日重算：
+          剂量跨度 {EXCLUSION_CHECK.doseAll}bp → {EXCLUSION_CHECK.doseExcluded}bp，逐日差中位{' '}
+          {EXCLUSION_CHECK.deltaMed > 0 ? '+' : ''}{EXCLUSION_CHECK.deltaMed}bp。
+          叙事腿的零不是靠事件股撑着的。逐日表见{' '}
+          <span className="font-mono text-[11px]">docs/structural-edge/narrative-371d.csv</span>。
+        </Callout>
+        <Callout tone="muted" label="定增：面值存在，但不产生漂移">
+          近 12 个月 318 单 / 295 只 / 募资 {SEO_READ.raiseYi.toLocaleString('zh-CN')} 亿；
+          破发率 {SEO_READ.breakRate}%，相对发行价中位 {SEO_READ.vsIssueMed > 0 ? '+' : ''}{SEO_READ.vsIssueMed}%。
+          发行价是合约面值，但锁定期内不能卖——它只在解禁那一天变成供给，所以它的符号并入上表，不单独成信号。
+        </Callout>
+      </Section>
+
+      <Section id="bounds" no="2D" title="边界：五条会改变结论的东西" source="写在这里，是为了下一次不用重新想">
         <ol className="mt-2 space-y-2.5">
           {BOUNDS.map((t, i) => (
             <li key={t} className="flex gap-3 text-[13px] leading-[1.8] text-secondary">
@@ -702,6 +832,103 @@ export function Narrative() {
         </Callout>
       </Section>
 
+      <Section
+        id="events"
+        no="3F"
+        title="解禁日历：未来 45 日谁变成可卖"
+        asOf={b?.events?.as_of ?? undefined}
+        source="events/lockup.parquet + seo.parquet（analysis/_fetch_events.py 抓取）"
+        lead={
+          <>
+            这是本页唯一的「前瞻」块，也是唯一直接对应排除规则的块：把未来 45 日的解禁按日排开，
+            比例 ≥10% 的单独标出来——那些票在未来 20 日不进候选池。它不预测涨跌，只标出谁马上可以卖。
+          </>
+        }
+      >
+        {q.isLoading ? (
+          <Empty text="正在读取解禁日历…" />
+        ) : !b?.events?.ok ? (
+          <Empty text={`事件块不可用：${b?.events?.error ?? '接口未返回'}`} />
+        ) : (
+          <>
+            <StatGrid
+              cols={3}
+              items={[
+                {
+                  k: '未来 45 日解禁',
+                  v: `${num(b.events.next?.n)} 只 / ${num(b.events.next?.mcap_yi, 1)} 亿`,
+                  d: `分布在 ${b.events.next?.days ?? 0} 个交易日`,
+                },
+                {
+                  k: '近 30 日已解禁',
+                  v: `${num(b.events.recent30?.n)} 只 / ${num(b.events.recent30?.mcap_yi, 1)} 亿`,
+                  d: '这部分已经结算完毕，是「后 20 日 +51bp」的样本',
+                },
+                {
+                  k: '近 90 日定增上市',
+                  v: `${num(b.events.seo90?.n)} 单 / ${num(b.events.seo90?.raise_yi)} 亿`,
+                  d: '锁定期 0.5–3 年，到期后并入上面的解禁日历',
+                },
+              ]}
+            />
+            <div className="mt-8 grid gap-x-8 gap-y-6 lg:grid-cols-2">
+              <div>
+                <div className="text-[12px] font-medium text-foreground">按日解禁市值（前 10 天）</div>
+                <div className="mt-2 space-y-1.5">
+                  {(b.events.next?.by_day ?? [])
+                    .slice()
+                    .sort((x, y) => y.mcap_yi - x.mcap_yi)
+                    .slice(0, 10)
+                    .map(x => {
+                      const max = Math.max(...(b.events?.next?.by_day ?? []).map(y => y.mcap_yi), 1)
+                      return (
+                        <div key={x.d} className="flex items-center gap-3">
+                          <span className="w-[76px] shrink-0 font-mono text-[11px] tabular-nums text-muted">{x.d.slice(5)}</span>
+                          <span className="h-[6px] flex-1 rounded-full bg-elevated">
+                            <span className="block h-full rounded-full bg-accent/60" style={{ width: `${(x.mcap_yi / max) * 100}%` }} />
+                          </span>
+                          <span className="w-[86px] shrink-0 text-right font-mono text-[11px] tabular-nums text-secondary">
+                            {x.mcap_yi.toFixed(1)} 亿
+                          </span>
+                          <span className="w-[42px] shrink-0 text-right font-mono text-[10.5px] tabular-nums text-muted">{x.n} 只</span>
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+              <DataTable
+                cols={[
+                  { head: '日期', w: '82px', render: r => <span className="font-mono text-[11px] tabular-nums text-muted">{r.date.slice(5)}</span> },
+                  {
+                    head: '股票 / 类型',
+                    render: r => (
+                      <span>
+                        <span className="text-[12px] text-foreground">{r.name}</span>
+                        <span className="ml-1.5 text-[10px] text-muted">{kindShort(r.kind)}</span>
+                      </span>
+                    ),
+                  },
+                  { head: '解禁市值', align: 'right', render: r => <span className="font-mono text-[11.5px] tabular-nums">{r.mcap_yi.toFixed(1)} 亿</span> },
+                  {
+                    head: '占流通',
+                    align: 'right',
+                    render: r => (
+                      <span className={cn('font-mono text-[11.5px] tabular-nums', r.ratio_pct >= 10 ? 'text-danger' : 'text-muted')}>
+                        {r.ratio_pct.toFixed(1)}%
+                      </span>
+                    ),
+                  },
+                ]}
+                rows={b.events.top ?? []}
+                rowKey={r => `${r.date}-${r.symbol}`}
+                minWidth={430}
+                reason="未来 45 日解禁市值最大的 8 单。占流通 ≥10% 标红——那是排除规则触发的阈值。"
+              />
+            </div>
+          </>
+        )}
+      </Section>
+
       {/* ---------------------------------------------------------------- 卷四 */}
       <div className="mt-16">
         <div className="text-[11px] font-medium tracking-[0.18em] text-muted">卷四 · 判据</div>
@@ -749,7 +976,7 @@ export function Narrative() {
       <Section
         id="kill"
         no="4B"
-        title="杀死条件：六条，写在这里就不用再争"
+        title="杀死条件：七条，写在这里就不用再争"
         source="与 /chip 卷五 §5、卷六 §6E 同一格式"
         lead="每一条都给出「看到什么就认它死」。没有杀死条件的结论不是结论，是偏好。"
       >

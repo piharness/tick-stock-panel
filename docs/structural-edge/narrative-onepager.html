@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>叙事账本 · 判据与排除清单（一页纸）</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #ececea;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: #22221f; -webkit-font-smoothing: antialiased;
+  }
+  .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 10mm 13mm 7mm; background: #fff; }
+  .kick { font-size: 7.2pt; letter-spacing: .2em; color: #9a9484; text-transform: uppercase; margin-bottom: 3mm; }
+  h1 { font-size: 17.5pt; font-weight: 500; letter-spacing: -.01em; line-height: 1.15; margin-bottom: 2.6mm; }
+  .lead { font-size: 10pt; line-height: 1.58; color: #3a3a34; padding-left: 3.6mm; border-left: 2.6pt solid #0F6E56; }
+  .meta { font-size: 7.4pt; color: #9a9484; margin-top: 2mm; line-height: 1.7; }
+  .rule { height: .5pt; background: #e2e0d8; margin: 3.4mm 0 2.8mm; }
+  h2 { font-size: 7.4pt; font-weight: 500; letter-spacing: .16em; color: #9a9484; margin: 3.2mm 0 1.6mm; }
+  .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3.4mm; }
+  .card { border-top: 1.4pt solid #22221f; padding-top: 1.8mm; }
+  .card .t { font-size: 8.6pt; font-weight: 600; margin-bottom: 1.2mm; }
+  .card .v { font-family: "JetBrains Mono", Consolas, monospace; font-size: 13pt; font-weight: 600; letter-spacing: -.02em; }
+  .card .v.neg { color: #b42318; }
+  .card .v.zero { color: #6b6b60; }
+  .card .d { font-size: 6.9pt; line-height: 1.45; color: #6b6b60; margin-top: 1.2mm; }
+  table { width: 100%; border-collapse: collapse; font-size: 7.7pt; }
+  th { text-align: left; font-weight: 500; color: #8a8578; border-bottom: .5pt solid #d9d6cc; padding: 1.1mm 1.4mm; }
+  td { border-bottom: .5pt solid #edebe4; padding: 1.05mm 1.4mm; vertical-align: top; }
+  td.n { font-family: "JetBrains Mono", Consolas, monospace; text-align: right; white-space: nowrap; }
+  .neg { color: #b42318; }
+  .pos { color: #067647; }
+  .muted { color: #8a8578; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  ol, ul { margin: 0; padding-left: 4.2mm; }
+  li { font-size: 8.2pt; line-height: 1.55; margin-bottom: .5mm; }
+  .kill { font-size: 7.6pt; line-height: 1.5; }
+  .kill b { font-family: "JetBrains Mono", Consolas, monospace; font-weight: 600; margin-right: 1.4mm; }
+  .note { font-size: 7.1pt; line-height: 1.55; color: #6b6b60; margin-top: 1.4mm; }
+  .foot { margin-top: 2.6mm; border-top: .5pt solid #e2e0d8; padding-top: 1.6mm; font-size: 6.4pt; color: #9a9484; line-height: 1.55; }
+  code { font-family: "JetBrains Mono", Consolas, monospace; font-size: 7pt; background: #f6f5f1; padding: .2mm .8mm; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="kick">Narrative Ledger · 判据与排除清单</div>
+  <h1>叙事是收据，解禁是账单——但这张账单也在到期前就付完了</h1>
+  <div class="lead">
+    把筹码页的定律搬到大盘：一笔约束要产生漂移，需要「未结算的余额」与「结算周期 &gt; 0」。
+    叙事的结算周期是 0（涨停在收盘撮合完），所以它只留得下 −17bp 的剂量跨度，小于成本；
+    解禁终于同时具备余额、日期、方向，但漂移在解禁日之前就付完了：解禁前 −276bp，解禁后 +51bp。
+    本页给出一条可执行的排除规则，其余仍是零。
+  </div>
+  <div class="meta">
+    冻结读数 2026-11-28 · 叙事 371 个交易日 / 389 个概念 · 解禁 16,928 件 / 2019-01–2026-06 ·
+    定增 318 单（近 12 个月）· 来源 <code>analysis/_diag_narrative_heat.py</code> +
+    <code>analysis/_diag_narrative_events.py</code>
+  </div>
+
+  <div class="rule"></div>
+
+  <h2>三条腿，只有一条有符号</h2>
+  <div class="three">
+    <div class="card">
+      <div class="t">叙事腿 · 从不结算</div>
+      <div class="v zero">−17bp</div>
+      <div class="d">1 个涨停 +39.9bp → ≥10 个 +22.6bp（20 日超额）。<br>
+      主线榜前 30 − 同日随机 30 = −33.3bp / t −1.71。<br>
+      波动比 1.10 vs 1.10：连方差都不定价。</div>
+    </div>
+    <div class="card">
+      <div class="t">日结算腿 · 逐日盯市</div>
+      <div class="v zero">0</div>
+      <div class="d">涨停溢价的 117% 在隔夜（gap），日内腿是支付。<br>
+      两融与久期 ρ −0.442：融资余额是换手代理，不是方向。<br>
+      只能读波动率与拥挤度。</div>
+    </div>
+    <div class="card">
+      <div class="t">事件腿 · 事件盯市</div>
+      <div class="v neg">−276bp</div>
+      <div class="d">解禁占流通 ≥10% 组，解禁前 20 日相对同日等权市场。<br>
+      四档单调：−37 → −94 → −172 → −276。<br>
+      解禁后 20 日 <span class="neg">+51bp</span>：结算完成后的回补。</div>
+    </div>
+  </div>
+
+  <h2>事件腿：解禁前，按比例单调</h2>
+  <table>
+    <thead>
+      <tr><th style="width:20%">解禁 / 流通</th><th class="n">事件</th><th class="n">解禁前 20 日</th><th class="n">解禁后 20 日</th><th class="n">DiD 前</th><th class="n">DiD 后</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>&lt;1%</td><td class="n">6,384</td><td class="n neg">−37.4 <span class="muted">t −1.64</span></td><td class="n pos">+62.9 <span class="muted">t 2.64</span></td><td class="n">−29.5</td><td class="n">+65.2</td></tr>
+      <tr><td>1–3%</td><td class="n">2,540</td><td class="n neg">−93.8 <span class="muted">t −2.29</span></td><td class="n pos">+32.4 <span class="muted">t 0.94</span></td><td class="n">−69.2</td><td class="n">+60.3</td></tr>
+      <tr><td>3–10%</td><td class="n">2,574</td><td class="n neg">−172.2 <span class="muted">t −6.15</span></td><td class="n pos">+127.7 <span class="muted">t 3.67</span></td><td class="n">−156.3</td><td class="n">+141.5</td></tr>
+      <tr><td>≥10%</td><td class="n">5,430</td><td class="n neg">−276.5 <span class="muted">t −12.02</span></td><td class="n pos">+50.8 <span class="muted">t 2.08</span></td><td class="n">−261.6</td><td class="n">+56.6</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    pre20 = open[t−20] → close[t−1]；post20 = open[t+1] → close[t+20]；超额 = 相对同日全市场等权收益。
+    DiD = 事件 − 同股票 ±120 交易日随机日。事件扎堆，t 按日聚簇 NW(5)。
+    横截面规则，不是择时（日度解禁密度与概念 fwd20 相关 −0.006）。动量控制后差仍 −202 / −196 / −408bp；
+    三类限售同向（定增解禁 −305 / 首发原股东 −318 / 其他 −249）。定增近 12 个月 318 单 / 6,732 亿，
+    破发率 49.1%——锁定期内不能卖，只在解禁那天变成供给。
+  </div>
+
+  <h2>五条判据（按顺序问）</h2>
+  <div class="two">
+    <ol>
+      <li><b>换表</b>：这个数字是「涨幅」还是「谁欠谁」？涨幅是资产端，已定完价；收据/账单才有余额。</li>
+      <li><b>结算频率</b>：逐日结算 → 无漂移；事件结算 → 有漂移；从不结算 → 只有回吐。</li>
+      <li><b>余额与日期</b>：没有日期就没有结算，没有余额就没有方向。两样缺一，读数只能是排除。</li>
+    </ol>
+    <ol start="4">
+      <li><b>成本闸门</b>：效应小于双边成本（≈40bp）就只是读数；−17bp 与 +51bp 都在这一侧。</li>
+      <li><b>排序可读，水平不可读</b>：四种贴线口径的水平差 195bp，但排序 8/8 一致；叙事同理，只比相对位置。</li>
+    </ol>
+  </div>
+
+  <h2>排除清单（八条，不用跑数据）</h2>
+  <div class="two">
+    <ul>
+      <li>不把涨停家数、连板高度、榜一当买点：剂量跨度 −17bp，小于成本。</li>
+      <li>不把主线榜当持仓建议：前 30 减同日随机 30 是 −33bp / t −1.71。</li>
+      <li>不用热度做波动率交易：波动比 1.10 vs 1.10，无差。</li>
+      <li>不在解禁前 20 日买入「解禁 / 流通 ≥10%」的票：−276bp。</li>
+    </ul>
+    <ul>
+      <li>不把解禁日当卖点：抛压已提前支付，事后 +51bp。</li>
+      <li>不做空解禁：融券成本与借券可得性不在读数里。</li>
+      <li>不把定增破发当买入理由：49.1% 是存量，不是信号。</li>
+      <li>不把两融、龙虎榜、大宗、ETF 相加减成「净流入」：四路结算频率不同。</li>
+    </ul>
+  </div>
+
+  <h2>杀死条件（每年重跑一次，任一触发即撤规则）</h2>
+  <div class="two kill">
+    <div>
+      <p><b>K1</b>热度→方向：任一年剂量跨度 &gt; +50bp 或连续两年为正。</p>
+      <p><b>K2</b>热度→方差：高热度档波动比中位 ≥ 1.20 且单调。</p>
+      <p><b>K3</b>隔夜腿：打板溢价的隔夜占比跌破 60%。</p>
+      <p><b>K4</b>词频：高频词对应概念未来 5 日超额 &gt; +50bp 且 t &gt; 2。</p>
+    </div>
+    <div>
+      <p><b>K5</b>ETF 占比：其分位与未来 20 日指数收益 |ρ| &gt; 0.3。</p>
+      <p><b>K6</b>榜一持续：同概念连续 3 日 rank=1 后 20 日超额 &gt; 0 且 t &gt; 2。</p>
+      <p><b>K7</b>解禁：注册制后样本解禁前转正，或解禁后 20 日跌破 −100bp。</p>
+    </div>
+  </div>
+
+  <h2>371 个交易日逐日表</h2>
+  <div class="note" style="margin-top:0">
+    <code>docs/structural-edge/narrative-371d.csv</code>（371 行 / 13 列，UTF-8 BOM）。
+    剔除规则：未来 20 日内有解禁、或过去 20 日内有定增上市的股票，从当日概念等权收益里去掉；
+    剂量跨度 −15.9bp → −15.9bp，逐日差中位 +0.1bp。最后 10 日无 20 日远期（行情止于 2026-11-27）。
+  </div>
+
+  <div class="foot">
+    复现：<code>python analysis/_fetch_events.py --full</code> ·
+    <code>python analysis/_diag_narrative_events.py</code> ·
+    <code>python analysis/_diag_narrative_heat.py</code>。
+    理论稿 <code>docs/structural-edge/narrative-ledger.md</code>；页面 <code>/narrative</code>。
+    口径边界：概念成分为当前快照（2026-07 起留存），解禁只有一个市场、一个制度周期；所有结论按年重测。
+  </div>
+
+</div>
+</body>
+</html>

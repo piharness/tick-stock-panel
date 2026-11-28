@@ -447,6 +447,74 @@ def _split_reason(text: str) -> list[str]:
     return [t.strip("：:").translate(_QUOTES) for t in out if t.translate(_QUOTES).strip()]
 
 
+# ---------------------------------------------------------------- 事件腿
+
+def _events(data_dir: Path) -> dict:
+    """解禁与定增：供给侧日历 + 已结算的量。
+
+    只读事件表（`analysis/_fetch_events.py` 抓的东财两张表），不碰行情——
+    这里给的是「什么时候有多少股票变成可卖」，不是收益预测。
+    收益读数（解禁前 −276bp）是冻结的研究结论，放在页面 data.ts，不在这里重算。
+    """
+    lk_p = data_dir / "events" / "lockup.parquet"
+    if not lk_p.exists():
+        return {"ok": False, "error": "events/lockup.parquet 不存在，先跑 analysis/_fetch_events.py"}
+    lk = pl.read_parquet(lk_p, columns=["symbol", "name", "free_date", "lift_mcap_wan", "ratio_float", "kind"])
+    lk = lk.with_columns(pl.col("free_date").cast(pl.Utf8).str.slice(0, 10).alias("d"))
+
+    # 数据日：取指数分区最后一天（事件表可能已含未来日期，不能拿它当 as_of）
+    idx = sorted((data_dir / "kline_index_daily").glob("date=*/part.parquet"))
+    asof = idx[-1].parent.name.split("=", 1)[1] if idx else max(lk["d"].to_list())
+    asof_d = date_cls.fromisoformat(asof)
+
+    up = lk.filter((pl.col("d") > asof) & (pl.col("d") <= (asof_d + timedelta(days=45)).isoformat()))
+    by_day = (
+        up.group_by("d").agg(
+            pl.len().alias("n"),
+            (pl.col("lift_mcap_wan").sum() / 1e4).round(1).alias("mcap_yi"),
+        ).sort("d")
+    )
+    top = (
+        up.sort("lift_mcap_wan", descending=True).head(8)
+        .select([
+            pl.col("d").alias("date"), "symbol", "name", "kind",
+            (pl.col("lift_mcap_wan") / 1e4).round(1).alias("mcap_yi"),
+            (pl.col("ratio_float") * 100).round(2).alias("ratio_pct"),
+        ])
+    )
+
+    lo = (asof_d - timedelta(days=30)).isoformat()
+    recent = lk.filter((pl.col("d") <= asof) & (pl.col("d") > lo))
+
+    seo_out = {"n": 0, "raise_yi": 0.0}
+    seo_p = data_dir / "events" / "seo.parquet"
+    if seo_p.exists():
+        seo = pl.read_parquet(seo_p, columns=["listing_date", "raise_yuan"])
+        seo = seo.with_columns(pl.col("listing_date").cast(pl.Utf8).str.slice(0, 10).alias("d"))
+        s90 = seo.filter((pl.col("d") <= asof) & (pl.col("d") > (asof_d - timedelta(days=90)).isoformat()))
+        seo_out = {
+            "n": int(s90.height),
+            "raise_yi": round(float(s90["raise_yuan"].sum() or 0) / 1e8, 0),
+        }
+
+    return {
+        "ok": True,
+        "as_of": asof,
+        "next": {
+            "days": int(by_day.height),
+            "mcap_yi": round(float(by_day["mcap_yi"].sum()), 1) if by_day.height else 0.0,
+            "n": int(by_day["n"].sum()) if by_day.height else 0,
+            "by_day": by_day.to_dicts(),
+        },
+        "top": top.to_dicts(),
+        "recent30": {
+            "mcap_yi": round(float(recent["lift_mcap_wan"].sum() or 0) / 1e4, 1),
+            "n": int(recent.height),
+        },
+        "seo90": seo_out,
+    }
+
+
 # ---------------------------------------------------------------- 入口
 
 def build(repo) -> dict:
@@ -463,6 +531,7 @@ def build(repo) -> dict:
         "flows": lambda: _flows(data_dir),
         "index": lambda: _index(data_dir),
         "words": lambda: _words(data_dir),
+        "events": lambda: _events(data_dir),
     }
     blocks: dict[str, dict] = {}
 

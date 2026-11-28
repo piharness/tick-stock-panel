@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Narrative } from './Narrative'
 import { QK } from '@/lib/queryKeys'
-import { DOSE, KILL, LAW, LEGS, PAIR, TIERS } from './data'
+import { DOSE, EVENT_BUCKETS, EVENT_KIND, EVENT_MOMENTUM, KILL, LAW, LEGS, PAIR, TIERS } from './data'
 
 const state = vi.hoisted(() => ({ payload: null as unknown }))
 const ledger = vi.hoisted(() => ({
@@ -52,6 +52,23 @@ const ledger = vi.hoisted(() => ({
     words: {
       ok: true, as_of: '2026-11-25', days: 5,
       rows: [{ word: '人形机器人', n: 17, net_yi: 4.74 }, { word: '算力', n: 7, net_yi: 4.01 }],
+    },
+    events: {
+      ok: true, as_of: '2026-11-27',
+      next: {
+        days: 3, mcap_yi: 963.2, n: 38,
+        by_day: [
+          { d: '2026-11-30', n: 19, mcap_yi: 103.6 },
+          { d: '2026-12-01', n: 10, mcap_yi: 54.6 },
+          { d: '2026-12-17', n: 6, mcap_yi: 1268.1 },
+        ],
+      },
+      top: [
+        { date: '2026-12-17', symbol: '600000.SH', name: '浦发银行', kind: '定向增发机构配售股份', mcap_yi: 1268.1, ratio_pct: 12.5 },
+        { date: '2026-11-30', symbol: '000001.SZ', name: '平安银行', kind: '首发原股东限售股份', mcap_yi: 103.6, ratio_pct: 2.1 },
+      ],
+      recent30: { mcap_yi: 821.4, n: 44 },
+      seo90: { n: 57, raise_yi: 1450 },
     },
   },
   disclaimer: '本页是读数，不是信号。',
@@ -95,20 +112,21 @@ it('首屏：结论带 + 四个摘要 + 可执行动作 0', () => {
   const text = host.textContent ?? ''
   expect(text).toContain('一张收据，不是一个理由')
   expect(text).toContain('三条腿 · 零个信号')
-  expect(text).toContain('叙事不是账单，是收据')
+  expect(text).toContain('叙事是收据，解禁是账单')
   expect(text).toContain('当前可执行动作')
   expect(text).toContain('−17bp')
-  expect(text).toContain('1.10 vs 1.10')
-  expect(text).toContain('B · 单 regime')
+  expect(text).toContain('解禁前 20 日')
+  expect(text).toContain('B · 单市场')
 })
 
 it('五卷锚点齐全（删一卷要红）', () => {
-  for (const id of ['reframe', 'law', 'legs', 'dose', 'pair', 'bounds', 'live', 'mainline', 'flows', 'index', 'words', 'judge', 'kill', 'scope']) {
+  for (const id of ['reframe', 'law', 'legs', 'dose', 'pair', 'event', 'bounds', 'live', 'mainline', 'flows', 'index', 'words', 'events', 'judge', 'kill', 'scope']) {
     expect(host.querySelectorAll(`#${id}`).length).toBe(1)
   }
 })
 
 it('冻结表行数与 data.ts 一致', () => {
+  expect(host.querySelectorAll('#event tbody tr').length).toBe(EVENT_BUCKETS.length + EVENT_MOMENTUM.length + EVENT_KIND.length)
   expect(host.querySelectorAll('#law tbody tr').length).toBe(LAW.length)
   expect(host.querySelectorAll('#legs tbody tr').length).toBe(LEGS.length)
   expect(host.querySelectorAll('#dose tbody tr').length).toBe(DOSE.length)
@@ -126,6 +144,11 @@ it('关键读数在页面上：剂量跨度 / 配对差 / 活口不在本页', (
   const pair = host.querySelector('#pair')?.textContent ?? ''
   expect(pair).toContain('−33.3')
   expect(pair).toContain('−41.2')
+  const ev = host.querySelector('#event')?.textContent ?? ''
+  expect(ev).toContain('−276.5')
+  expect(ev).toContain('−261.6')
+  expect(ev).toContain('−318.1')
+  expect(ev).toContain('49.1%')
   const legs = host.querySelector('#legs')?.textContent ?? ''
   expect(legs).toContain('+291bp')
 })
@@ -152,6 +175,11 @@ it('实时块：温度 / 主线 / 资金 / 指数 / 词频都按 as_of 显示', 
   expect(text).toContain('+0.84pp')
   // 词频
   expect(text).toContain('人形机器人')
+  // 解禁日历
+  expect(text).toContain('未来 45 日解禁')
+  expect(text).toContain('38 只 / 963.2 亿')
+  expect(text).toContain('浦发银行')
+  expect(text).toContain('12.5%')
   // 页脚把每块 as_of 再列一遍
   expect(text).toContain('温度 2026-11-27')
   expect(text).toContain('词频 2026-11-25')
