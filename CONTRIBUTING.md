@@ -371,7 +371,8 @@ A PR must not be merged if any of the following applies:
 - Write a brief plan with each step and how it will be verified before modifying. For simple changes, one sentence is enough.
 - Do not present guesses as facts. Business semantics that cannot be confirmed from code, tests, or documentation must be explicitly asked about.
 - Do not skip reproduction, root cause analysis, or regression verification just because the user asked to "just fix it".
-- Do not automatically commit, push, merge, delete files, migrate databases, or bulk-overwrite data. Obtain explicit confirmation according to the current session's permission rules when needed.
+- Do not automatically merge, delete files, migrate databases, or bulk-overwrite data. Obtain explicit confirmation according to the current session's permission rules when needed.
+- **Commit and push are delegated** (2026-11-28). The agent is the only git user of this repository, so it commits and pushes through `python scripts/git_autosync.py` **without asking**. That script is the single write path to git: it scans staged content for secrets, refuses files over 20 MB, never force-pushes, leaves merge/rebase/conflict states untouched, and records every action in `.workbuddy/git/autosync.log`. Do not hand-write `git commit` / `git add -A` / `git push`, and do not ask "shall I commit?" — that question is the cost this delegation exists to remove. When the script refuses, fix the root cause rather than bypassing it.
 - Do not overwrite existing changes in the working tree. When the same file is being modified concurrently, read the latest content first and preserve both sides' logic.
 - Do not fabricate test results, performance data, GitHub status, or production behavior. Verification that was not run must be clearly marked as such.
 - When reviewing a PR, report issues first, ordered by severity and citing file line numbers. Give the merge recommendation and a brief summary at the end.
@@ -809,7 +810,8 @@ PR 描述必须包含：
 - 修改前用简短计划写明每一步及验证方式；简单改动可只写一句。
 - 不把猜测当成事实。无法从代码、测试或文档确认的业务口径，应明确询问。
 - 不因用户要求“直接修复”就跳过复现、根因分析和回归验证。
-- 不自动执行提交、推送、合并、删除文件、数据库迁移或批量数据覆盖；需要时按当前会话权限规则取得明确确认。
+- 不自动执行合并、删除文件、数据库迁移或批量数据覆盖；需要时按当前会话权限规则取得明确确认。
+- **提交与推送已托管**（2026-11-28）。本仓的 git 使用者只有 agent，因此提交与推送一律走 `python scripts/git_autosync.py`，**不再征求确认**。该脚本是写 git 的唯一入口：扫描暂存内容里的密钥、拒绝超过 20 MB 的文件、永不 force push、合并/变基/冲突状态一概不碰，并把每次动作记进 `.workbuddy/git/autosync.log`。不要手写 `git commit` / `git add -A` / `git push`，也不要再问"要提交吗"——那个问题正是这次托管要消灭的成本。它拒绝时修根因，不要绕过。
 - 不覆盖工作区已有改动。遇到同文件并行修改时先读取最新内容并保留双方逻辑。
 - 不虚构测试结果、性能数据、GitHub 状态或线上行为。未运行的验证必须明确标注。
 - 审查 PR 时先报告问题，按严重级别排序并引用文件行号；最后再给合并建议和简短总结。

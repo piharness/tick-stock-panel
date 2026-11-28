@@ -1,4 +1,4 @@
-"""安装仓库自带的 git 钩子（当前只有 pre-commit 一条）。
+"""安装仓库自带的 git 钩子（pre-commit + post-commit）。
 
 ## 为什么是「脚本 + 薄壳」而不是 pre-commit 框架
 
@@ -47,7 +47,35 @@ done
 exit 0
 """
 
-MARKER = f"{OWNER_PREFIX}2"
+#: post-commit：提交后把当前分支推到 origin。
+#:
+#: 为什么要它：`scripts/git_autosync.py` 在提交时可能**自己**推不出去（离线、
+#: 远端分叉），而"本地有提交、origin 没有"正是账号切换后最容易丢的状态 ——
+#: 换台机器/换个账号看不到任何东西。把它挪到 post-commit 上，任何一条提交
+#: （不管是谁提交的）都会顺手推一次，不变式变成"本地永远等于 origin"。
+#:
+#: 静默是硬要求：钩子失败绝不能打断提交。细节落 `.workbuddy/git/autosync.log`。
+POST_COMMIT_TEMPLATE = """#!/bin/sh
+# {marker}
+# 提交后把当前分支推到 origin（永不 force）。摘除：WB_AUTOSYNC_NO_PUSH=1 或删本文件。
+[ "x$WB_AUTOSYNC_NO_PUSH" = "x1" ] && exit 0
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -n "$root" ] || exit 0
+script="$root/scripts/git_autosync.py"
+[ -f "$script" ] || exit 0
+for py in "$root/backend/.venv/Scripts/python.exe" "$root/backend/.venv/bin/python" python3 python; do
+    if [ -x "$py" ] || command -v "$py" >/dev/null 2>&1; then
+        "$py" "$script" --hook --post-commit >/dev/null 2>&1
+        exit 0
+    fi
+done
+exit 0
+"""
+
+MARKER = f"{OWNER_PREFIX}3"
+
+#: 安装器自己认的"无事可做"文案。`install()` 汇总多条钩子时靠它判断全都没变。
+UP_TO_DATE = "已是最新，无需改动"
 
 
 def hooks_dir(repo_root: Path) -> Path:
@@ -68,21 +96,23 @@ def hooks_dir(repo_root: Path) -> Path:
     return repo_root / ".git" / "hooks"
 
 
-def install(repo_root: Path, *, force: bool = False) -> tuple[bool, str]:
-    """返回 (是否安装成功, 说明)。已是最新时返回 (True, "已是最新")。"""
+def _install_one(
+    repo_root: Path, name: str, template: str, *, force: bool = False
+) -> tuple[bool, str, bool]:
+    """装一条钩子。返回 (成功与否, 说明, 内容是否变化)。"""
     directory = hooks_dir(repo_root)
-    target = directory / "pre-commit"
-    content = HOOK_TEMPLATE.format(marker=MARKER)
+    target = directory / name
+    content = template.format(marker=MARKER)
 
     if target.exists():
         existing = target.read_text(encoding="utf-8", errors="replace")
         if existing == content:
-            return True, "已是最新，无需改动"
+            return True, UP_TO_DATE, False
         if OWNER_PREFIX not in existing and not force:
             return False, (
                 f"{target} 已存在且不是本工具安装的，拒绝覆盖。"
                 "确认要替换请加 --force（原文件建议先备份）。"
-            )
+            ), False
 
     directory.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8", newline="\n")
@@ -91,7 +121,25 @@ def install(repo_root: Path, *, force: bool = False) -> tuple[bool, str]:
         target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     except OSError:
         pass
-    return True, f"已安装: {target}"
+    return True, f"已安装: {target}", True
+
+
+def install(repo_root: Path, *, force: bool = False) -> tuple[bool, str]:
+    """返回 (是否安装成功, 说明)。全部已是最新时返回 (True, "已是最新，无需改动")。
+
+    按 pre-commit → post-commit 顺序装；前一条被拒就整体返回失败，避免"装了一半"
+    这种更难解释的状态。
+    """
+    hooks = (("pre-commit", HOOK_TEMPLATE), ("post-commit", POST_COMMIT_TEMPLATE))
+    messages: list[str] = []
+    changed = False
+    for name, template in hooks:
+        ok, message, touched = _install_one(repo_root, name, template, force=force)
+        if not ok:
+            return False, message
+        messages.append(message)
+        changed = changed or touched
+    return True, "；".join(messages) if changed else UP_TO_DATE
 
 
 def main(argv: list[str] | None = None) -> int:
