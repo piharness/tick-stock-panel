@@ -147,3 +147,141 @@ def test_legacy_path_uses_same_cache(tmp_path: Path):
     legacy = client.get("/api/citizenship", headers=headers)
     assert legacy.status_code == 200
     assert legacy.content == main.content
+
+
+# ── 磁盘缓存：冷启动不再重算 ─────────────────────────────────────────
+#
+# 回归动机（2026-11-28）：容器重启后 `_SERIALIZED_CACHE` 为空，compute() 要读
+# 188 个 parquet 分区（容器内 2.4s，绑定挂载 I/O），首屏白等 5.2s。这份载荷一个
+# 交易日内不变，重启后重算是纯浪费。
+
+
+def test_disk_cache_survives_memory_clear(tmp_path: Path, monkeypatch):
+    """模拟进程重启：只清内存、不动磁盘，字节必须原样复用。"""
+    calls = {"n": 0}
+    real = citizenship._dump
+
+    def counted(payload):
+        calls["n"] += 1
+        return real(payload)
+
+    monkeypatch.setattr(citizenship, "_dump", counted)
+
+    raw1, gz1 = citizenship.get_citizenship_serialized(tmp_path)
+    # 进程重启的等价物：内存全空，磁盘还在。
+    citizenship._SERIALIZED_CACHE.clear()
+    citizenship._CACHE.clear()
+    raw2, gz2 = citizenship.get_citizenship_serialized(tmp_path)
+
+    assert calls["n"] == 1, "磁盘命中后不得重新序列化"
+    assert (raw1, gz1) == (raw2, gz2)
+
+
+def test_disk_cache_invalidates_when_input_changes(tmp_path: Path, monkeypatch):
+    """输入变了（分区被改写）指纹必须变，不能把旧结论当成新数据。"""
+    calls = {"n": 0}
+    real = citizenship._dump
+
+    def counted(payload):
+        calls["n"] += 1
+        return real(payload)
+
+    monkeypatch.setattr(citizenship, "_dump", counted)
+
+    part = tmp_path / "kline_daily_enriched" / "date=2026-11-27" / "part.parquet"
+    citizenship.get_citizenship_serialized(tmp_path)
+    part.parent.mkdir(parents=True, exist_ok=True)
+    part.write_bytes(b"x" * 8)
+
+    citizenship._SERIALIZED_CACHE.clear()
+    citizenship._CACHE.clear()
+    citizenship.get_citizenship_serialized(tmp_path)
+
+    assert calls["n"] == 2, "分区变化后必须重算"
+
+
+def test_etag_enables_304(tmp_path: Path):
+    """刷新页面不该重传 1MB：同字节必须给 304，且 304 不带 body。"""
+    client = _client(tmp_path)
+    headers = {"accept-encoding": "gzip"}
+
+    first = client.get("/api/shortline-radar", headers=headers)
+    etag = first.headers.get("etag")
+    assert etag, "必须带 ETag"
+    assert "max-age" in (first.headers.get("cache-control") or "")
+
+    second = client.get("/api/shortline-radar", headers={**headers, "if-none-match": etag})
+    assert second.status_code == 304
+    assert second.content == b""
+
+    stale = client.get("/api/shortline-radar", headers={**headers, "if-none-match": '"nope"'})
+    assert stale.status_code == 200
+
+
+# ── 磁盘缓存：冷启动不再重算 ─────────────────────────────────────────
+#
+# 回归动机（2026-11-28）：容器重启后 `_SERIALIZED_CACHE` 为空，compute() 要读
+# 188 个 parquet 分区（容器内 2.4s，绑定挂载 I/O），首屏白等 5.2s。这份载荷一个
+# 交易日内不变，重启后重算是纯浪费。
+
+
+def test_disk_cache_survives_memory_clear(tmp_path: Path, monkeypatch):
+    """模拟进程重启：只清内存、不动磁盘，字节必须原样复用。"""
+    calls = {"n": 0}
+    real = citizenship._dump
+
+    def counted(payload):
+        calls["n"] += 1
+        return real(payload)
+
+    monkeypatch.setattr(citizenship, "_dump", counted)
+
+    raw1, gz1 = citizenship.get_citizenship_serialized(tmp_path)
+    # 进程重启的等价物：内存全空，磁盘还在。
+    citizenship._SERIALIZED_CACHE.clear()
+    citizenship._CACHE.clear()
+    raw2, gz2 = citizenship.get_citizenship_serialized(tmp_path)
+
+    assert calls["n"] == 1, "磁盘命中后不得重新序列化"
+    assert (raw1, gz1) == (raw2, gz2)
+
+
+def test_disk_cache_invalidates_when_input_changes(tmp_path: Path, monkeypatch):
+    """输入变了（分区被改写）指纹必须变，不能把旧结论当成新数据。"""
+    calls = {"n": 0}
+    real = citizenship._dump
+
+    def counted(payload):
+        calls["n"] += 1
+        return real(payload)
+
+    monkeypatch.setattr(citizenship, "_dump", counted)
+
+    part = tmp_path / "kline_daily_enriched" / "date=2026-11-27" / "part.parquet"
+    citizenship.get_citizenship_serialized(tmp_path)
+    part.parent.mkdir(parents=True, exist_ok=True)
+    part.write_bytes(b"x" * 8)
+
+    citizenship._SERIALIZED_CACHE.clear()
+    citizenship._CACHE.clear()
+    citizenship.get_citizenship_serialized(tmp_path)
+
+    assert calls["n"] == 2, "分区变化后必须重算"
+
+
+def test_etag_enables_304(tmp_path: Path):
+    """刷新页面不该重传 1MB：同字节必须给 304，且 304 不带 body。"""
+    client = _client(tmp_path)
+    headers = {"accept-encoding": "gzip"}
+
+    first = client.get("/api/shortline-radar", headers=headers)
+    etag = first.headers.get("etag")
+    assert etag, "必须带 ETag"
+    assert "max-age" in (first.headers.get("cache-control") or "")
+
+    second = client.get("/api/shortline-radar", headers={**headers, "if-none-match": etag})
+    assert second.status_code == 304
+    assert second.content == b""
+
+    stale = client.get("/api/shortline-radar", headers={**headers, "if-none-match": '"nope"'})
+    assert stale.status_code == 200

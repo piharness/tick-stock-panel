@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import date as date_cls
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
@@ -38,24 +39,50 @@ def _parse_date(value: str | None) -> date_cls | None:
 
 
 def _radar_response(request: Request, as_of: str | None) -> Response:
-    """预序列化 + 按客户端能力选压缩形态。
+    """预序列化 + 按客户端能力选压缩形态 + 条件请求。
 
-    载荷是**全市场 ~5000 只**的分类结果（实测 5.3MB → gzip 1.1MB）。dict 缓存
+    载荷是**全市场 ~5000 只**的分类结果（实测 5.2MB → gzip 1.1MB）。dict 缓存
     命中后计算是 0ms，但每次请求仍要 dumps 84ms + gzip 68ms；这一段已经由
     `citizenship.get_citizenship_serialized` 按 (data_dir, as_of) 缓存住，
     这里只做「选哪一份字节」。
 
     不返回 dict 让 FastAPI 再序列化一遍：那会把刚省掉的 84ms 又付回去。
+
+    ETag/304：这份载荷一个交易日内不变，页面刷新没有理由重传 1MB。ETag 直接
+    取压缩字节的摘要 —— 内容变则标签变，不需要另建版本号。`max-age=60` 让同一
+    分钟内的重复打开连 revalidate 都省掉；过期后浏览器带 If-None-Match 回来，
+    命中就是 304（0 字节）。
     """
     target = _parse_date(as_of)
     raw, packed = citizenship.get_citizenship_serialized(_data_dir(request), target)
+    etag = '"' + hashlib.blake2b(packed, digest_size=12).hexdigest() + '"'
+    cache_headers = {
+        "ETag": etag,
+        "Cache-Control": "public, max-age=60, must-revalidate",
+        "Vary": "Accept-Encoding",
+    }
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=cache_headers)
     if _client_accepts_gzip(request):
         return Response(
             content=packed,
             media_type="application/json",
-            headers={"Content-Encoding": "gzip", "Vary": "Accept-Encoding"},
+            headers={**cache_headers, "Content-Encoding": "gzip"},
         )
-    return Response(content=raw, media_type="application/json")
+    return Response(content=raw, media_type="application/json", headers=cache_headers)
+
+
+def _etag_matches(header: str | None, etag: str) -> bool:
+    """`If-None-Match` 可能是列表、可能带弱校验前缀；只做 RFC 9110 的最小实现。"""
+    if not header:
+        return False
+    for part in header.split(","):
+        candidate = part.strip()
+        if candidate.startswith("W/"):
+            candidate = candidate[2:]
+        if candidate == etag or candidate == "*":
+            return True
+    return False
 
 
 @router.get("")

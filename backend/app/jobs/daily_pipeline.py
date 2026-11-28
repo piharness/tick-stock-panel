@@ -1557,6 +1557,20 @@ def _run_shortline_audit(repo) -> None:
                         len(row["picks"]), len(row["shadow"]))
         logger.info("shortline_audit 产出物已更新: 登记日 %s / 可评估月 %s",
                     art.get("days_registered"), art.get("months"))
+
+        # 预热雷达载荷：一个交易日内这份字节不变，但冷构建要读 188 个 parquet 分区
+        # （容器内约 2.4s + 序列化 0.2s）。数据刚落库就把磁盘缓存写好，第一个打开
+        # 页面的人就不必替所有人付这笔钱。必须排在 rebuild 之后：sort_audit.json
+        # 是输入指纹的一部分，先预热会让指纹立刻过期。
+        try:
+            from app.services import citizenship
+
+            started = time.time()
+            citizenship.clear_citizenship_cache()
+            _, packed = citizenship.get_citizenship_serialized(data_dir)
+            logger.info("短线雷达载荷已预热: %.1fMB / %.1fs", len(packed) / 1e6, time.time() - started)
+        except Exception:  # noqa: BLE001 — 预热失败只是慢一点，不影响产出物
+            logger.warning("短线雷达载荷预热失败（下次请求会自行构建）", exc_info=True)
     except Exception:  # noqa: BLE001 — 定时任务异常不得影响调度器主循环
         logger.exception("shortline_audit scheduled run 异常")
 

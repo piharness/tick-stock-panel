@@ -41,8 +41,11 @@ fwd20 跌超 20% 的概率 2.72% / 2.75% / 6.89% / 9.89%，跨度 3.6 倍，34 �
 from __future__ import annotations
 
 import bisect
+import hashlib
+import json
 import os
 import threading
+import time
 from datetime import date as date_cls
 from pathlib import Path
 
@@ -705,6 +708,24 @@ def _industries(data_dir: Path) -> pl.DataFrame:
     )
 
 
+#: 行的输出精度 —— 只影响 JSON 字节数，不影响任何判据。
+#:
+#: 依据：页面所有读数都经 `toFixed(1~2)` 或 `Math.round(x*100)` 展示，4 位小数已经
+#: 能表示 0.01%；`p_*` 是分位（0..1），4 位足够排序；财务比率 2 位是原始数据精度。
+#:
+#: `heat` 刻意不在此列：它是观察池的排序键，四舍五入会让并列关系改变，
+#: 进而改变 15 只的成员 —— 瘦身不许改结论。同理 `n_days`/`listing_days` 是整数。
+_ROW_FLOAT_PRECISION = {
+    "ret20": 4, "ret60": 4, "vol60": 4, "amp20": 4,
+    "turn_ratio": 2, "turn_med": 3, "turnover_rate": 3,
+    "p_scale": 4, "p_turn_med": 4, "p_turnover": 4, "p_amount": 4, "p_amp": 4,
+    "roe": 2, "revenue_yoy": 2, "net_income_yoy": 2,
+    "gross_margin": 2, "debt_to_asset_ratio": 2,
+}
+#: 市值（元）与成交额（元）取整：前端只做分档/排序/除以 1e8，不需要小数。
+_ROW_INT_COLUMNS = ("mcap", "amount")
+
+
 def compute(
     data_dir: Path,
     as_of: date_cls | None = None,
@@ -896,6 +917,17 @@ def compute(
         .with_columns(pl.col("arena").replace_strict(arena_order, default=99).alias("_ar"))
         .sort(["_ar", "amount"], descending=[False, True])
         .drop("_ar")
+    )
+
+    # 载荷瘦身：JSON 里一个浮点是 19.7 字节（`0.27157954545454555`），5.2MB 里
+    # 约 1.6MB 花在小数点后 14 位上 —— 那是 double 的精度，不是页面的精度。
+    # 按「页面读得出、判据用得上」定：分位/收益 4 位（0.01%），财务比率 2 位；
+    # 市值/成交额取整（元），前端只用来分档与排序。实测 5.15MB → 4.14MB。
+    # 注意：必须在 `_summary` / `_focus` 之前做，否则卡片里是未舍入值、表格里是
+    # 舍入值 —— 同一个数字两个来源，正是这个仓库反复踩的坑。
+    rows = rows.with_columns(
+        [pl.col(c).round(n) for c, n in _ROW_FLOAT_PRECISION.items() if c in rows.columns]
+        + [pl.col(c).cast(pl.Int64) for c in _ROW_INT_COLUMNS if c in rows.columns]
     )
 
     summary = _summary(rows)
@@ -1438,8 +1470,6 @@ _GZIP_LEVEL = 6  # 与 api/kline._gzip_payload 一致: level 9 在 5MB 量级要
 
 
 def _dump(payload: dict) -> bytes:
-    import json
-
     return json.dumps(
         payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
         default=lambda o: o.isoformat() if hasattr(o, "isoformat") else str(o),
@@ -1459,31 +1489,161 @@ def _sanitize_nan(obj):
     return obj
 
 
+# ── 磁盘缓存：进程重启后不再重算 ────────────────────────────────────
+#
+# 内存缓存挡不住冷启动：容器一重启 `_SERIALIZED_CACHE` 就是空的，而
+# `compute()` 要读 188 个 parquet 分区（容器内实测 2.4s，其中情绪窗口
+# 1.5s、结构窗口 1.0s，全耗在绑定挂载的 I/O 上）+ 序列化 0.2s。这份载荷
+# 一个交易日内不变，重启后重算是纯浪费 —— 首屏因此白等 5s。
+#
+# 键 = 请求的 as_of（None 表示「最新」）+ 输入指纹。指纹覆盖交易日目录
+# 列表、窗口内每个分区的 size/mtime、instruments、席位、排序体检产出物与
+# 口径版本；任何一处变化都让指纹变，旧文件自然失效，不需要额外的一致性维护。
+#
+# 槽位而不是「按日期命名再删旧」：删除动作在这个仓库会触发安全策略杀进程
+# （见 CONTRIBUTING），所以固定 N 个槽位靠覆写轮换，磁盘占用有上界且永不删除。
+_RADAR_CACHE_SCHEMA = 3   # 载荷形状/精度变化时 +1：旧缓存自动失效
+_RADAR_CACHE_SLOTS = 6
+_RADAR_FP_DAYS = 130      # 覆盖 max(主场 20, 标签 60, 情绪 120)
+_DISK_EPOCH = 0           # 显式 clear() 后 +1：让旧文件失效而不删除
+
+
+def _cache_slot(data_dir: Path, requested: date_cls | None) -> Path:
+    """固定槽位：同名请求永远落同一格，不同 as_of 按哈希分散。"""
+    key = requested.isoformat() if requested else "latest"
+    digest = hashlib.blake2b(key.encode("utf-8"), digest_size=2).digest()
+    slot = int.from_bytes(digest, "big") % _RADAR_CACHE_SLOTS
+    return Path(data_dir) / "shortline" / "radar-cache" / f"radar-{slot}"
+
+
+def _input_fingerprint(data_dir: Path, requested: date_cls | None) -> str:
+    """输入的廉价指纹：一次 scandir + 窗口内逐分区 stat（容器内约 0.17s）。"""
+    h = hashlib.blake2b(digest_size=16)
+    h.update(f"s{_RADAR_CACHE_SCHEMA}|e{_DISK_EPOCH}|a{requested or 'latest'}".encode())
+    days = _enriched_days(data_dir)
+    h.update(f"|d{len(days)}|{days[-1].isoformat() if days else '-'}".encode())
+    base = Path(data_dir) / "kline_daily_enriched"
+    for d in days[-_RADAR_FP_DAYS:]:
+        try:
+            st = (base / f"date={d.isoformat()}" / "part.parquet").stat()
+            h.update(f"|{d.isoformat()}:{st.st_size}:{st.st_mtime_ns}".encode())
+        except OSError:
+            h.update(f"|{d.isoformat()}:-".encode())
+    for rel in (
+        "instruments/instruments.parquet",
+        "shortline/sort_audit.json",
+        "dragon_tiger_seats/seat_rep.parquet",
+    ):
+        try:
+            st = (Path(data_dir) / rel).stat()
+            h.update(f"|{rel}:{st.st_size}:{st.st_mtime_ns}".encode())
+        except OSError:
+            h.update(f"|{rel}:-".encode())
+    # 席位明细是「新文件出现」而不是「旧文件改动」：目录 mtime 足够，省一次 glob。
+    try:
+        st = (Path(data_dir) / "dragon_tiger_seats").stat()
+        h.update(f"|seats:{st.st_mtime_ns}".encode())
+    except OSError:
+        h.update("|seats:-".encode())
+    # 代码本身也是输入：改了算法却忘了 bump SCHEMA 时，靠文件 mtime 兜底，
+    # 避免「重启后读到上一版算法的结论」这种最难查的错。
+    for code in (Path(__file__), Path(__file__).with_name("shortline_audit.py")):
+        try:
+            st = code.stat()
+            h.update(f"|{code.name}:{st.st_size}:{st.st_mtime_ns}".encode())
+        except OSError:
+            h.update(f"|{code.name}:-".encode())
+    return h.hexdigest()
+
+
+def _read_disk_cache(base: Path, requested: date_cls | None, fp: str) -> tuple[bytes, bytes] | None:
+    """命中返回 (raw, packed)；任何异常都当成未命中，缓存不许拖垮接口。"""
+    try:
+        meta = json.loads(Path(f"{base}.meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if meta.get("fingerprint") != fp or meta.get("requested") != (requested.isoformat() if requested else None):
+        return None
+    try:
+        raw = Path(f"{base}.json").read_bytes()
+        packed = Path(f"{base}.json.gz").read_bytes()
+    except OSError:
+        return None
+    if len(raw) != meta.get("raw_bytes") or len(packed) != meta.get("packed_bytes"):
+        return None
+    return raw, packed
+
+
+def _write_disk_cache(
+    base: Path, requested: date_cls | None, fp: str, raw: bytes, packed: bytes, payload: dict,
+) -> None:
+    """先落字节再落 meta：中途崩溃最多留下「meta 对不上」的旧文件，读侧会当未命中。"""
+    tmp_suffix = f".{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        base.parent.mkdir(parents=True, exist_ok=True)
+        for suffix, blob in ((".json", raw), (".json.gz", packed)):
+            tmp = Path(f"{base}{suffix}{tmp_suffix}")
+            tmp.write_bytes(blob)
+            os.replace(tmp, f"{base}{suffix}")
+        meta = {
+            "fingerprint": fp,
+            "requested": requested.isoformat() if requested else None,
+            "as_of": payload.get("as_of"),
+            "rows": len(payload.get("rows") or []),
+            "raw_bytes": len(raw),
+            "packed_bytes": len(packed),
+            "built_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "schema": _RADAR_CACHE_SCHEMA,
+        }
+        tmp = Path(f"{base}.meta.json{tmp_suffix}")
+        tmp.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, f"{base}.meta.json")
+    except OSError:
+        return  # 只读数据目录（或磁盘满）时退化为纯内存缓存，不影响接口
+
+
 def get_citizenship_serialized(
     data_dir: Path, as_of: date_cls | None = None,
 ) -> tuple[bytes, bytes]:
     """返回 (未压缩 JSON, gzip 后的 JSON)，按 (data_dir, as_of) 缓存。
 
-    两个都缓存是因为压缩与否取决于客户端的 `Accept-Encoding`：只缓存压缩版会让
-    不接受 gzip 的客户端走一次现压，只缓存原版就等于没省 gzip 那 68ms。
+    两级缓存：
+      1. 进程内 `_SERIALIZED_CACHE`（TTL 30min）—— 热请求 0 序列化 0 压缩；
+      2. 磁盘槽位（指纹校验）—— 冷启动直接读字节，不再读 188 个 parquet。
+
+    两个形态都缓存是因为压缩与否取决于客户端的 `Accept-Encoding`：只缓存压缩版
+    会让不接受 gzip 的客户端走一次现压，只缓存原版就等于没省 gzip 那 68ms。
     """
     import gzip
 
     key = (str(data_dir), as_of.isoformat() if as_of else None)
 
     def _build() -> tuple[bytes, bytes]:
+        base = _cache_slot(data_dir, as_of)
+        fp = _input_fingerprint(data_dir, as_of)
+        hit = _read_disk_cache(base, as_of, fp)
+        if hit is not None:
+            return hit
         payload = get_citizenship(data_dir, as_of)
         try:
             raw = _dump(payload)
         except ValueError:
             raw = _dump(_sanitize_nan(payload))
-        return raw, gzip.compress(raw, _GZIP_LEVEL)
+        packed = gzip.compress(raw, _GZIP_LEVEL)
+        _write_disk_cache(base, as_of, fp, raw, packed, payload)
+        return raw, packed
 
     return _SERIALIZED_CACHE.get_or_compute(key, _build)
 
 
 def clear_citizenship_cache() -> None:
-    """写入/刷新后调用：dict 缓存与字节缓存必须一起清，否则两者会分叉。"""
+    """写入/刷新后调用：dict 缓存与字节缓存必须一起清，否则两者会分叉。
+
+    磁盘槽位不删（删除会触发安全策略），靠 `_DISK_EPOCH` 让旧文件全部失效：
+    指纹里的 epoch 变了，下一次构建必然重算并覆写。
+    """
+    global _DISK_EPOCH
     with _CACHE_LOCK:
         _CACHE.clear()
     _SERIALIZED_CACHE.clear()
+    _DISK_EPOCH += 1
