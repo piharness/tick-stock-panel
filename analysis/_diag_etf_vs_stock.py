@@ -49,6 +49,9 @@ def stat(v: np.ndarray, cost=0.0006) -> dict:
             "p10_bp": round(float(np.percentile(v, 10)) * 1e4, 1),
             "p90_bp": round(float(np.percentile(v, 90)) * 1e4, 1),
             "win": round(float((v > 0).mean()) * 100, 1),
+            # 上下不对称比：正尾均值 / |负尾均值|。ETF 与个股必须同一算法，
+            # 否则「ETF 砍左尾」这句话会变成两套口径的差（2026-11-28 补）
+            "updn": round(float(v[v > 0].mean() / abs(v[v < 0].mean())), 2),
             "skew": round(float(pd.Series(v).skew()), 2)}
 
 

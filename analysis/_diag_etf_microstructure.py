@@ -16,6 +16,12 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "analysis/_diag_etf_microstructure_result.json"
 
+# 商品期货 ETF 的名单只有一份，来自核心分类模块（2026-11-28）。
+# 本文件另有一份名称关键词表，但 159980「有色ETF大成」/159981「能源化工ETF建信」
+# 的 name 里没有任何可剔的词 —— 不按代码剔就会以「有色/化工最大 ETF」的身份
+# 污染「同行业最大 vs 最小」的振幅比。
+from _diag_industry_etf_asym import EXCLUDE_SYMBOLS  # noqa: E402
+
 EXCLUDE = ["债", "短融", "添益", "日利", "快线", "现金", "理财", "国开", "政金", "信用", "转债",
            "货币", "黄金", "白银", "原油", "豆粕", "商品", "港股", "香港", "恒生", "中概",
            "纳斯达克", "标普", "日经", "德国", "法国", "英国", "东南亚", "越南", "沙特", "亚太",
@@ -25,6 +31,7 @@ EXCLUDE = ["债", "短融", "添益", "日利", "快线", "现金", "理财", "�
 def main() -> None:
     inst = pd.read_parquet(ROOT / "data/instruments_etf/instruments_etf.parquet")[["symbol", "name"]]
     inst = inst[~inst["name"].fillna("").map(lambda x: any(k in str(x) for k in EXCLUDE))]
+    inst = inst[~inst["symbol"].isin(EXCLUDE_SYMBOLS)]
 
     # ---------- 5min：日内结构 ----------
     m = pd.read_parquet(ROOT / "data/etf_5min_sina/etf_5min.parquet")

@@ -30,7 +30,7 @@ MIN_AMT = 1.5e7  # 20 日均成交额门槛，低于此的点差会吞掉全部�
 # ---------- 分类 ----------
 EXCLUDE = [
     "债", "短融", "添益", "日利", "快线", "现金", "理财", "国开", "政金",
-    "信用", "转债", "黄金", "白银", "原油", "豆粕", "商品",
+    "信用", "转债", "黄金", "白银", "原油", "豆粕", "商品", "期货",
     "港股", "香港", "恒生", "H股", "中概", "纳斯达克", "纳指", "标普", "道琼斯",
     "日经", "德国", "法国", "英国", "东南亚", "越南", "沙特", "亚太",
     "全球", "海外", "QDII", "中韩", "中日",
@@ -38,6 +38,15 @@ EXCLUDE = [
     "A50", "深证100", "MSCI", "全指", "等权", "红利", "低波", "价值",
     "成长", "质量", "增强", "综指", "综", "大盘", "中盘", "小盘",
 ]
+
+# 商品期货 ETF：跟踪期货价格指数（持合约、不持股票），名字里没有「商品/期货」字样，
+# 关键词剔不掉，只能按代码剔。混进行业池会同时污染「行业净值」和「载体选择」两端：
+#   159980 有色ETF大成    → 有色：dd52 −16.0%，而 512400（有色股票）−49.5%
+#   159981 能源化工ETF建信 → 化工：dd52 −9.0%，且是化工成交额最大的一只
+#   159985 豆粕ETF华夏    → 已被「豆粕」关键词拦住；列在这里防改名后漏网
+# 事故：2026-11-27 有色段首的载体被选成 159980（成交额 6.14 亿 > 512400 5.53 亿），
+# 信号说的是「有色股票跌 41%」，买到的是「有色金属期货跌 16%」。
+EXCLUDE_SYMBOLS = {"159980.SZ", "159981.SZ", "159985.SZ"}
 
 # 顺序敏感：先具体后宽泛
 INDUSTRY = [
@@ -66,7 +75,14 @@ INDUSTRY = [
 ]
 
 
-def classify(name: str) -> str | None:
+def classify(name: str, symbol: str | None = None) -> str | None:
+    """名称关键词 → 行业；商品期货 ETF 按代码剔除。
+
+    `symbol` 是可选的第二判据：159980「有色ETF大成」的名字里没有任何可剔的关键词，
+    只靠 name 必然归进「有色」—— 那正是 2026-11-27 载体错配的来源。
+    """
+    if symbol is not None and symbol in EXCLUDE_SYMBOLS:
+        return None
     for kw in EXCLUDE:
         if kw in name:
             return None
@@ -109,7 +125,8 @@ def load(
     d["date"] = pd.to_datetime(d["date"])
     inst = pd.read_parquet(INST_FILE)[["symbol", "name"]] if inst_raw is None else inst_raw[["symbol", "name"]].copy()
     d = d.merge(inst, on="symbol", how="left")
-    d["industry"] = d["name"].map(lambda x: classify(str(x)))
+    # 分类的唯一实现点：名称关键词 + 商品期货代码白名单（两者缺一不可）
+    d["industry"] = [classify(str(n), str(s)) for n, s in zip(d["name"], d["symbol"])]
     d = d[d["industry"].notna() & (d["date"] >= START)].copy()
     d = d.sort_values(["symbol", "date"])
 

@@ -477,7 +477,10 @@ def exp_clusters(ev: pd.DataFrame, status, nav, prices, sym_mat, sessions) -> di
     }
     for label, mask in {"k<=1": x.k <= 1, "k=2": x.k == 2, "k>=3": x.k >= 3}.items():
         out["by_k"][label] = {f"h{h}": agg(mask, h) for h in (5, 10, 20)}
-    out["sample"] = x.tail(8)[["start", "k", "max_k", "days", "avg_corr", "ret20"]].astype(object).to_dict("records")
+    # avg_corr 只在「簇内 ≥2 行业且 ≥5 个交易日」时才有值；最近若干簇可能是单行业，
+    # 整列缺失时不能硬取（universe 修正后第一次踩到）
+    keep = [c for c in ("start", "k", "max_k", "days", "avg_corr", "ret20") if c in x.columns]
+    out["sample"] = x.tail(8)[keep].astype(object).to_dict("records")
     return out
 
 
