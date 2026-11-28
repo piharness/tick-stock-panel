@@ -10,7 +10,8 @@
 
 口径：
   - 解禁日 = FREE_DATE（可上市流通日）。ratio = TOTAL_RATIO（解禁股数/流通股数）。
-  - 收益：pre20 = close[t-1]/open[t-20]-1；post20 = close[t+20]/open[t+1]-1。
+  - 收益：pre20 = close[t-1]/open[t-20]-1。解禁后的窗口曾测过，2026-11-28 撤下
+    （刚从成本、方向只出现过一次，见 git 895aa2a0）；本脚本不再计算、也不再输出。
   - 基准 = 同日全市场（有行情的股票）日收益中位数的复利路径；超额 = 个股 − 基准。
   - 事件扎堆：同一天多个解禁按「当日事件均值」聚成一条，t 按日聚簇 NW(5)。
   - 安慰剂：同股票、同一年内随机取 20 个非事件日，重算同一统计量（控制个股固定效应）。
@@ -102,16 +103,14 @@ def wide_matrices(panel: pd.DataFrame):
 
 
 def window_stats(open_m, close_m, n_dates):
-    """对每个 (日期序, 股票序) 预计算 pre20 / post20 / pre120。"""
+    """对每个 (日期序, 股票序) 预计算 pre20 / pre120。"""
     eps = 1e-12
     pre = np.full_like(close_m, np.nan)
-    post = np.full_like(close_m, np.nan)
     pre120 = np.full_like(close_m, np.nan)
     if n_dates > 121:
         pre[20:, :] = close_m[19:-1, :] / (open_m[:-20, :] + eps) - 1
-        post[:-21, :] = close_m[21:, :] / (open_m[1:-20, :] + eps) - 1
         pre120[120:, :] = close_m[119:-1, :] / (open_m[:-120, :] + eps) - 1
-    return pre, post, pre120
+    return pre, pre120
 
 
 def main() -> None:
@@ -125,7 +124,7 @@ def main() -> None:
     seo = pl.read_parquet(SEO).to_pandas()
     seo["listing_date"] = pd.to_datetime(seo["listing_date"])
 
-    # 面板：2018-12 起，覆盖 2019 事件的 pre20；到 2027-02 覆盖 2026-11 的 post20
+    # 面板：2018-12 起，覆盖 2019 事件的 pre20（以及 120 日动量所需的 120 个交易日）
     print('载入日线面板 2018-11 ~ 2027-03')
     panel = load_panel("2018-11-01", "2027-03-31")
     dates, symbols, open_m, close_m = wide_matrices(panel)
@@ -133,7 +132,7 @@ def main() -> None:
     sidx = {s: j for j, s in enumerate(symbols)}
     print(f'  日期 {len(dates)} · 股票 {len(symbols)}')
 
-    pre_m, post_m, pre120_m = window_stats(open_m, close_m, len(dates))
+    pre_m, pre120_m = window_stats(open_m, close_m, len(dates))
 
     # 市场基准：同日全市场**等权均值**收益（逐日），再复利成路径。
     # 用中位会把所有个股超额系统性抬高约 +400bp/20日（收益分布右偏），
@@ -143,15 +142,11 @@ def main() -> None:
     mkt = np.nanmean(ret, axis=1)
     mkt = np.where(np.isfinite(mkt), mkt, 0.0)
     base_pre = np.full(len(dates), np.nan)
-    base_post = np.full(len(dates), np.nan)
     base_120 = np.full(len(dates), np.nan)
     for i in range(len(dates)):
         lo, hi = i - 20, i
         if lo >= 0:
             base_pre[i] = np.prod(1 + mkt[lo:hi]) - 1
-        lo2, hi2 = i + 1, i + 21
-        if hi2 < len(dates):
-            base_post[i] = np.prod(1 + mkt[lo2:hi2]) - 1
         lo3 = i - 120
         if lo3 >= 0:
             base_120[i] = np.prod(1 + mkt[lo3:hi]) - 1
@@ -166,18 +161,15 @@ def main() -> None:
     ev["b"] = ev["ratio_float"].map(bucket)
     ev = ev[ev["b"].notna()]
     ev["pre_ex"] = pre_m[ev["t"], ev["s"]] - base_pre[ev["t"]]
-    ev["post_ex"] = post_m[ev["t"], ev["s"]] - base_post[ev["t"]]
     ev["m120_ex"] = pre120_m[ev["t"], ev["s"]] - base_120[ev["t"]]
 
     def agg(g: pd.DataFrame) -> dict:
-        by = g.groupby("free_date").agg(pre=("pre_ex", "mean"), post=("post_ex", "mean"), n=("pre_ex", "size"))
+        by = g.groupby("free_date").agg(pre=("pre_ex", "mean"), n=("pre_ex", "size"))
         return {
             "events": int(len(g)),
             "days": int(by.shape[0]),
             "pre_bp": round(float(by["pre"].mean()) * 1e4, 1),
             "pre_t": round(nw_t(by["pre"]), 2),
-            "post_bp": round(float(by["post"].mean()) * 1e4, 1),
-            "post_t": round(nw_t(by["post"]), 2),
         }
 
     print('\n== A 解禁：按解禁占流通比分档（超额，bp）')
@@ -189,7 +181,7 @@ def main() -> None:
         lock_rows[lab] = agg(g)
         r = lock_rows[lab]
         print(f"  {lab:<7} n={r['events']:>5} days={r['days']:>4} "
-              f"pre {r['pre_bp']:>+8.1f} (t {r['pre_t']:>5.2f})  post {r['post_bp']:>+8.1f} (t {r['post_t']:>5.2f})")
+              f"pre {r['pre_bp']:>+8.1f} (t {r['pre_t']:>5.2f})")
 
     # 安慰剂：同股票、±120 个交易日内随机日（避开该股自己的事件日）。
     # 不按「同一年」取，是因为逐年筛选候选日会把 2,700 个事件 × 2,000 个候选做成
@@ -211,27 +203,22 @@ def main() -> None:
                     break
                 ti[bad] = np.clip(ts[bad] + rng.integers(-120, 121, size=int(bad.sum())), 0, len(dates) - 1)
             pre = pre_m[ti, ss] - base_pre[ti]
-            post = post_m[ti, ss] - base_post[ti]
-            draws.append((np.nanmean(pre) * 1e4, np.nanmean(post) * 1e4))
+            draws.append(np.nanmean(pre) * 1e4)
         a = np.array(draws)
         plac[lab] = {
-            "pre_p50": round(float(np.median(a[:, 0])), 1),
-            "post_p50": round(float(np.median(a[:, 1])), 1),
-            "pre_p5": round(float(np.percentile(a[:, 0], 5)), 1),
-            "post_p5": round(float(np.percentile(a[:, 1], 5)), 1),
+            "pre_p50": round(float(np.median(a)), 1),
+            "pre_p5": round(float(np.percentile(a, 5)), 1),
         }
     print('\n== A2 安慰剂（同股票、±120 交易日随机日）')
     for lab, v in plac.items():
-        print(f"  {lab:<7} pre p50 {v['pre_p50']:>+7.1f} (p5 {v['pre_p5']:>+7.1f})  "
-              f"post p50 {v['post_p50']:>+7.1f} (p5 {v['post_p5']:>+7.1f})")
+        print(f"  {lab:<7} pre p50 {v['pre_p50']:>+7.1f} (p5 {v['pre_p5']:>+7.1f})")
 
     # DiD = 事件 − 安慰剂（同一股票、同一基准）。基准偏置与个股固定效应在这一步被消掉。
     print('\n== A3 DiD（事件 − 安慰剂，bp）')
     for lab, r in lock_rows.items():
         pv = plac.get(lab) or {}
         r["did_pre"] = round(r["pre_bp"] - pv.get("pre_p50", np.nan), 1)
-        r["did_post"] = round(r["post_bp"] - pv.get("post_p50", np.nan), 1)
-        print(f"  {lab:<7} pre {r['did_pre']:>+8.1f}   post {r['did_post']:>+8.1f}")
+        print(f"  {lab:<7} pre {r['did_pre']:>+8.1f}")
     plac_out = plac
 
     # ---- A4 前期动量控制 ----
@@ -262,7 +249,7 @@ def main() -> None:
               f"（前期120日超额中位 {r['m120_med_hi']:>+6.1f}% vs {r['m120_med_lo']:>+6.1f}%）")
 
     # ---- A5 按限售类型拆（≥10% 桶）----
-    print('\n== A5 ≥10% 桶按限售类型拆（pre20 / post20，bp）')
+    print('\n== A5 ≥10% 桶按限售类型拆（pre20，bp）')
     big = ev[ev["b"] == "≥10%"].copy()
     kind_map = {
         "定向增发机构配售股份": "定增解禁",
@@ -276,17 +263,14 @@ def main() -> None:
     for kg, g in big.groupby("kg"):
         if len(g) < 100:
             continue
-        by = g.groupby("free_date").agg(pre=("pre_ex", "mean"), post=("post_ex", "mean"))
+        by = g.groupby("free_date").agg(pre=("pre_ex", "mean"))
         kind_rows[kg] = {
             "events": int(len(g)),
             "pre_bp": round(float(by["pre"].mean()) * 1e4, 1),
             "pre_t": round(nw_t(by["pre"]), 2),
-            "post_bp": round(float(by["post"].mean()) * 1e4, 1),
-            "post_t": round(nw_t(by["post"]), 2),
         }
         r = kind_rows[kg]
-        print(f"  {kg:<8} n={r['events']:>5} pre {r['pre_bp']:>+8.1f} (t {r['pre_t']:>5.2f})  "
-              f"post {r['post_bp']:>+8.1f} (t {r['post_t']:>5.2f})")
+        print(f"  {kg:<8} n={r['events']:>5} pre {r['pre_bp']:>+8.1f} (t {r['pre_t']:>5.2f})")
 
     # ---- B 定增 ----
     print('\n== B 定增：存量与破发')
@@ -436,13 +420,16 @@ def main() -> None:
 
     def dose(x: pd.DataFrame, hot_df: pd.DataFrame) -> dict:
         j = hot_df.set_index(["concept", "date"]).join(x.stack().rename("x"), how="inner").reset_index()
-        out = {}
+        raw = {}
         for lab in ["1", ">=10"]:
             g = j[j["bucket"] == lab].dropna(subset=["x"])
             by = g.groupby("date")["x"].mean()
-            out[lab] = round(float(by.mean()), 1) if len(by) else None
-        if out.get("1") is not None and out.get(">=10") is not None:
-            out["span"] = round(out[">=10"] - out["1"], 1)
+            raw[lab] = float(by.mean()) if len(by) else None
+        out = {k: (round(v, 1) if v is not None else None) for k, v in raw.items()}
+        # 跨度用未舍入的均值算，再舍一次：两个分量各自舍入会在 .05 边界上翻面，
+        # 同一份数据跑两次会给出两个数（实测差 0.1bp）。
+        if raw.get("1") is not None and raw.get(">=10") is not None:
+            out["span"] = round(raw[">=10"] - raw["1"], 1)
         return out
 
     dose_all = dose(x_all, hot)
@@ -451,11 +438,11 @@ def main() -> None:
 
     result = {
         "meta": {
-            "sample": "解禁 2019-01 ~ 2026-06（pre 需 20 个交易日，post 需 20 个交易日）",
+            "sample": "解禁 2019-01 ~ 2026-06（pre 需 20 个交易日）",
             "lockup_events": int(len(ev)),
             "stocks": int(ev["symbol"].nunique()),
             "source": "eastmoney RPT_LIFT_STAGE / RPT_SEO_DETAIL",
-            "convention": "pre20=close[t-1]/open[t-20]-1；post20=close[t+20]/open[t+1]-1；"
+            "convention": "pre20=close[t-1]/open[t-20]-1；"
                           "基准=同日全市场收益中位复利；按日聚簇 NW(5)；安慰剂=同股票同年随机日",
         },
         "lockup": lock_rows,

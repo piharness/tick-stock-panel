@@ -443,8 +443,8 @@ export function Narrative() {
         </Callout>
         <Callout tone="muted" label="剔除事件股后：结论不变">
           把「未来 20 日内有解禁 / 过去 20 日内有定增上市」的股票从概念等权收益里去掉，371 天逐日重算：
-          剂量跨度 {EXCLUSION_CHECK.doseAll}bp → {EXCLUSION_CHECK.doseExcluded}bp，逐日差中位{' '}
-          {EXCLUSION_CHECK.deltaMed > 0 ? '+' : ''}{EXCLUSION_CHECK.deltaMed}bp。
+          剂量跨度 {sgn(EXCLUSION_CHECK.doseAll)}bp → {sgn(EXCLUSION_CHECK.doseExcluded)}bp，逐日差中位{' '}
+          {sgn(EXCLUSION_CHECK.deltaMed)}bp。
           叙事腿的零不是靠事件股撑着的。逐日表见{' '}
           <span className="font-mono text-[11px]">docs/structural-edge/narrative-371d.csv</span>。
         </Callout>

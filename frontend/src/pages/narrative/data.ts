@@ -324,12 +324,12 @@ export const SEO_READ = {
 
 /** 371 日逐日表里「剔除事件股」的读数：剂量跨度不变，说明叙事结论不靠事件股撑着。 */
 export const EXCLUSION_CHECK = {
-  doseAll: -15.9,
-  doseExcluded: -15.9,
+  doseAll: -16.0,
+  doseExcluded: -16.0,
   days: 371,
   deltaMed: 0.1,
   note: '剔除规则：某股票在未来 20 个交易日内有解禁，或过去 20 个交易日内有定增上市，' +
-    '则从当日的概念等权收益里去掉。371 天里逐日重算，剂量跨度 −15.9bp 未变。',
+    '则从当日的概念等权收益里去掉。371 天里逐日重算，剂量跨度 −16.0bp 未变。',
 } as const
 
 export const SCOPE = {
