@@ -49,6 +49,7 @@ import {
   Layers,
   BookOpen,
   Boxes,
+  Newspaper,
 } from 'lucide-react'
 import {
   IconDashboard,
@@ -116,6 +117,8 @@ const CORE_NAV_ICONS: Record<CoreNavPath, (props: BrandIconProps) => ReactNode> 
   '/library': (props) => <BookOpen {...props} />,
   // 筹码久期：研究结论页，用堆叠方块表示「筹码」。
   '/chip': (props) => <Boxes {...props} />,
+  // 叙事账本：用「报纸」表示市场每天在讲的故事，与筹码的「方块」区分开。
+  '/narrative': (props) => <Newspaper {...props} />,
 }
 
 // 博弈链路紧跟看板：它是"今天该看什么"的入口，先有流程再有页面。

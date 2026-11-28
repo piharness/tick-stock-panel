@@ -41,6 +41,7 @@ from app.api import (
     market_recap,
     mining,
     monitor_rules,
+    narrative,
     overview,
     pages_admin,
     paper,
@@ -861,6 +862,7 @@ app.include_router(paper.router)
 app.include_router(decision.router)
 app.include_router(abnormal.router)
 app.include_router(regime.router)
+app.include_router(narrative.router)
 app.include_router(analysis.router)
 app.include_router(pipeline.router)
 app.include_router(position_policies.router)

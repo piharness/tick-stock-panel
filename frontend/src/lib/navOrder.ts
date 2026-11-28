@@ -11,7 +11,7 @@
 export const CORE_NAV_PATHS = [
   '/', '/battle', '/watchlist', '/screener', '/factors', '/backtest',
   '/regime', '/indices', '/data', '/decisions', '/case-lab', '/common-sense',
-  '/handbook', '/library', '/chip',
+  '/handbook', '/library', '/chip', '/narrative',
 ] as const
 
 export type CoreNavPath = (typeof CORE_NAV_PATHS)[number]
@@ -40,6 +40,7 @@ export const CORE_NAV_LABELS: Record<CoreNavPath, string> = {
   '/handbook': '机会雷达',
   '/library': '策略图书馆',
   '/chip': '筹码久期',
+  '/narrative': '叙事账本',
 }
 
 /**
@@ -86,6 +87,9 @@ export const DEFAULT_NAV_PATHS = [
   // 它是独立研究线，不并进「事件低吸」图书馆；页面从「已关闭的裁决记录」
   // 升级为「理论稿（未验证）」，仍放在理论沉淀之后作为收尾。
   '/chip',
+  // 2026-11 新增 /narrative（叙事账本）：与 /chip 同为独立研究线（一个读负债端，一个读收据），
+  // 排在筹码之后收尾。它不是看盘入口，是「今天的热度该怎么读」的对照页。
+  '/narrative',
 ] as const
 
 const INDEX = new Map<string, number>(DEFAULT_NAV_PATHS.map((p, i) => [p, i]))

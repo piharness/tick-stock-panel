@@ -1164,6 +1164,114 @@ export interface MainlineResult {
   filter: MainlineFilter
 }
 
+// ===== 叙事账本（/narrative）=====
+// 每块都有 ok / as_of：四个数据源时滞不同（两融 T−6、大宗 T−2、主线 T−0），
+// 一块失败只让该块 ok=false，整页仍返回。
+export interface NarrativeBlock {
+  ok: boolean
+  as_of?: string | null
+  error?: string
+}
+
+export interface NarrativeTemp extends NarrativeBlock {
+  phase?: string | null
+  state?: string | null
+  score?: number | null
+  limit_up?: number | null
+  limit_down?: number | null
+  broken_limit?: number | null
+  seal_rate?: number | null
+  max_consecutive?: number | null
+  ladder_completeness?: number | null
+  up_count?: number | null
+  down_count?: number | null
+  total_amount_yi?: number | null
+  first_board?: number | null
+  ge2_count?: number | null
+  promo_rate?: number | null
+  pct?: Record<string, number | null>
+  sample_days?: number
+}
+
+export interface NarrativeMainlineRow {
+  rank: number
+  member: string
+  limit_up_count: number
+  ge2_count: number
+  max_boards: number
+  rungs_filled: number
+  score: number
+  leader_symbol: string | null
+  leader_name: string
+  r5_pct: number
+  r20_pct: number
+  amt_share_pct: number
+}
+
+export interface NarrativeMainline extends NarrativeBlock {
+  rows?: NarrativeMainlineRow[]
+}
+
+export interface NarrativeFlows extends NarrativeBlock {
+  margin?: NarrativeBlock & {
+    balance_yi?: number
+    pct_float?: number
+    pct_float_rank?: number | null
+    net5_yi?: number
+  }
+  dragon?: NarrativeBlock & { days?: number; net_yi?: number; stocks?: number }
+  block?: NarrativeBlock & { amt5_yi?: number; neg_share?: number | null; neg_med?: number | null; deals?: number }
+  etf?: NarrativeBlock & { share_pct?: number; amt_yi?: number; market_amt_yi?: number }
+}
+
+export interface NarrativeIndexRow {
+  symbol: string
+  name: string
+  close: number
+  ret1_pct: number
+  vol20_pct: number
+  vol_rank: number | null
+  on5_pct: number
+  id5_pct: number
+  window_days: number
+}
+
+export interface NarrativeIndexEtfRow {
+  symbol: string
+  name: string
+  index_symbol: string
+  close: number
+  ret1_pct: number
+  vol20_pct: number
+  vol_rank: number | null
+  r5_pct: number
+  track5_pp: number
+  amt_yi: number
+  window_days: number
+}
+
+export interface NarrativeIndex extends NarrativeBlock {
+  rows?: NarrativeIndexRow[]
+  etf_rows?: NarrativeIndexEtfRow[]
+}
+
+export interface NarrativeWord extends NarrativeBlock {
+  days?: number
+  rows?: { word: string; n: number; net_yi: number }[]
+}
+
+export interface NarrativeLedger {
+  as_of: string | null
+  blocks: {
+    temp: NarrativeTemp
+    mainline: NarrativeMainline
+    flows: NarrativeFlows
+    index: NarrativeIndex
+    words: NarrativeWord
+  }
+  disclaimer: string
+}
+
 // ===== 大盘复盘 =====
 export interface AiReviewReport {
   id: string
@@ -5477,6 +5585,9 @@ export const api = {
   },
   regimeMainlineRecompute: () =>
     request<{ ok: boolean; rows: number }>('/api/regime/mainline/recompute', { method: 'POST' }),
+
+  /** 叙事账本：温度 / 主线 / 资金四路 / 指数波动 / 词频（每块自带 as_of）。 */
+  narrativeLedger: () => request<NarrativeLedger>('/api/narrative/ledger'),
   mainlineFilterUpdate: (payload: { min_members?: number; max_members?: number; blacklist?: string[]; exclude_st?: boolean }) =>
     request<MainlineFilter>('/api/settings/preferences/mainline-filter', {
       method: 'PUT',

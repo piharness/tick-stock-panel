@@ -33,6 +33,8 @@ const DailyRadar = lazy(() => import('./pages/StructuralEdge').then(m => ({ defa
 const StrategyLibrary = lazy(() => import('./pages/StructuralEdge').then(m => ({ default: m.Library })))
 // 筹码久期是独立研究线（理论稿，未验证），不并进「事件低吸」图书馆：两者的对象与读者都不同。
 const ChipTheory = lazy(() => import('./pages/chip/ChipTheory').then(m => ({ default: m.ChipTheory })))
+// 叙事账本是 /chip 的姊妹页：一个读负债端（质押贴线），一个读收据（叙事结算）。
+const Narrative = lazy(() => import('./pages/narrative/Narrative').then(m => ({ default: m.Narrative })))
 const Dev = lazy(() => import('./pages/Dev').then(m => ({ default: m.Dev })))
 // Onboarding 只在首次使用时进入, Auth 只在登录页用到 — 均改按需加载
 const Onboarding = lazy(() => import('./pages/Onboarding').then(m => ({ default: m.Onboarding })))
@@ -58,6 +60,7 @@ const CORE_ROUTE_PATHS = new Set([
   '/handbook',
   '/library',
   '/chip',
+  '/narrative',
   // 旧路径仍在用（书签/文档），保留在冲突清单里；它们只做重定向。
   '/long-strategy',
   '/structural-edge',
@@ -183,6 +186,7 @@ export const router = createBrowserRouter([
     { path: 'handbook', element: <DailyRadar /> },
     { path: 'library', element: <StrategyLibrary /> },
     { path: 'chip', element: <ChipTheory /> },
+    { path: 'narrative', element: <Narrative /> },
     { path: 'long-strategy', element: <LegacyHandbookRedirect /> },
     { path: 'structural-edge', element: <LegacyHandbookRedirect /> },
     { path: 'position-art', element: <LegacyHandbookRedirect /> },
