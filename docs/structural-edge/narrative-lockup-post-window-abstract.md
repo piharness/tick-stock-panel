@@ -1,0 +1,170 @@
+# 解禁到期后的回补存在吗？
+
+**——基于 A 股 16,928 个限售解禁事件的事件研究**
+
+**版本** v1.0（2026-11-29）· **作者** TickFlow Research · **分类号** F830.91 · **JEL** G12, G14, C18
+**数据与代码** 东方财富 `RPT_LIFT_STAGE`（解禁明细）；本地日线面板 2018-11 ~ 2027-03；
+`analysis/_fetch_events.py`、`analysis/_diag_narrative_events.py`（commit `895aa2a0` 版本含后窗计算）
+
+---
+
+## 摘要
+
+本文检验 A 股限售解禁后是否存在「到期后回补」。基于 2019–2026 年 16,928 个解禁事件，按解禁股数占流通比分四档，以同日全市场等权收益为基准，并用同一股票的随机日构造安慰剂。结果显示：解禁后 20 日超额虽为正（≥10% 档 +50.8bp，t 2.08），但不随比例单调（3–10% 档 +127.7bp，t 3.67）；后窗自次日开盘起算且与下一事件窗口重叠，40 日净额仍为 −225.7bp。故拒绝「到期后回补」，只保留解禁前 20 日随比例单调为负（−37.4 至 −276.5bp）这一排除规则。贡献是一个可复核的否定结果与三条事件研究假阳性机制。
+
+**关键词** 限售解禁；事件研究；剂量反应；安慰剂检验；A 股
+
+## 扩展摘要（评审用）
+
+**目的**：检验 A 股限售解禁是否存在「到期后回补」——即抛压在解禁日释放完毕、
+之后 20 个交易日相对市场出现正超额。**数据**：2019 年 1 月至 2026 年 6 月共 16,928 个解禁事件
+（4,675 只股票），按「本次解禁股数 / 流通股数」分为四档（<1%、1–3%、3–10%、≥10%）。
+**方法**：事件窗口为解禁前 20 日与解禁后 20 日；超额 = 个股收益 − 同日全市场等权收益的复利路径；
+以同一股票 ±120 个交易日的随机日构造安慰剂，逐档做差（DiD）；事件扎堆，按日聚簇 NW(5) 推断。
+判据在观测前设定：后窗超额须随解禁比例**单调上升**，且幅度覆盖双边成本（约 40bp）。
+**结果**：后窗超额四档分别为 +62.9、+32.4、+127.7、+50.8bp（t = 2.64、0.94、3.67、2.08），
+与安慰剂做差后为 +65.2、+60.3、+141.5、+56.6bp。点估计为正，但**剂量关系不成立**：
+3–10% 档比 ≥10% 档高 76.9bp；且后窗从解禁次日开盘起算，把解禁日当天的跌幅排除在样本之外；
+同一股票的解禁分批发生，后窗与下一事件的窗口重叠，有效样本远小于事件数。
+把前后两段接起来，40 日净额为 −225.7bp，后窗只回补了前窗跌幅的 18.4%。
+**结论**：拒绝「到期后回补」假设。可保留的只有前窗结论——解禁前 20 日超额随比例单调为负
+（−37.4 至 −276.5bp，|t| 最高 12.02），其用途是**排除**（解禁前 20 日不买入），不是买入信号。
+本文的贡献是一个可复核的否定结果，以及三条会让事件研究假阳性的具体机制：
+剂量不单调、窗口重叠、条件化起算点。
+
+## Abstract
+
+**Objective**: test whether the expiration of share lockups in China's A-share market is followed by
+a rebound, i.e. positive abnormal returns over the 20 trading days after the unlock date.
+**Data**: 16,928 lockup-expiry events (4,675 stocks) from January 2019 to June 2026, sorted into four
+buckets by the ratio of unlocked shares to float. **Method**: pre- and post-event windows of 20 trading
+days; abnormal return measured against the same-day equal-weighted market return; a placebo using random
+non-event days within ±120 trading days for the same stock, differenced bucket by bucket (DiD); daily
+clustered NW(5) inference. The decision rule was fixed ex ante: post-window abnormal returns must increase
+**monotonically** in the unlock ratio and exceed round-trip costs (~40bp).
+**Results**: post-window abnormal returns are +62.9, +32.4, +127.7 and +50.8bp (t = 2.64, 0.94, 3.67,
+2.08); DiD estimates are +65.2, +60.3, +141.5 and +56.6bp. The estimates are positive but **non-monotone**:
+the 3–10% bucket exceeds the ≥10% bucket by 76.9bp. The post-window starts at the open of t+1, thereby
+excluding the unlock-day decline; and because unlocks arrive in tranches for the same stock, post-windows
+overlap with subsequent pre-windows, so the effective sample is far smaller than the event count.
+Over the full 40 days the net abnormal return is −225.7bp: the rebound recovers only 18.4% of the prior decline.
+**Conclusion**: the post-unlock rebound hypothesis is rejected. What survives is the pre-window result —
+abnormal returns decline monotonically in the unlock ratio (−37.4 to −276.5bp, |t| up to 12.02) — which is
+an exclusion rule, not a buy signal. The contribution is a reproducible negative result plus three concrete
+channels of false positives in event studies: non-monotone dose response, overlapping windows, and a
+conditioned starting point.
+
+---
+
+## 1. 引言
+
+限售解禁是 A 股最规则、最可预期的供给冲击：日期提前公告，数量写在合约里，方向只能是卖。
+海外文献早已记录解禁日附近的负向异常收益（Field & Hanka, 2001）。一个自然的推论是：
+既然抛压在解禁日集中释放，那么释放之后应当出现回补——这也是实务中「解禁落地即利空出尽」说法的来源。
+
+本文检验这个推论。与多数事件研究不同，本文的判据在观测前就写死：后窗超额必须随解禁比例
+**单调上升**，且幅度覆盖双边成本。理由是：如果机制是「余额越大、未结算的抛压越多、回补越强」，
+那么剂量关系必须成立；一个不单调的正号只能说明某一档恰好为正，不能说明机制。
+
+结论是拒绝。这一点本身有信息量：它把「解禁后回补」从可交易假设里剔除，
+同时留下一条更稳的规则——解禁前 20 日不买入高比例解禁股。
+
+## 2. 数据
+
+- **解禁事件**：东方财富 `RPT_LIFT_STAGE`，字段含可上市流通日（`FREE_DATE`）、本次解禁股数、
+  解禁市值、限售类型。样本 2014-01 ~ 2027-12 共 26,474 件；本文使用 2019-01 ~ 2026-06 的
+  16,928 件（4,675 只），要求前窗与后窗各有 20 个交易日。
+- **价格**：本地日线面板（前复权），2018-11 ~ 2027-03，覆盖 5,582 只。
+- **比例定义**：`ratio = 本次解禁股数 / 流通股数`（东财 `TOTAL_RATIO`），四档为 <1%、1–3%、3–10%、≥10%。
+
+## 3. 方法
+
+**3.1 窗口**。设解禁日为 t。前窗 `pre20 = close[t−1] / open[t−20] − 1`；
+后窗 `post20 = close[t+20] / open[t+1] − 1`。两窗都不含 t 当日的日内收益。
+
+**3.2 基准**。超额 = 个股窗口收益 − 同日全市场**等权均值**收益的复利路径。
+这里有一个必须记录的坑：若用同日全市场**中位**收益作基准，由于个股收益分布右偏，
+所有个股超额会被系统性抬高约 +400bp/20 日，八个格子全为正、符号不可读。
+本文报告的全部数字均为等权均值口径。
+
+**3.3 安慰剂与推断**。对每件事件，在同一股票 ±120 个交易日的非事件日中随机抽 20 次，
+计算同一统计量并取中位；事件值与安慰剂中位之差记为 DiD，用来消掉基准偏置与个股固定效应。
+解禁事件在日期上高度扎堆，直接对事件做 t 检验会把同日横截面相关性当成独立信息；
+本文先把同日事件聚成一条，再对日序列做 Newey–West（lag=5）t 检验。
+
+**3.4 判据（观测前设定）**。
+
+- H1（剂量）：post20 超额随 ratio 单调上升，即 ≥10% > 3–10% > 1–3% > <1%；
+- H2（净额）：post20 为正，且大于双边成本（约 40bp）。
+
+两条同时成立才接受「到期后回补」。只成立一条视为不成立。
+
+## 4. 结果
+
+**表 1　解禁前后 20 日超额收益（bp）与安慰剂检验**
+
+| 解禁/流通 | 事件数 | pre20 | t | post20 | t | 安慰剂 post 中位 | DiD post |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| <1% | 6,384 | −37.4 | −1.64 | +62.9 | 2.64 | −2.3 | +65.2 |
+| 1–3% | 2,540 | −93.8 | −2.29 | +32.4 | 0.94 | −27.9 | +60.3 |
+| 3–10% | 2,574 | −172.2 | −6.15 | **+127.7** | **3.67** | −13.8 | +141.5 |
+| ≥10% | 5,430 | **−276.5** | −12.02 | +50.8 | 2.08 | −5.8 | +56.6 |
+
+**4.1 前窗**。超额随解禁比例单调下降，从 −37.4bp 到 −276.5bp，最高 |t| = 12.02；
+安慰剂同口径的中位为 −8 ~ −25bp，DiD 后仍为 −29.5 至 −261.6bp。
+在同一「过去 120 日超额」三分位内比较 ≥10% 与 <1% 档，差仍为 −201.9 / −195.6 / −407.7bp，
+说明这不是前期涨幅的均值回归。
+
+**4.2 后窗**。点估计全为正（+32.4 至 +127.7bp），DiD 后也为正（+56.6 至 +141.5bp）。
+但**不单调**：3–10% 档（+127.7，t 3.67）比 ≥10% 档（+50.8，t 2.08）高 76.9bp。
+按 H1，剂量关系不成立。
+
+**4.3 净额**。把两段接起来看，40 日净额为 −225.7bp（−276.5 + 50.8）；
+后窗只回补了前窗跌幅的 18.4%。按 H2，即使接受正号，它也不足以构成持有理由。
+
+## 5. 假设为何被否：三条会让事件研究假阳性的机制
+
+**5.1 剂量不单调**。机制要求「余额越大、回补越强」，实际最强的是中间档。
+一个不单调的剂量反应，最可能的解释是分档内混杂了不同的限售类型与公司生命周期，
+而不是供给余额本身。
+
+**5.2 窗口重叠**。同一股票的解禁分批发生（首发原股东、定增、股权激励）。
+后窗 `[t+1, t+20]` 会与同一股票下一件事件的 pre 窗口 `[t_e−20, t_e−1]` 重叠。
+按日聚簇只处理「同一天很多事件」，不处理「同一只票反复出现」；有效样本远小于 5,430。
+
+**5.3 条件化起算点**。后窗从 t+1 开盘起算，把解禁日当天的跌幅排除在外。
+也就是说，进入后窗样本的前提是「这只票在解禁日没有崩」。
+这是幸存条件而非随机化；真正可执行的收益必须包含解禁日那一段。
+
+## 6. 讨论
+
+三条机制并非本文特有，它们适用于任何「事件后是否回补」的研究：
+只要事件是分批发生的、只要窗口从事件次日开始、只要剂量被分档，就会同时出现
+正号、非单调与重叠样本。本文的价值在于把这三条写成了可复核的检查项。
+
+对实务的含义是保守的：解禁后的正超额不足以支撑买入；能支撑的只有排除——
+**未来 20 日解禁占流通比 ≥10% 的股票，不进候选池**。这条规则在 371 个交易日的组合层面复核过：
+把「未来 20 日内有解禁、或过去 20 日内有定增上市」的股票从概念等权收益中剔除，
+概念端的剂量跨度不变（−16.0bp → −16.0bp），说明它不与既有的叙事结论冲突。
+
+## 7. 结论
+
+1. 「解禁后 20 日回补」假设被拒绝：点估计为正，但剂量不单调、样本重叠、起算点条件化，且 40 日净额为负。
+2. 解禁前 20 日的负超额是稳健的（单调、安慰剂后仍在、动量控制后仍在），用途是排除。
+3. 方法上，事件研究应把「剂量单调性」写成观测前的判据；否则「某一档为正」会被误读成机制。
+
+## 声明
+
+- **数据可得性**：解禁明细来自东方财富公开接口，可经 `analysis/_fetch_events.py` 复现；
+  行情数据为本地商业数据源，不随本文分发。
+- **代码可得性**：`analysis/_diag_narrative_events.py`（commit `895aa2a0` 版本含后窗计算）。
+- **利益冲突**：无。
+- **局限**：单一市场、单一制度周期（2019–2026）；未控制行业与限售股东身份；
+  未计融券成本与解禁日流动性，因此本文不主张任何做空策略。
+
+## 参考文献
+
+1. Field, L. C., & Hanka, G. (2001). The Expiration of IPO Share Lockups. *Journal of Finance*, 56(2), 471–500.
+2. MacKinlay, A. C. (1997). Event Studies in Economics and Finance. *Journal of Economic Literature*, 35(1), 13–39.
+3. 本仓：《未付账单：筹码的负债端读法》`docs/structural-edge/chip-ap.md`（结算频率与 P3 判据）。
+4. 本仓：《叙事的收据簿》`docs/structural-edge/narrative-ledger.md` §3.4（解禁前窗与剔除检验）。

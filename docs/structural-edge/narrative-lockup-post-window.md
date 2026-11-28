@@ -84,3 +84,4 @@ backend/.venv/Scripts/python.exe /tmp/ev_old.py
 
 现行 `analysis/_diag_narrative_events.py` 已不再计算 post 窗口；
 本次撤下的决定与理由见 `narrative-ledger.md` §3.4 与 §5（K7）。
+投稿版摘要见 [narrative-lockup-post-window-abstract.md](./narrative-lockup-post-window-abstract.md)。
