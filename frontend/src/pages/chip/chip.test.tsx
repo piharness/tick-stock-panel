@@ -12,11 +12,11 @@ import { ChipTheory } from './ChipTheory'
 import {
   AGE_YEARS, AP_ATTR, AP_FIX, AP_LEDGER, AP_MTM, AP_PRED, AUDIT_FIX, AUDIT_PROOF, CC,
   BOOK_GAPS, BOOK_ROWS, BOOK_V2, BOOK_V3,
-  CONTRAST, COVERAGE, DEGENERACY, DIMENSIONS, E_PRED,
+  CONTRAST, COVERAGE, DEGENERACY, DIMENSIONS, E_PRED, EVIDENCE,
   EVENT_READ, G4_ROWS,
   H1_CELLS, H2_COMPS, H3_CELLS, H3_DOSE, H4_COND, H4_QUINTILES, H567_ROWS, H8_CELLS, HEATMAPS, KILL4, KILL5, LAYERS,
   MECHANISM, MECH_INTER, ONTOLOGY, PREDICTIONS, REINTERPRET, TRANSFER, TRANSFER_RESULT, TYPE_BIG, TYPE_SPLIT,
-  UNIFY, VERSIONS, VOLUMES, SECTION_IDS,
+  UNIFY, VERSIONS, VOLUMES, SECTION_IDS, FOUR_DEFS, STRESS, SHAPE6, KILL6,
 } from './data'
 
 let host: HTMLDivElement
@@ -41,15 +41,29 @@ afterEach(() => {
   host.remove()
 })
 
-it('首屏：审计标题与四个摘要', () => {
+it('首屏：收敛结论与四个摘要', () => {
   const text = host.textContent ?? ''
-  expect(text).toContain('未付账单，谁替它付钱')
-  expect(text).toContain('投影的零')
-  expect(text).toContain('状态全零')
-  expect(text).toContain('负债端的活口')
-  expect(text).toContain('+525bp 反弹')
+  expect(text).toContain('一张体检表，不是一个信号')
+  expect(text).toContain('一个候选 · 其余排除')
+  expect(text).toContain('一条候选')
+  expect(text).toContain('唯一候选')
+  expect(text).toContain('+291bp / 60日')
+  expect(text).toContain('证据等级')
+  expect(text).toContain('B · 准 OOS 过线')
+  expect(text).toContain('当前可执行动作')
   expect(text).toContain('存量簿首测')
   expect(host.querySelectorAll('#ontology').length).toBe(1)
+})
+
+it('首屏：能/不能两列 + 证据分级六级', () => {
+  const text = host.textContent ?? ''
+  expect(text).toContain('本页能回答')
+  expect(text).toContain('本页不能回答')
+  expect(host.querySelectorAll('[data-testid="evidence"] tbody tr').length).toBe(EVIDENCE.length)
+  const ev = host.querySelector('[data-testid="evidence"]')?.textContent ?? ''
+  expect(ev).toContain('筹码分布 = 换手率的投影')
+  expect(ev).toContain('贴线溢价：长腿 +291bp')
+  expect(ev).toContain('解除方式决定符号')
 })
 
 it('0 审计：未来函数、作废范围、修正后反转', () => {
@@ -92,17 +106,18 @@ it('5C 七类：十六个读数被重排，不再新增参数', () => {
   expect(text).toContain('一次计价错误')
 })
 
-it('5D 首测：三条轴 + P1 四条，深跌反弹必须在页面上', () => {
+it('5D 首测：一条主效应 + 两个斜率交互，H13 同特征对照必须在页面上', () => {
   const rows = host.querySelectorAll('#probe tbody tr')
-  expect(rows.length).toBe(AP_FIX.age.length + AP_FIX.pledge.length + AP_FIX.balance.length + 4)
+  expect(rows.length).toBe(AP_FIX.age.length + AP_FIX.pledge.length + AP_FIX.balance.length + 7)
   expect(host.querySelectorAll('[data-testid="ap-fix-figure"]').length).toBe(1)
   const text = host.querySelector('#probe')?.textContent ?? ''
   expect(text).toContain('+755.5bp')
-  expect(text).toContain('−401 → −716bp')
-  expect(text).toContain('−492 → −731bp')
+  expect(text).toContain('+290.6bp')
+  expect(text).toContain('−401→−716bp')
+  expect(text).toContain('−492→−731bp')
   expect(text).toContain('−146.9bp')
-  expect(text).toContain('无悬崖')
-  expect(text).toContain('困境深度 × 救助概率')
+  expect(text).toContain('这不是纯反转')
+  expect(text).toContain('+525 不是你能拿到的')
 })
 
 it('5E 五条前瞻 + P2 首测：国资/民企两组都在', () => {
@@ -352,14 +367,14 @@ it('旧结论新读法八行，版本表写到卷四', () => {
 /* ───────────────────── 结构契约（2026-11-27 加） ─────────────────────
  *
  * 上面 29 条守的是「内容还在」。这一组守的是「读者能不能找到内容」：
- *   1. 结构表 VOLUMES 与渲染必须一一对应——38 节少一节、多一节、id 打错，都红；
+ *   1. 结构表 VOLUMES 与渲染必须一一对应——43 节少一节、多一节、id 打错，都红；
  *   2. 折叠只改默认视野，不删证据——收起后 tbody/数字仍在 DOM（测试与脚本可读；Ctrl-F 不会命中 display:none）；
  *   3. 深链 #h3 必须先展开卷三，否则锚点落在一段 0 高度的 DOM 上，滚到页顶。
  *
  * 上一版没有第 1 条：目录是三段手写数组，§0 审计因此长期没有入口，测试全绿。
  */
-it('结构表与渲染一一对应：38 节全在 DOM，且 id 不重复', () => {
-  expect(SECTION_IDS.length).toBe(38)
+it('结构表与渲染一一对应：43 节全在 DOM，且 id 不重复', () => {
+  expect(SECTION_IDS.length).toBe(43)
   for (const id of SECTION_IDS) {
     expect(host.querySelectorAll(`#${id}`).length).toBe(1)
   }
@@ -370,7 +385,7 @@ it('导航：四卷各一格，节数写在格上，与结构表同源', () => {
   const nav = host.querySelector('[data-testid="volume-nav"]')
   expect(nav).toBeTruthy()
   const chips = [...(nav?.querySelectorAll('button') ?? [])].filter(b => b.getAttribute('aria-current') !== null || /^\d/.test((b.textContent ?? '').trim()))
-  expect(VOLUMES.length).toBe(4)
+  expect(VOLUMES.length).toBe(5)
   for (const v of VOLUMES) {
     const hit = [...(nav?.querySelectorAll('button') ?? [])].find(b => (b.textContent ?? '').includes(v.tab))
     expect(hit, `导航缺少 ${v.tab}`).toBeTruthy()
@@ -382,9 +397,10 @@ it('导航：四卷各一格，节数写在格上，与结构表同源', () => {
 /** 卷组的 DOM。折叠是原生 `<details>`（与 structural-edge 的 Fold 同一套），开合读 .open。 */
 const volEl = (k: string) => host.querySelector(`[data-testid="volume-${k}"]`) as HTMLDetailsElement | null
 
-it('默认视野：审计与卷五展开，卷四/卷三收起', () => {
+it('默认视野：审计与卷六展开，卷五/卷四/卷三收起', () => {
   expect(volEl('audit')?.open).toBe(true)
-  expect(volEl('v5')?.open).toBe(true)
+  expect(volEl('v6')?.open).toBe(true)
+  expect(volEl('v5')?.open).toBe(false)
   expect(volEl('v4')?.open).toBe(false)
   expect(volEl('v3')?.open).toBe(false)
 })
@@ -424,7 +440,8 @@ it('深链 #h3：进来先展开卷三，否则锚点落在 0 高度上', () => 
 
 it('点导航里的卷：收起状态下也先展开再跳', () => {
   const nav = host.querySelector('[data-testid="volume-nav"]')
-  const chip = [...(nav?.querySelectorAll('button') ?? [])].find(b => (b.textContent ?? '').includes(VOLUMES[3].tab))
+  const v3tab = VOLUMES.find(v => v.key === 'v3')!.tab
+  const chip = [...(nav?.querySelectorAll('button') ?? [])].find(b => (b.textContent ?? '').includes(v3tab))
   expect(chip).toBeTruthy()
   act(() => { (chip as HTMLButtonElement).click() })
   expect(volEl('v3')?.open).toBe(true)
@@ -441,4 +458,53 @@ it('重算过的三节挂「口径已改」，点它回到 §0', () => {
   expect(tag).toBeTruthy()
   act(() => { tag?.click() })
   expect(window.location.hash).toBe('#audit')
+})
+
+/* ───────────────────── 卷六：条件，不是水平（2026-11-28） ───────────────────── */
+
+it('6A 四口径：水平散、排序不散，图与表同源', () => {
+  expect(host.querySelectorAll('#four tbody tr').length).toBe(FOUR_DEFS.length)
+  expect(host.querySelectorAll('[data-testid="four-def-figure"]').length).toBe(1)
+  const text = host.querySelector('#four')?.textContent ?? ''
+  expect(text).toContain('+141.0')
+  expect(text).toContain('−54.1')
+  expect(text).toContain('没有一个跨口径的「贴线溢价常数」')
+  expect(text).toContain('8/8')
+  expect(text).toContain('不是股票，是索取权')
+  expect(text).toContain('只报交互')
+})
+
+it('6B 质量：单合约 +194.6 vs 多合约 +67.2', () => {
+  const text = host.querySelector('#grain')?.textContent ?? ''
+  expect(text).toContain('+194.6')
+  expect(text).toContain('+67.2')
+  expect(text).toContain('边界质量')
+  expect(text).toContain('集中，不是不可分割')
+  expect(text).toContain('推导，不是识别')
+})
+
+it('6C 容量：三档压力四行，高−低为负', () => {
+  expect(host.querySelectorAll('#capacity tbody tr').length).toBe(STRESS.length)
+  const text = host.querySelector('#capacity')?.textContent ?? ''
+  expect(text).toContain('−202.0')
+  expect(text).toContain('公共资源')
+  expect(text).toContain('状态依赖')
+  expect(text).toContain('+113.2bp')
+  expect(text).toContain('零 / 正')
+})
+
+it('6D 分布：中位 +7bp、胜率 50.2%、偏度 3.54', () => {
+  expect(host.querySelectorAll('#shape tbody tr').length).toBe(SHAPE6.length)
+  const text = host.querySelector('#shape')?.textContent ?? ''
+  expect(text).toContain('+7bp')
+  expect(text).toContain('50.2%')
+  expect(text).toContain('3.54')
+  expect(text).toContain('彩票预算')
+})
+
+it('6E 杀死卷六：五条 + 唯一可留的数', () => {
+  expect(host.querySelectorAll('#kill6 li').length).toBe(KILL6.length)
+  const text = host.querySelector('#kill6')?.textContent ?? ''
+  expect(text).toContain('−202')
+  expect(text).toContain('整卷删除')
 })

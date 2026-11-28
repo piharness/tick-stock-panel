@@ -12,9 +12,14 @@
  * 三件事必须同时成立，页面才有意义：
  *   1) 十六个读数能被一个恒等式重排成七类（§C）；
  *   2) 新轴要自己先被分离一次：位置 / 能力 / 余额，只有一条会动（§D）；
- *   3) 新预测要能被杀死（§E 五条 / §F 六条），且承认本卷只有一条硬证据。
+ *   3) 新预测要能被杀死（§E 五条 / §F 六条），且承认本卷只有一个候选。
  *
- * 所有数字唯一来源 ./data.ts；卷五的探索数字来自 analysis/_diag_chip_ap_probe.py。
+ * 卷六（2026-11-28）再拆一层：连「贴线」这个词都没有唯一实现。
+ *   四种簿口径给出 +141 / +21 / −42 / −54；水平不可识别，但排序 8/8 一致
+ *   （低压力 > 高压力、少合约 > 多合约）。所以卷六预测条件，不预测水平。
+ *
+ * 所有数字唯一来源 ./data.ts；卷五的探索数字来自 analysis/_diag_chip_ap_probe.py，
+ * 卷六来自 analysis/_diag_chip_path_twin.py 与 _diag_chip_largest_contract.py。
  * 排版复用 structural-edge/ui.tsx 的八档字号 / 发丝线 / 语义色，不另建设计系统。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -24,20 +29,21 @@ import { scrollToId } from '../structural-edge/Shell'
 import { cn } from '@/lib/cn'
 import { useTheme } from '@/lib/theme'
 import {
-  AGE_YEARS, AP_ATTR, AP_FIX, AP_LEDGER, AP_META, AP_MTM, AP_PRED, CC, CC_PATH, P1, P2_TEST,
+  AGE_YEARS, AP_ATTR, AP_FIX, AP_LEDGER, AP_META, AP_MTM, AP_PRED, CC, CC_PATH, COND, FOUR_DEFS, KILL6, KILL6_NOTE, PRE2019, SHAPE6, STRESS, STRESS_META, P1, P2_TEST,
   AUDIT_BUCKETS, AUDIT_FIX, AUDIT_META, AUDIT_PROOF, AUDIT_READ, AUDIT_SCOPE,
   BOOK_GAPS, BOOK_ROWS, BOOK_V2, BOOK_V3, CONTRAST, COVERAGE, CROSS, DEGENERACY, DIMENSIONS, E_PRED,
   EVENT_READ, G4_ROWS,
   H1, H1_CELLS, H2, H2_COMPS, H3, H3_BUCKETS, H3_CELLS, H3_DOSE, H4, H4_COND, H4_QUINTILES, H5, H567_ROWS, H6, H7,
-  H8, H8_CELLS, H9, H11, H11_BUCKETS, HEATMAPS, KILL, KILL4, KILL5, LAYERS, MECHANISM, MECH_INTER, META, ONTOLOGY,
-  PHASES, PREDICTIONS, REINTERPRET, SECTION_VOLUME, SUMMARY, TRANSFER, TRANSFER_RESULT, TYPE_BIG, TYPE_SPLIT, UNIFY,
-  VERSIONS, VOLUMES,
+  H8, H8_CELLS, H9, H11, H11_BUCKETS, HEATMAPS, KILL, KILL4, KILL5, LAYERS, MATCH, MECHANISM, MECH_INTER, META, ONTOLOGY,
+  PHASES, PREDICTIONS, REINTERPRET, SCOPE, SECTION_VOLUME, SUMMARY, TRANSFER, TRANSFER_RESULT, TYPE_BIG, TYPE_SPLIT, UNIFY,
+  VERSIONS, VERDICT, VOLUMES, EVIDENCE,
   type AgeYear, type APAttrRow, type APLedgerRow, type APPred, type AuditFix, type AuditProof,
   type BookGap, type BookRow,
   type BookV2, type BookV3, type ContrastRow, type CoverRow,
   type DegeneracyRow, type DimensionRow,
-  type EPred, type G4Row, type H1Cell, type H2Comp, type H3Bucket, type H3Cell, type H3Dose, type H4Cond,
+  type EPred, type EvidenceRow, type G4Row, type H1Cell, type H2Comp, type H3Bucket, type H3Cell, type H3Dose, type H4Cond,
   type H4Quintile, type H567Row, type H8Cell, type H11Bucket, type Heatmap, type MechInterRow, type MechanismRow,
+  type FourDefRow, type ShapeRow, type StressRow,
   type Phase, type Prediction, type ReinterpretRow, type TransferResult, type TransferRow, type TypeBigRow,
   type TypeSplitRow, type UnifyRow, type VolKey, type VolumeDef,
 } from './data'
@@ -45,6 +51,56 @@ import {
 const fmtSigned = (v: number, d = 3) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(d)}`
 const fmtPct = (v: number, d = 2) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(d)}%`
 const fmtT = (v: number, d = 2) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(d)}`
+
+const Bp = ({ v, d = 1 }: { v: number; d?: number }) => (
+  <span className={cn('font-mono text-[11px] tabular-nums', v < 0 ? 'text-danger' : 'text-foreground')}>
+    {fmtSigned(v, d)}
+  </span>
+)
+
+const fourCols: Col<FourDefRow>[] = [
+  {
+    head: '口径',
+    w: '37%',
+    render: r => (
+      <span className="text-[12px] leading-[1.6] text-foreground">
+        {r.def}
+        <span className="ml-2 text-[11px] text-muted">{r.rule}</span>
+      </span>
+    ),
+  },
+  {
+    head: '水平 · bp / t',
+    w: '112px',
+    render: r => (
+      <span className="whitespace-nowrap">
+        <Bp v={r.bp} />
+        <span className="ml-1.5 font-mono text-[10.5px] tabular-nums text-muted">/ {fmtT(r.t)}</span>
+      </span>
+    ),
+  },
+  { head: '低压力 bp', w: '82px', render: r => <Bp v={r.low} /> },
+  { head: '高压力 bp', w: '82px', render: r => <Bp v={r.high} /> },
+  { head: '少合约 bp', w: '82px', render: r => <Bp v={r.few} /> },
+  { head: '多合约 bp', w: '82px', render: r => <Bp v={r.many} /> },
+]
+
+const stressCols: Col<StressRow>[] = [
+  { head: '口径', w: '30%', render: r => <span className="text-[12px] text-foreground">{r.def}</span> },
+  { head: `低 ${STRESS_META.low}`, w: '86px', render: r => <Bp v={r.low} /> },
+  { head: `中 ${STRESS_META.mid}`, w: '86px', render: r => <Bp v={r.mid} /> },
+  { head: `高 ${STRESS_META.high}`, w: '86px', render: r => <Bp v={r.high} /> },
+  {
+    head: '高 − 低 · bp / t',
+    w: '124px',
+    render: r => (
+      <span className="whitespace-nowrap">
+        <Bp v={r.delta} />
+        <span className="ml-1.5 font-mono text-[10.5px] tabular-nums text-muted">/ {fmtT(r.t)}</span>
+      </span>
+    ),
+  },
+]
 
 const h1Cols: Col<H1Cell>[] = [
   { head: 'D 分位', w: '18%', render: r => <span className="text-[13px] text-foreground">{r.d}</span> },
@@ -96,6 +152,13 @@ const apPredCols: Col<APPred>[] = [
   { head: '#', w: '44px', render: r => <span className="font-mono text-[12px] font-medium text-foreground">{r.id}</span> },
   { head: '预测', w: '48%', render: r => <span className="text-[13px] leading-[1.6] text-foreground">{r.claim}</span> },
   { head: '判据 / 杀死', render: r => <span className="font-mono text-[12px] leading-[1.6] text-secondary">{r.test}</span> },
+]
+
+const evidenceCols: Col<EvidenceRow>[] = [
+  { head: '级', w: '40px', render: r => <Tag tone={r.grade === 'A' ? 'ok' : r.grade === 'B' ? 'warn' : 'muted'}>{r.grade}</Tag> },
+  { head: '结论', w: '24%', render: r => <span className="text-[13px] leading-[1.6] text-foreground">{r.claim}</span> },
+  { head: '读数', render: r => <span className="font-mono text-[11px] leading-[1.6] tabular-nums text-secondary">{r.read}</span> },
+  { head: '怎么用', w: '30%', render: r => <span className="text-[11px] leading-[1.6] text-muted">{r.use}</span> },
 ]
 
 /** 控制权变更：公告前后 180 日的累计超额。国资两线在公告后拐头，民营继续上行。 */
@@ -533,6 +596,58 @@ const epredCols: Col<EPred>[] = [
   { head: '判据', render: r => <span className="font-mono text-[12px] leading-[1.6] text-secondary">{r.test}</span> },
 ]
 
+/**
+ * 四口径的压力斜率图。
+ *
+ * 这张图只做一件事：把「高度不同、斜率同向」画出来。
+ * 高度 = 四种实现对同一个词给出的水平（+141 → −54），斜率 = 低压力 → 高压力。
+ * 如果读者只记住一个形状，应该是四条线一起向下——而不是任何一条线的水平。
+ */
+const FOUR_TONES = ['text-foreground', 'text-accent', 'text-warning', 'text-danger'] as const
+
+function FourDefFigure() {
+  const A = { y0: 214, y1: 34, min: -130, max: 220 }
+  const y = (v: number) => A.y0 - ((v - A.min) / (A.max - A.min)) * (A.y0 - A.y1)
+  const x0 = 176
+  const x1 = 468
+  return (
+    <figure className="mt-4" data-testid="four-def-figure">
+      <div className="-mx-1 overflow-x-auto">
+        <svg viewBox="0 0 720 272" className="min-w-[620px] w-full" role="img" aria-label="四种贴线口径的压力斜率">
+          <line x1={64} x2={706} y1={y(0)} y2={y(0)} stroke="currentColor" strokeDasharray="3 3" className="text-muted opacity-40" />
+          {[-100, 0, 100, 200].map(v => (
+            <text key={v} x={56} y={y(v) + 3} textAnchor="end" className="fill-current text-[9.5px] text-muted">{v}</text>
+          ))}
+          <text x={x0} y={246} textAnchor="middle" className="fill-current text-[10px] text-muted">低压力 · 6.2%</text>
+          <text x={x1} y={246} textAnchor="middle" className="fill-current text-[10px] text-muted">高压力 · 14.3%</text>
+          {FOUR_DEFS.map((r, i) => (
+            <g key={r.def} className={FOUR_TONES[i]}>
+              <line x1={x0} x2={x1} y1={y(r.low)} y2={y(r.high)} stroke="currentColor" strokeWidth={1.8} />
+              <circle cx={x0} cy={y(r.low)} r={3} fill="currentColor" />
+              <circle cx={x1} cy={y(r.high)} r={3} fill="currentColor" />
+            </g>
+          ))}
+          <text x={540} y={54} className="fill-current text-[10.5px] text-muted">四条线的高度差 195bp</text>
+          <text x={540} y={70} className="fill-current text-[10.5px] text-muted">四条线的斜率同向 4/4</text>
+        </svg>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+        {FOUR_DEFS.map((r, i) => (
+          <span key={r.def} className="inline-flex items-center gap-1.5 text-[10.5px] text-muted">
+            <span className={cn('h-0 w-4 border-t-2 border-current', FOUR_TONES[i])} />
+            {r.def}
+            <span className="font-mono tabular-nums text-muted/70">{fmtSigned(r.bp, 0)}</span>
+          </span>
+        ))}
+      </div>
+      <figcaption className="mt-1.5 max-w-[46em] text-[11px] leading-[1.7] text-muted">
+        纵轴 = 60 日超额（bp）。四条线是同一个概念的四种实现，对照组、匹配向量、样本月份完全相同，
+        只换 near 的定义。图不是新检验，是把 §6A 的表画出来：可识别的是斜率，不是高度。
+      </figcaption>
+    </figure>
+  )
+}
+
 function ContrastFigure() {
   const A = { min: -150, max: 150, x0: 160, x1: 380 }
   const B = { min: -100, max: 700, x0: 450, x1: 700 }
@@ -797,25 +912,49 @@ export function ChipTheory() {
       <header className="flex flex-col gap-6 border-b border-border pb-7 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
           <div className="text-[11px] font-medium tracking-[0.18em] text-muted">
-            研究结论 · 筹码 · 卷五（修正版 · 2026-11-27）
+            研究结论 · 筹码 · 收敛版（2026-11-28）
           </div>
           <h1 className="mt-3 text-[30px] font-semibold leading-[1.15] tracking-[-0.02em] text-foreground">
-            筹码<span className="mx-2.5 font-light text-muted/40">/</span>未付账单，谁替它付钱
+            筹码<span className="mx-2.5 font-light text-muted/40">/</span>一张体检表，不是一个信号
           </h1>
           <p className="mt-3 max-w-[46em] text-[14px] leading-[1.8] text-secondary">
-            筹码不是资产，是杠杆持有人的应付账款。前四卷在资产端找 alpha，全零；唯一活着的负债端信号
-            （质押贴线）在修掉未来函数后是 <span className="text-foreground">+525bp</span>——不是阴跌，是反弹。
-            A 股的账单不由清算偿付，由救助/展期/重组偿付；市场提前给救援定价。
+            前四卷在持仓表（资产端）上找到的十六个读数里，十五条没有稳定的收益符号。卷五把唯一有余额的 H11
+            重读成应付表（负债端），只活下来一条相对值：贴线组未来 60 日比「同日、同跌幅、同波动/换手/规模」的同特征基准高
+            <span className="text-foreground"> +291bp</span>（t 5.28，6/7 年为正）。
+            它是候选，不是买点——纸面 holdout 过线（+293.7bp / t 1.80），但只在 0.5% 成本下；0.8% 即失守。
+            真前瞻 2026-11-30 → 2027-06-30，未裁决。
+            卷六再往下拆一层：连「贴线」这个词都没有唯一实现——四种簿口径的 60 日超额从 +141bp 到 −54bp；
+            能留下的是条件（低压力 × 少合约），不是水平。
           </p>
         </div>
         <div className="shrink-0 text-[11px] leading-[1.9] text-muted lg:text-right">
           <div className="font-mono tabular-nums">数据 {META.asOf}</div>
           <div>{META.sample}</div>
-          <div className="text-danger">质押正 · 接盘负 · 锚定半活 · 五条待测</div>
+          <div className="text-warning">一个候选 · 其余排除 · 0 可执行</div>
         </div>
       </header>
 
       <VolumeNav activeId={activeId} onJump={go} />
+
+      {/* 结论带：整页只回答一个问题——现在能不能用。答案在左边，代价在右边。 */}
+      <div className="mt-6 border-y border-border py-5">
+        <div className="flex flex-wrap items-start justify-between gap-x-10 gap-y-5">
+          <div className="min-w-0 max-w-[52em]">
+            <Tag tone={VERDICT.tone}>{VERDICT.tag}</Tag>
+            <p className="mt-2.5 text-[18px] font-medium leading-[1.45] tracking-[-0.01em] text-foreground">
+              {VERDICT.line}
+            </p>
+            <p className="mt-2 max-w-[48em] text-[13px] leading-[1.75] text-secondary">{VERDICT.body}</p>
+          </div>
+          <div className="shrink-0 border-l border-border pl-4 lg:pl-6">
+            <div className="text-[11px] tracking-[0.12em] text-muted">当前可执行动作</div>
+            <div className="mt-1 font-mono text-[32px] font-medium leading-none tabular-nums text-foreground">
+              {VERDICT.actionValue}
+            </div>
+            <p className="mt-2 max-w-[15em] text-[11px] leading-[1.7] text-muted">{VERDICT.actionNote}</p>
+          </div>
+        </div>
+      </div>
 
       <div className="mt-6 grid gap-6 border-b border-border pb-6 sm:grid-cols-2 lg:grid-cols-4">
         {SUMMARY.map(s => (
@@ -827,6 +966,48 @@ export function ChipTheory() {
             <p className="mt-1.5 max-w-[24em] text-[12px] leading-[1.7] text-secondary">{s.note}</p>
           </div>
         ))}
+      </div>
+
+      {/* 能/不能：把「体检表」与「信号」分开，比任何免责声明都硬。 */}
+      <div className="mt-6 grid gap-6 border-b border-border pb-6 sm:grid-cols-2">
+        <div>
+          <div className="text-[11px] font-medium tracking-[0.14em] text-muted">本页能回答</div>
+          <ul className="mt-2 space-y-1.5">
+            {SCOPE.can.map(t => (
+              <li key={t} className="flex gap-2 text-[12px] leading-[1.6] text-secondary">
+                <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-accent" />
+                <span>{t}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <div className="text-[11px] font-medium tracking-[0.14em] text-muted">本页不能回答</div>
+          <ul className="mt-2 space-y-1.5">
+            {SCOPE.cannot.map(t => (
+              <li key={t} className="flex gap-2 text-[12px] leading-[1.6] text-muted">
+                <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-danger/70" />
+                <span>{t}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* 证据分级：只有六级，读一遍就知道哪些能拿去做决定。 */}
+      <div className="mt-6" data-testid="evidence">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="text-[13px] font-medium text-foreground">证据分级</h2>
+          <span className="font-mono text-[10.5px] text-muted">A 可复算 · B 探索性 · C 不可识别</span>
+        </div>
+        <DataTable
+          cols={evidenceCols}
+          rows={EVIDENCE}
+          rowKey={r => r.claim}
+          dense
+          minWidth={820}
+          reason="分级的标准不是 p 值，而是「换一批数据/换一个对照，结论还在不在」：A 有独立复算，B 只有同批数据，C 连对照都找不到。"
+        />
       </div>
 
       <VolumeBlock def={vol('audit')} first>
@@ -894,7 +1075,7 @@ export function ChipTheory() {
       >
         <Callout tone="warn" label="本卷已按修正版重写（2026-11-27）">
           结构没变：两张表、盯市频率、余额。变的是符号——替这张账单付钱的是<span className="text-foreground">救助</span>，
-          不是清算；所以贴线不是跑输，是跑赢（+525bp）。审计证据见 §0。
+          不是清算；所以贴线不是跑输，是跑赢（长腿对同特征基准 +291bp；多空 +525bp）。审计证据见 §0。
         </Callout>
         <DataTable
           cols={ledgerCols}
@@ -975,7 +1156,7 @@ export function ChipTheory() {
           swipeHint
         />
         <Callout tone="danger" label="读法">
-          前四类（分布、周转、身份、位置）是资产端的四种画法，全部零或半活；第五类是唯一有余额的账单，活；
+          前四类（分布、周转、身份、位置）是资产端的四种画法，全部零或半活；第五类是唯一有余额的账单，半活（候选）；
           第六类「支付后是否结清」没测出来——C2 只有 5 只/月且内生，<span className="text-foreground">不是零，是不可识别</span>；
           第七类制度变了：清算技术缺失时为负，救助技术普及后归零——符号由解除方式给，余额还在。
           <span className="text-foreground">这不是十六次失败，是一次计价错误：所有人都在资产端做技术分析，而价差在负债端。</span>
@@ -985,61 +1166,78 @@ export function ChipTheory() {
       <Section
         id="probe"
         no="5D"
-        title="首测：越深越强，越贴线越反弹"
-        lead={`把 H11 的事件样本拆成三条轴：合约年龄（位置）、累计质押比例（能力）、质押以来涨跌（余额）。修正端点之后（drift_c），符号与强度都变了：账龄与质押比例是「越深越强」，余额是「越跌越反弹」。同一批 ${AP_META.events.toLocaleString()} 个事件、${AP_META.months} 个月、同一套月聚簇口径。`}
-        source="analysis/_diag_chip_audit_fix.py · _diag_chip_p1_anchor.py"
+        title="首测：只有余额是主效应，账龄/质押只改变斜率"
+        lead={`把 H11 的事件样本拆成三组：合约年龄（位置）、累计质押比例（能力）、质押以来涨跌（余额）。注意表里的 Q2−Q0 是「各分组内的跌幅斜率」，不是账龄/质押比例的主效应——它回答的是「跌幅在哪个分组里更陡」，不是「老合约本身是否更强」。总表 ${AP_META.events.toLocaleString()} 个事件；回归样本 ${AP_META.eventsValid.toLocaleString()}（缺失 260），${AP_META.months} 个月，月聚簇口径。`}
+        source="analysis/_diag_chip_audit_fix.py · _diag_chip_p1_anchor.py · _diag_chip_h13e_fullresid.py"
         actions={<RevisedTag onJump={() => go('audit')} />}
       >
         <StatGrid
           cols={4}
           items={[
             { k: '余额 · 深跌桶', v: '+755.5bp', d: 't 4.42；>+10% 桶 −72.0 / t −0.38' },
-            { k: '账龄 · Q2−Q0', v: '−401 → −716bp', d: '<0.5 年 → >2 年，t −3.43 → −7.68' },
-            { k: '质押比例 · Q2−Q0', v: '−492 → −731bp', d: 'Q1 → Q5，t −4.76 → −8.73' },
+            { k: '同特征基准 · 长腿', v: '+290.6bp', d: 't 5.28；同日同跌幅 + 波动/换手/规模' },
+            { k: '分组内跌幅斜率', v: '−401 → −716', d: '账龄 <0.5→>2 年 −401→−716bp；质押 Q1→Q5 −492→−731bp' },
             { k: '锚定残差', v: '−146.9bp', d: 't −3.25 · 通用锚只解释 48.3%' },
           ]}
         />
         <APFixFigure />
         <DataTable
           cols={[
-            { head: '轴', w: '60px', render: (r: { axis: string; bucket: string; n: number; read: number; t: number; unit: string }) => <span className="text-[12px] text-foreground">{r.axis}</span> },
+            { head: '分组', w: '60px', render: (r: { axis: string; bucket: string; n: number; read: number; t: number; unit: string }) => <span className="text-[12px] text-foreground">{r.axis}</span> },
             { head: '桶', w: '96px', render: (r: { axis: string; bucket: string; n: number; read: number; t: number; unit: string }) => <span className="font-mono text-[11px] tabular-nums text-secondary">{r.bucket}</span> },
             { head: 'n', align: 'right', render: (r: { axis: string; bucket: string; n: number; read: number; t: number; unit: string }) => <span className="font-mono text-[11px] tabular-nums text-muted">{r.n.toLocaleString()}</span> },
-            { head: '读数', align: 'right', render: (r: { axis: string; bucket: string; n: number; read: number; t: number; unit: string }) => <span className="font-mono text-[11px] tabular-nums text-secondary">{fmtSigned(r.read, 1)}bp</span> },
+            { head: '分组内跌幅斜率', align: 'right', render: (r: { axis: string; bucket: string; n: number; read: number; t: number; unit: string }) => <span className="font-mono text-[11px] tabular-nums text-secondary">{fmtSigned(r.read, 1)}bp</span> },
             { head: 't', align: 'right', render: (r: { axis: string; bucket: string; n: number; read: number; t: number; unit: string }) => <span className="font-mono text-[11px] tabular-nums text-muted">{fmtT(r.t, 2)}</span> },
             { head: '口径', w: '96px', render: (r: { axis: string; bucket: string; n: number; read: number; t: number; unit: string }) => <span className="text-[11px] text-muted">{r.unit}</span> },
           ]}
           rows={[
-            ...AP_FIX.age.map(r => ({ ...r, axis: '账龄', read: r.spread, unit: 'Q2−Q0' })),
-            ...AP_FIX.pledge.map(r => ({ ...r, axis: '质押', read: r.spread, unit: 'Q2−Q0' })),
+            ...AP_FIX.age.map(r => ({ ...r, axis: '账龄', read: r.spread, unit: '分组内 Q2−Q0' })),
+            ...AP_FIX.pledge.map(r => ({ ...r, axis: '质押', read: r.spread, unit: '分组内 Q2−Q0' })),
             ...AP_FIX.balance.map(r => ({ ...r, axis: '余额', read: r.mean, unit: '桶内均值' })),
           ]}
           rowKey={(r, i) => `${r.axis}-${r.bucket}-${i}`}
           dense
           minWidth={700}
-          reason="账龄与质押：桶内 drift_c 三分位 Q2−Q0（负 = 跌得深的一组反弹更多）；余额：桶内 f60 均值。月聚簇后 NW t，n=20,280。"
+          reason="账龄与质押：桶内 drift_c 三分位 Q2−Q0（负 = 该分组里跌得深的一组反弹更多）；余额：桶内 f60 均值。月聚簇后 NW t，n=20,280。"
           swipeHint
         />
+        {/* H13：把「贴线」放到同事件池的同特征基准上，回答「+525 里有多少是 beta/反转」。 */}
         <DataTable
           cols={[
-            { head: 'P1 检验', w: '34%', render: (r: { test: string; read: string }) => <span className="text-[12px] leading-[1.6] text-foreground">{r.test}</span> },
-            { head: '读数', render: (r: { test: string; read: string }) => <span className="font-mono text-[11px] leading-[1.6] tabular-nums text-secondary">{r.read}</span> },
+            { head: '对照', w: '42%', render: (r: { test: string; read: string; t: string; note: string }) => <span className="text-[12px] leading-[1.6] text-foreground">{r.test}</span> },
+            { head: '读数', align: 'right', render: (r: { test: string; read: string; t: string; note: string }) => <span className="font-mono text-[12px] tabular-nums text-secondary">{r.read}</span> },
+            { head: 't', align: 'right', render: (r: { test: string; read: string; t: string; note: string }) => <span className="font-mono text-[12px] tabular-nums text-muted">{r.t}</span> },
+            { head: '读法', w: '28%', render: (r: { test: string; read: string; t: string; note: string }) => <span className="text-[11px] leading-[1.6] text-muted">{r.note}</span> },
           ]}
           rows={[
-            { test: '位移曲线 k=0 → 120', read: '−314.3 → −126.6bp/sd（平滑，无悬崖）' },
-            { test: '高点锚（过去 250 日最高价）', read: '−151.5bp/sd / t −3.42；多空 −312.6' },
-            { test: '合约锚 vs 高点锚（同一回归）', read: '−279.8 / t −5.07 vs −60.9 / t −1.48' },
-            { test: `残差（对通用锚正交，R² ${P1.resid.r2.toFixed(3)}）`, read: `−146.9bp/sd / t −3.25；多空 −244.5` },
+            { test: 'near 绝对 f60（含 beta）', read: `+${MATCH.nearAbs.toFixed(1)}bp`, t: '—', note: '不能当 alpha' },
+            { test: '同日同跌幅三次曲线残差', read: `+${MATCH.nearResidCubic.toFixed(1)}bp`, t: fmtT(MATCH.nearResidCubicT, 2), note: '不是纯反转' },
+            { test: '再加波动/换手/规模', read: `+${MATCH.nearResidFull.toFixed(1)}bp`, t: fmtT(MATCH.nearResidFullT, 2), note: '长腿可用读数' },
+            { test: 'far 同基准', read: `${fmtSigned(MATCH.farResidFull, 1)}bp`, t: fmtT(MATCH.farResidFullT, 2), note: '空腿也在跑输' },
+            { test: '长腿 − 空腿', read: `+${MATCH.diffFull.toFixed(1)}bp`, t: '—', note: '不是 +525' },
+            { test: '线性同控 ratio + drift', read: `ratio +${MATCH.linearRatio.toFixed(1)} / drift ${fmtSigned(MATCH.linearDrift, 1)}`, t: `${fmtT(MATCH.linearRatioT, 2)} / ${fmtT(MATCH.linearDriftT, 2)}`, note: '线性设定会把它压没' },
+            { test: '年度（near 残差）', read: MATCH.years.map(y => `${y.year} ${y.bp > 0 ? '+' : ''}${y.bp.toFixed(0)}`).join(' · '), t: '6/7 正', note: '2021 为负' },
           ]}
           rowKey={r => r.test}
           dense
-          minWidth={680}
-          reason="同一批 11,596 个事件（L 60–500 日、留足 120 日位移历史）、80 个月。系数 = f60 对 z(信号) 的月均截面系数；多空 = 三分位 Q2−Q0。"
+          minWidth={760}
+          reason={`${MATCH.note} 对照是同日同事件池横截面回归，不是 near−far 的另一种算法。`}
+          swipeHint
         />
-        <Callout tone="danger" label="三条轴，同一个方向">
-          亏得越深，反弹越强（+755 → −72）；账龄越老，反弹越强（−401 → −716）；质押比例越高，反弹越强（−492 → −731）。
-          不是「位置决定」，是<span className="text-foreground">困境深度 × 救助概率</span>决定：
-          老合约、高质押意味着解除更难、救助更急，市场给的救援期权更值钱。
+        <Callout tone="danger" label="这不是纯反转">
+          同日同事件池、同一条 ret250 三次曲线之上，near 仍 +229bp（t 3.63）；再加 ret60/波动/换手/规模，
+          仍 +291bp（t 5.28）。可见「贴线」不是「跌得多」的线性影子。但也不是干净因果：
+          对照是同期横截面拟合、含未来信息；未控行业、未剔 ST、未处理退市缺口，且 2021 年为负。
+        </Callout>
+        <Callout tone="warn" label="+525 不是你能拿到的">
+          +525bp 是 near−far 的多空差；+1011bp 是 near 的绝对收益，大部分是 beta。只做多的人，
+          能被记成 alpha 的只有<span className="text-foreground"> +291bp</span>——相对同特征基准，不是相对现金。
+          把这三个数混着报，是这一页上一版最大的口径错误。
+        </Callout>
+        <Callout tone="warn" label="三条轴的正确读法">
+          账龄与质押比例的表，读的是「该分组内跌幅斜率有多陡」，不是「老合约/高质押本身更强」。
+          老合约组斜率更陡（−401 → −716），只能说明跌幅在这个分组里更区分收益；
+          年龄与质押比例的主效应，前面的 H1–H9 已经测过，零或不稳。把交互读成主效应，是第二次误读。
         </Callout>
         <Callout tone="warn" label="P1：没有悬崖，但有残差">
           窗口整体往回挪 5 天，系数只掉 11%；挪 120 天仍 −127（t −3.3）。没有悬崖 → 合约锚不是一个锐利的点。
@@ -1049,7 +1247,8 @@ export function ChipTheory() {
         <Callout tone="muted" label="边界">
           1）UNFREEZE_DATE 是结果不是条款（股价恢复会被提前解押），主表不用它。2）能力只有一个粗代理
           （已质押 / 总股本），换成「剩余可质押 / 流通市值」可能更强。3）全部为探索性：H11/H12 已看过全样本，
-          P1 是同一批数据上的结构检验，不是样本外。
+          P1 是同一批数据上的结构检验，不是样本外。4）H13 的对照未控行业、未剔 ST、未处理退市缺口，
+          且是同期拟合（含未来信息），只能当归因基准，不能当可实施基准。
         </Callout>
       </Section>
 
@@ -1182,9 +1381,189 @@ export function ChipTheory() {
           ))}
         </ol>
         <Callout tone="danger" label="自认">
-          本卷只有一条硬证据（H11/H12）和一条排除证据（D 的存量零），其余是从同一个恒等式重述出来的推论——
-          <span className="text-foreground">重述不是证据</span>。它的价值不在解释了过去，在能被更少的参数杀死：
-          卷四要问「哪个变量有符号」，卷五只问「这笔账单多久盯一次市」。若 P1–P4 全灭，本卷整卷删除，不留启示。
+          本卷只有一个候选（H11/H12 的贴线溢价）和一条排除证据（D 的存量零），其余是从同一个恒等式重述出来的推论——
+          <span className="text-foreground">重述不是证据</span>。候选本身也只有 B 级：准 OOS 过线（+293.7bp / t 1.80），
+          但成本敏感（0.8% 即失守）、真前瞻未跑，且线性控制下会消失（+47bp / t 0.83）。它的价值不在解释了过去，在能被更少的参数杀死：
+          卷四要问「哪个变量有符号」，卷五只问「这笔账单多久盯一次市」。若前瞻纸面不过，本卷整卷删除，不留启示。
+        </Callout>
+      </Section>
+      </VolumeBlock>
+
+      <VolumeBlock def={vol('v6')}>
+      <Section
+        id="four"
+        no="6A"
+        title="四种贴线，一个排序"
+        lead={`同一个词，四种实现：簿加权平均、数量占比、最大合约、最贴合约。同一批股票、同一个对照组（wdist ≤ 0.6 的有簿股）、同一套 60 日路径最近邻，四种口径各 ${COND.pairMin.toLocaleString()}–${COND.pairMax.toLocaleString()} 对 / ${COND.months} 月，60 日超额从 +141bp 到 −54bp。水平差 ${COND.spread}bp——这不是抽样误差，是四种代理对「边界质量」的四种近似。`}
+        source="analysis/_diag_chip_path_twin.py · path_twin*.json · 8,559 对 / 79 月"
+        first
+        className="mt-10"
+      >
+        <Callout tone="danger" label="三句话">
+          单位：不是股票，是<span className="text-foreground">索取权</span>。
+          统计：不是均值，是<span className="text-foreground">边界质量</span>。
+          识别：不是水平，是<span className="text-foreground">条件</span>。
+        </Callout>
+        <DataTable
+          cols={fourCols}
+          rows={FOUR_DEFS}
+          rowKey={r => r.def}
+          dense
+          minWidth={880}
+          reason="四种实现都在测「贴线」，但没有一种能自称是「贴线」本身。t 只在第一行过 2；其余三行跨 0 或为负。"
+          swipeHint
+        />
+        <FourDefFigure />
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 border-t border-border pt-3 font-mono text-[11px] tabular-nums text-muted">
+          <span className="text-foreground">路径孪生 · {COND.pairs.toLocaleString()} 对</span>
+          <span>不做匹配 <span className="text-foreground">{fmtSigned(COND.randBp, 1)}bp</span> / t {fmtT(COND.randT)}</span>
+          <span>匹配后 <span className="text-foreground">{fmtSigned(FOUR_DEFS[0].bp, 1)}bp</span> / t {fmtT(FOUR_DEFS[0].t)}</span>
+          <span>路径抵消 <span className="text-foreground">{Math.round(COND.pathShare * 100)}%</span></span>
+          <span>配对中位 <span className="text-foreground">{fmtSigned(COND.pairMedian, 0)}bp</span> · 偏度 {COND.pairSkew}</span>
+          <span>水平极差 <span className="text-foreground">{COND.spread.toFixed(1)}bp</span></span>
+          <span>压力差 <span className="text-foreground">{fmtSigned(COND.stressDelta, 1)}bp</span> / t {fmtT(COND.stressT)}</span>
+        </div>
+        <Callout tone="danger" label="所以 +291bp 是什么">
+          它是<span className="text-foreground">事件口径</span>的读数（单份公告合约、near−far、同特征基准）。
+          把它搬到「簿」上，必须说明用哪个近似：同一批股票、同一套匹配，四种簿口径给出四个答案。
+          <span className="text-foreground">没有一个跨口径的「贴线溢价常数」</span>——任何 +Xbp 的 X，都是代理的函数，不是市场的常数。
+        </Callout>
+        <Callout tone="warn" label="但排序没有散">
+          四种口径里，低压力全部大于高压力、少合约全部大于多合约——<span className="text-foreground">8/8</span>。
+          而且水平本身与「贴线余额的质量」同序：<span className="text-foreground">+141 &gt; +21 &gt; −42 &gt; −54</span>（见 6B）。
+          代理可以换，质量与条件不会换。这一卷要留下的不是任何一个 +X，是这两个不等式和这个排序。
+        </Callout>
+        <Callout tone="muted" label="方法论">
+          在不可识别的对象上，只报交互，不报主效应。报主效应的人，最后报的是自己的口径。
+          这也是前四卷十六个零的同一个病：它们全是主效应。
+        </Callout>
+      </Section>
+
+      <Section
+        id="grain"
+        no="6B"
+        title="质量：贴在触发面上的余额"
+        lead="四种口径的水平与「边界质量」同序：按金额加权的贴线程度（+141）> 贴线数量占比（+21）> 最大合约（−42）> 最贴合约（−54）。前两个问「多少余额贴线」，后两个问「有没有一份贴线」。一条合约碰到线是一个点；整本账贴线是一团质量。定价的是质量。"
+        source="FOUR_DEFS · path_twin_by_ncon"
+      >
+        <StatGrid
+          cols={4}
+          items={[
+            { k: '质量 · wdist / share', v: '+141.0 / +20.7', d: '多少余额贴线；金额加权 > 数量占比' },
+            { k: '点 · big / max', v: '−41.9 / −54.1', d: '有没有一份贴线；碰到线，不是压在线上' },
+            { k: '单合约 · ncon 1', v: '+194.6bp', d: 'n 4,957；100% 余额在一条线上' },
+            { k: '多合约 · ncon 8', v: '+67.2bp', d: 'n 3,602；余额摊开' },
+          ]}
+        />
+        <Callout tone="danger" label="边界质量">
+          定价强度 ∝ 贴在触发面上的余额质量。碰到线不算，贴在线上才算；一份合约不算，一团余额才算。
+          这与四种口径的同序一致，也解释了为什么「最贴合约」是负的：它只测到「有一份碰到了线」，
+          没测到「多少余额被压在线上」。
+        </Callout>
+        <Callout tone="warn" label="集中，不是不可分割">
+          ncon=1 +194.6 vs ncon=8 +67.2：单合约簿把 100% 的余额放在一条线上（集中度 1），多合约簿把余额摊开。
+          机制是<span className="text-foreground">集中</span>，不是「合约不能拆」——后者是一个更窄、也更难证伪的说法，本检验不支持。
+          这也不是「均值 vs 极值」：wdist 本身就是加权均值，它赢在权重压在边界上；max 输在它只取一个点。
+        </Callout>
+        <Callout tone="muted" label="竞争解释（未排除）">
+          单合约簿更小、更年轻、更可能是小盘——+195 里有多少是「集中」而不是「小盘彩票」，本检验分不开。
+          规模带匹配只控了规模的一阶，没有控 age / 流动性 / 股东类型。
+          所以这一条是<span className="text-foreground">推导，不是识别</span>：它解释排序，但不能单独成立。
+        </Callout>
+      </Section>
+
+      <Section
+        id="capacity"
+        no="6C"
+        title="容量：执行能力是公共资源"
+        lead={`贴线密度 = 有簿股票中 wdist ≥ 0.9 的占比。按月中位数分三档：${STRESS_META.low} / ${STRESS_META.mid} / ${STRESS_META.high}。四种口径在高压力档全部最差。`}
+        source="path_twin_by_stress · 79 月 · 高压力 14–16 个月"
+      >
+        <DataTable
+          cols={stressCols}
+          rows={STRESS}
+          rowKey={r => r.def}
+          dense
+          minWidth={760}
+          reason="同一批配对、同一套匹配，只按当月贴线密度分三档。高−低 = 高压力月均值 − 低压力月均值；t 是两个月组均值的双样本 t，不是 NW。"
+          swipeHint
+        />
+        <Callout tone="danger" label="容量">
+          救助不是无限的。全市场同时贴线时，单位救助强度下降——
+          <span className="text-foreground">执行能力是公共资源，会被挤兑</span>。
+          这也解释了 2022（−5.3bp）与 2026（−66.1bp）：不是信号失效，是容量没了。
+        </Callout>
+        <Callout tone="warn" label="两种解释未分离">
+          (a) 容量挤兑：能救的钱不够；(b) 对照压缩：高压力月里对照组也被救，差值被压小。
+          两种都指向<span className="text-foreground">状态依赖</span>，都杀死「常数因子」。
+          要分开它们，需要独立的救助/解押事件数据——现在没有，不是零。
+        </Callout>
+        <Callout tone="muted" label="制度旁证：2018 前是零，不是负">
+          同一套事件口径，{PRE2019.window} 的 near−far 是 <span className="text-foreground">+{PRE2019.spread.toFixed(1)}bp / t {PRE2019.t.toFixed(2)}</span>
+          （{PRE2019.months} 月）；2019–2026 是 +{PRE2019.postSpread.toFixed(1)}bp / t {PRE2019.postT.toFixed(2)}。
+          分界不是数据，是 2018-10 的纾困基金。但注意：2018 前是<span className="text-foreground">零</span>，不是负——
+          A 股样本里从未出现过清算型负号。符号不是从负到正的连续谱，是「零 / 正」两态；
+          清算型负号只是一个理论可能性，未被观测。
+        </Callout>
+      </Section>
+
+      <Section
+        id="shape"
+        no="6D"
+        title="分布：均值是右尾，不是常态"
+        lead="如果约束是期权，它首先改变二阶矩，不是一阶矩。把贴线组与路径孪生的 60 日收益分布放在一起：宽度、两尾、偏度都不同。"
+        source="path_twin.json · shape_near / shape_twin / twin"
+      >
+        <DataTable
+          cols={[
+            { head: '读数', w: '34%', render: (r: ShapeRow) => <span className="text-[12px] text-foreground">{r.metric}</span> },
+            { head: '贴线组', w: '22%', render: (r: ShapeRow) => <span className="font-mono text-[11px] tabular-nums text-foreground">{r.near}</span> },
+            { head: '路径孪生', w: '22%', render: (r: ShapeRow) => <span className="font-mono text-[11px] tabular-nums text-secondary">{r.twin}</span> },
+            { head: '读法', render: (r: ShapeRow) => <span className="text-[11px] text-muted">{r.read}</span> },
+          ]}
+          rows={SHAPE6}
+          rowKey={r => r.metric}
+          dense
+          minWidth={640}
+          reason="同月去均值后的原始 f60；配对差 = 贴线 − 孪生，按 8,559 对逐对计算。"
+        />
+        <Callout tone="danger" label="均值不是常态">
+          中位数 +7bp、胜率 50.2%、偏度 3.54：+141 是 50% 的零加少数右尾。
+          把它当稳定 alpha，会死在集中度和成本上——这也解释了 12× 换手和 0.8% 成本为什么能杀死它。
+        </Callout>
+        <Callout tone="warn" label="正确用法">
+          宽度（多标的、固定权重），不是深度（重仓贴线股）。这类收益不能进 Sharpe 预算，只能进「彩票预算」；
+          上限由尾部亏损定，不由均值定。
+        </Callout>
+        <Callout tone="muted" label="与账户的关系">
+          仍是 0。卷六没有把候选升级成买点，只把它从「均值」改写成「条件 + 分布」。
+        </Callout>
+      </Section>
+
+      <Section
+        id="kill6"
+        no="6E"
+        title="什么会杀死卷六"
+        lead="五条写在下一轮跑数之前。第 1 条若成立，整卷删除——因为它检验的不是一个信号，是「条件可识别」这件事本身。"
+        actions={<span className="text-[11px] text-muted">预注册 · 只追加</span>}
+      >
+        <ol className="mt-2 space-y-4">
+          {KILL6.map((k, i) => (
+            <li key={k} className="flex gap-4 border-t border-border pt-3 first:border-t-0 first:pt-0">
+              <span className="mt-0.5 w-5 shrink-0 font-mono text-[11px] tabular-nums text-muted">
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <p className="max-w-[46em] text-[13px] leading-[1.75] text-secondary">{k}</p>
+            </li>
+          ))}
+        </ol>
+        <Callout tone="danger" label="如果只能留一个数">
+          {KILL6_NOTE}
+          <br />
+          <span className="text-muted">
+            理由：+141 是四种口径里唯一过 2 的一个，选它就是把口径当发现；−202 是四种口径里三次同号、两次 |t|≈1.9 的交互，
+            它不需要挑口径。
+          </span>
         </Callout>
       </Section>
       </VolumeBlock>
@@ -1448,7 +1827,7 @@ export function ChipTheory() {
       <Section
         id="event"
         no="E"
-        title="唯一活着的事件（修正）：不是强平，是救助"
+        title="唯一候选事件（修正）：不是强平，是救助"
         lead="H11 修正后：股价距平仓线越近，未来 60 日反弹越强（贴线组 f60 绝对 +1011bp；near−far +525bp / t 7.47）。H12 的结构没变——折算（行权价）无效、路径（余额）有效；变的是符号。这个符号不是噪声，它说的是解除方式：A 股的控制权质押不是被清算的，是被救助/展期/重组解决的。"
         actions={<span className="text-[11px] text-muted">修正版 · 2026-11-27</span>}
       >
@@ -2072,30 +2451,38 @@ export function ChipTheory() {
       <Section
         id="h11"
         no="13"
-        title="H11 平仓线触发（修正）：越贴线，反弹越强"
-        lead={`ratio = 平仓线 / 公告日股价（修正后不再用提取日价）。ratio 越高 = 越接近或已跌破平仓线。剂量反应完美单调（Spearman f20 ${H11.spearmanF20} / f60 ${H11.spearmanF60}）：f60 从 ≤0.4 的 −132.9bp 一路升到 >1.0 的 +977.6bp。near vs far 差 fwd20 ${fmtSigned(H11.f20, 1)}bp（t ${fmtT(H11.tF20, 2)}）、fwd60 ${fmtSigned(H11.f60, 1)}bp（t ${fmtT(H11.tF60, 2)}），控制后仍 ${fmtSigned(H11.bNear, 1)}bp/sd（t ${fmtT(H11.tNear, 2)}）。`}
-        source="analysis/_diag_chip_audit_fix.py · _diag_chip_p1_anchor.py · 预注册已撤回"
+        title="H11 平仓线（修正）：贴线是唯一的候选"
+        lead={`ratio = 平仓线 / 公告日股价（修正后不再用提取日价）。ratio 越高 = 越接近或已跌破平仓线。剂量反应单调（Spearman f20 ${H11.spearmanF20} / f60 ${H11.spearmanF60}）：f60 从 ≤0.4 的 −132.9bp 升到 >1.0 的 +977.6bp。near−far f60 ${fmtSigned(H11.f60, 1)}bp（t ${fmtT(H11.tF60, 2)}）——但这是多空差；只做多的长腿，相对同特征基准是 +${MATCH.nearResidFull.toFixed(1)}bp（t ${fmtT(MATCH.nearResidFullT, 2)}）。`}
+        source="analysis/_diag_chip_audit_fix.py · _diag_chip_p1_anchor.py · _diag_chip_h13e_fullresid.py · 预注册已撤回"
         actions={<RevisedTag onJump={() => go('audit')} />}
       >
         <StatGrid
           cols={4}
           items={[
-            { k: 'near − far · fwd20', v: `${fmtSigned(H11.f20, 1)}bp`, d: `t ${fmtT(H11.tF20, 2)}` },
-            { k: 'near − far · fwd60', v: `${fmtSigned(H11.f60, 1)}bp`, d: `t ${fmtT(H11.tF60, 2)} · 差距随期限扩大` },
-            { k: '控制后', v: `${fmtSigned(H11.bNear, 1)}bp/sd`, d: `t ${fmtT(H11.tNear, 2)} · 控换手/波动/规模/久期/动量` },
-            { k: '剂量单调', v: H11.spearmanF60.toFixed(3), d: `fwd20 ${H11.spearmanF20} · 8 桶零回撤` },
+            { k: 'near − far · fwd60', v: `${fmtSigned(H11.f60, 1)}bp`, d: `t ${fmtT(H11.tF60, 2)} · 多空差，不是长腿` },
+            { k: '长腿 · 同特征基准', v: `+${MATCH.nearResidFull.toFixed(1)}bp`, d: `t ${fmtT(MATCH.nearResidFullT, 2)} · 同日同跌幅+波动/换手/规模` },
+            { k: '空腿 · 同特征基准', v: `${fmtSigned(MATCH.farResidFull, 1)}bp`, d: `t ${fmtT(MATCH.farResidFullT, 2)} · 空腿也在跑输` },
+            { k: '线性同控 ratio+drift', v: `${fmtSigned(MATCH.linearRatio, 1)}bp/sd`, d: `t ${fmtT(MATCH.linearRatioT, 2)} · 线性设定会把它压没` },
           ]}
         />
         <DataTable
           cols={h11Cols}
           rows={H11_BUCKETS}
           rowKey={r => r.bucket}
-          reason="事件 = 质押公告（折算 ∈ [0.3,1.2]，剔除除权噪声），去重到股票-日；入场公告次日开盘。near 组绝对 f20/f40/f60 = +419/+784/+1011bp，far 组 f60 +150bp。"
+          reason="事件 = 质押公告（折算 ∈ [0.3,1.2]，剔除除权噪声），去重到股票-日；入场公告次日开盘。near 组绝对 f20/f40/f60 = +419/+784/+1011bp，far 组 f60 +150bp。绝对收益含 beta，不能当 alpha。"
         />
-        <Callout tone="warn" label="全卷第一个单调信号（符号是正）">
-          八次证伪之后，第一个「单调、显著、控制后仍显著」的信号：股价距平仓线越近，未来反弹越强
-          （f60 从 −133bp 单调升到 +978bp），且与换手/波动/规模/久期/质押比例全部正交（corr 0.06）。
-          旧读法把它读成阴跌，是因为端点用了提取日价；修正后方向相反。
+        <Callout tone="warn" label="单调是真的；+525 不是你能拿到的">
+          八次证伪之后，第一个单调、显著、在多种对照下都活着的候选：股价距平仓线越近，未来 60 日越强。
+          但 near−far +525 是多空差，near 绝对 +1011 含 beta；只做多的人，能被记成 alpha 的只有
+          <span className="text-foreground"> +291bp</span>（相对同特征基准）。
+          把 +525 或 +1011 当买点，是把空腿的贡献和 beta 都算进了自己的账户。
+        </Callout>
+        <Callout tone="danger" label="线性控制为什么把它压没">
+          把 ratio 与 drift 同时放进线性回归，ratio 从 +240bp/sd 掉到 +47bp/sd（t 0.83）——
+          这容易被读成「贴线没用」。但 ratio ≈ 折算/(1+drift)，两者是同一枚硬币；
+          真实关系是阈值/凸的，不是线性的。换成「同日同事件池 + ret250 三次曲线 + 波动/换手/规模」的对照，
+          near 仍有 +291bp（t 5.28）。所以正确结论不是「零」，是
+          <span className="text-foreground">「线性模型测不到，阈值模型测得到；纸面过线，但真前瞻未跑」</span>。
         </Callout>
         <Callout tone="warn" label="因果已拆解（H12，修正）">
           折算（平仓线定多高）仍然无效：−9.6bp/sd（t −0.23）。涨幅（质押以来跌了多少）强有效：
@@ -2182,6 +2569,8 @@ export function ChipTheory() {
           <div className="font-mono">docs/structural-edge/chip-origination.md</div>
           <div className="font-mono">docs/structural-edge/chip-duration.md</div>
           <div className="font-mono">analysis/_diag_chip_constraint_book.py · _diag_chip_constraint_book_diag.py · _diag_chip_constraint_flow.py</div>
+          <div className="font-mono">analysis/_diag_chip_h13_relabel.py · _diag_chip_h13b_match.py · _diag_chip_h13c_market.py · _diag_chip_h13d_curve.py · _diag_chip_h13e_fullresid.py</div>
+          <div className="font-mono">docs/structural-edge/prereg-pledge-line-paper.md · reports/pledge-line-paper-2026-11-27.md · data/paper/pledge_line_forward.json</div>
           <div className="font-mono">analysis/_build_chip_age.py · _build_chip_holder.py · _build_chip_examples.py</div>
           <div className="font-mono">data/.scratch/leverage/constraint_book_panel.parquet · constraint_book.json · constraint_flow.json</div>
         </div>

@@ -1,5 +1,5 @@
 /**
- * 筹码久期页的全部数字 —— 唯一来源。
+ * 筹码页（卷三–卷六）的全部数字 —— 唯一来源。
  *
  * 这一版把旧页的「成本分布」扩成「持仓的期限结构」：
  *   - 旧页的冻结数字保留，作为「均值场极限」的退化证据；
@@ -21,40 +21,158 @@
 export type Verdict = 'ok' | 'warn' | 'danger' | 'muted'
 
 export const META = {
-  asOf: '2026-11-27',
-  sample: '5,225 只 · 79 个月末 · 41,730 份活合约',
+  asOf: '2026-11-28',
+  sample: '5,225 只 · 79 个月末 · 8,559 对路径孪生',
   universe: '活簿 2020-01 ~ 2026-07；质押事件 2019-04 ~ 2026-08',
   window: '存量簿 2020–2026 · 事件 2019–2026',
-  convention: '活合约=start≤t 且（unfreeze>t 或未解押）；near=openline/close∈[0.8,1.2]',
+  convention: '活合约=start≤t 且（unfreeze>t 或未解押）；near=openline/close∈[0.8,1.2]；路径孪生=同日同规模带 60 日路径最近邻',
 } as const
 
 /** 页头摘要：先回答「所以呢」，再让人往下读。 */
 export const SUMMARY = [
   {
-    label: '旧页的零',
-    value: '投影的零',
-    verdict: 'muted' as Verdict,
-    note: '密度=换手率（R² 0.69）；11 控后 −4bp。分布是无符号测度，均值只能是混合的零。',
-  },
-  {
-    label: '卷三的十二次',
-    value: '状态全零',
-    verdict: 'danger' as Verdict,
-    note: 'H1–H9 全是状态变量：九个检验，零个稳定收益符号。H1 只活成风险因子。',
-  },
-  {
-    label: '负债端的活口',
-    value: '+525bp 反弹',
-    verdict: 'ok' as Verdict,
-    note: '修正后贴线组 f60 绝对 +1011bp；near−far +525.3 / t 7.47；七年同号，逐年增强。',
-  },
-  {
-    label: '锚定：半活',
-    value: '无悬崖，有残差',
+    label: '十六条读数',
+    value: '一条候选',
     verdict: 'warn' as Verdict,
-    note: 'P1 位移 −314→−127 平滑；通用锚解释 48.3%，残差仍 −147 / t −3.25。合约是更好的测量点，不是魔法点。',
+    note: '其余十五条是零、半活或不可识别；它们构成排除清单，不构成策略。H1–H9 没有一个稳定收益符号。',
+  },
+  {
+    label: '唯一候选',
+    value: '+291bp / 60日',
+    verdict: 'warn' as Verdict,
+    note: '贴线组相对「同日、同跌幅、同波动/换手/规模」的同特征基准。t 5.28，6/7 年为正；不是 near−far 的 +525。',
+  },
+  {
+    label: '证据等级',
+    value: 'B · 准 OOS 过线',
+    verdict: 'warn' as Verdict,
+    note: '纸面 holdout +293.7bp / t 1.80，组合 10.5% / DD −6.5%；但 0.8% 成本 t 1.62、1.0% t 1.49。真前瞻 2027-06-30 前不部署。',
+  },
+  {
+    label: '可执行动作',
+    value: '0',
+    verdict: 'muted' as Verdict,
+    note: '候选 ≠ 买点。纸面只到 CONDITIONAL_PASS；真前瞻未跑，成本敏感，不接账户。',
   },
 ]
+
+/**
+ * 收敛后的唯一结论。写在摘要之前，因为它是整页的答案；
+ * 四个摘要只是它的四个读数。
+ */
+export const VERDICT = {
+  tag: '一个候选 · 其余排除',
+  tone: 'warn' as Verdict,
+  line: '筹码页不产出买点；它产出一个候选、一张体检表、一份排除清单。',
+  body:
+    '前四卷在持仓表（资产端）上找到的十六个读数里，十五条没有稳定的收益符号。卷五把唯一有余额的 H11 ' +
+    '重读成应付表（负债端），只活下来一条相对值：股价越贴质押平仓线，未来 60 日越强于「同日、同跌幅、同波动/换手/规模」的同特征基准，' +
+    '长腿 +291bp（t 5.28），6/7 年为正。纸面 holdout 过线（+293.7bp / t 1.80，组合 10.5% / DD −6.5%），' +
+    '但只在 0.5% 成本下；0.8% 即失守（t 1.62）。真前瞻 2026-11-30 → 2027-06-30，未裁决。',
+  action: '当前可执行动作：0',
+  actionValue: '0',
+  actionNote: '真前瞻未跑；成本敏感（0.8% 失守）。评估日 2027-06-30 前，不接账户、不登记信号。',
+} as const
+
+export interface EvidenceRow {
+  grade: 'A' | 'B' | 'C'
+  claim: string
+  read: string
+  use: string
+}
+
+/** 证据分级：A 可复算，B 探索性，C 不可识别。没有 D，因为「没测」不配进表。 */
+export const EVIDENCE: EvidenceRow[] = [
+  {
+    grade: 'A',
+    claim: '筹码分布 = 换手率的投影',
+    read: 'R²(log dens ~ log TO15) 0.689；11 控后 −23bp / t −0.74',
+    use: '解释为什么「形状」没有独立信息；别再调密度参数。',
+  },
+  {
+    grade: 'A',
+    claim: '状态变量没有收益符号',
+    read: 'H1–H9：零个稳定符号；H1 只活成换手/久期的风险因子',
+    use: '不要再用筹码形态、久期、集中度做选股。',
+  },
+  {
+    grade: 'A',
+    claim: '活合约存量簿为零',
+    read: 'v2 +6.0bp / t 0.34；v1 的弱负号是 G1 复权 artifact',
+    use: '不要用「质押存量/解押压力」做多空。',
+  },
+  {
+    grade: 'B',
+    claim: '贴线溢价：长腿 +291bp',
+    read: '同日同跌幅三次曲线 +229bp（t 3.63）；加波动/换手/规模 +291bp（t 5.28）；纸面 holdout +293.7bp / t 1.80；far −94bp',
+    use: '唯一值得冻结的候选；只做多，不做 near−far 的 +525；0.8% 成本即失守。',
+  },
+  {
+    grade: 'B',
+    claim: '合约锚比通用锚测得更干净',
+    read: 'P1 位移 −314→−127 平滑；对通用锚正交后残差 −147bp / t −3.25',
+    use: '测量工具的改进，不是新维度；解释力只有 48.3%。',
+  },
+  {
+    grade: 'C',
+    claim: '解除方式决定符号',
+    read: 'P2 国资 268 事件 / 43 只 / 11 月；Δ +1,269 不可识别',
+    use: '要救助/解押/重组事件数据；现在测不了，不是零。',
+  },
+]
+
+/** 页面能回答与不能回答的问题。两列都写，避免读者把体检表当信号。 */
+export const SCOPE = {
+  can: [
+    '读当前持仓的年龄结构：D、H、young20、q90',
+    '判断一只股票的筹码在老钱还是新钱手里',
+    '解释为什么筹码形态、集中度、久期不产生 alpha',
+    '做排除：不要把换手/涨停/热度当买点',
+  ],
+  cannot: [
+    '选股',
+    '择时',
+    '判断质押风险的大小',
+    '预测解押、救助或重组的时点',
+    '把 +525bp、+1011bp 当作买入信号',
+  ],
+}
+
+/**
+ * H13：贴线溢价的三层归因（2026-11-27）。
+ *
+ * 旧页只报 near−far +525bp，读者会把它当成「贴线组跑赢」。
+ * 但 +525 是多空差；只做多的人能拿到的是长腿相对基准的 +291bp。
+ * 而 +291 只有在「同日 + 同跌幅曲线 + 同波动/换手/规模」的对照下才成立——
+ * 线性控制 drift 会把系数压到 +47bp/t 0.83，因为真实关系是阈值/凸的，不是线性的。
+ */
+export const MATCH = {
+  nearAbs: 1011.4,
+  farAbs: 150.4,
+  spread: 525.3,
+  spreadT: 7.47,
+  nearResidCubic: 229.3,
+  nearResidCubicT: 3.63,
+  nearResidFull: 290.6,
+  nearResidFullT: 5.28,
+  farResidFull: -94.3,
+  farResidFullT: -4.37,
+  diffFull: 384.9,
+  linearRatio: 47.2,
+  linearRatioT: 0.83,
+  linearDrift: -247.0,
+  linearDriftT: -3.70,
+  years: [
+    { year: 2020, bp: 453.9 },
+    { year: 2021, bp: -34.7 },
+    { year: 2022, bp: 529.7 },
+    { year: 2023, bp: 256.2 },
+    { year: 2024, bp: 206.6 },
+    { year: 2025, bp: 287.3 },
+    { year: 2026, bp: 256.7 },
+  ],
+  note: '对照 = 公告日「同事件池」横截面（2,286 只有质押记录的股票）：f60 ~ ret250 三次 + ret60 + vol20 + turn20 + log(amount20)。同期拟合，含未来信息——它是归因基准，不是可实施基准；未控行业、未剔 ST、未处理退市缺口。',
+} as const
 
 export interface DegeneracyRow {
   symptom: string
@@ -1025,7 +1143,7 @@ export interface EventRead {
   tone: Verdict
 }
 
-/** 唯一活着的事件：修正后不是强平，是救助。 */
+/** 唯一候选事件：修正后不是强平，是救助。 */
 export const EVENT_READ: EventRead[] = [
   {
     tag: '旧读法',
@@ -1152,6 +1270,8 @@ export const AUDIT_READ =
 
 export const AP_META = {
   events: 20540,
+  /** 回归样本：dropna(f60, ratio_c, drift_c, ret250, ret60, vol20, turn20, size, D) 后 20,280。 */
+  eventsValid: 20280,
   months: 80,
   window: '2020-01 ~ 2026-08',
   rangeMean: { age: 100.4, pledge: 44.8, drift: 668.4 },
@@ -1259,7 +1379,7 @@ export const AP_LEDGER: APLedgerRow[] = [
   { dim: '信息', asset: '已进入价格', liability: '未进入价格（gap）' },
   { dim: '可观测', asset: '分布、年龄、密度、网络', liability: '条款、盯市日、余额、处置方向' },
   { dim: '符号', asset: '无（测度非负）', liability: '有（欠方必须处置）' },
-  { dim: '读数', asset: '十二个状态检验全零', liability: '一条活口 + 一条衰减' },
+  { dim: '读数', asset: '十二个状态检验全零', liability: '一条候选 + 一条衰减' },
 ]
 
 export interface APMtm {
@@ -1336,9 +1456,9 @@ export const AP_ATTR: APAttrRow[] = [
   {
     cls: '事件类',
     results: 'H11 · H12涨幅 · F1',
-    old: '修正后：贴线 f60 +525bp；涨幅 t −6.39；折算仍无效',
-    neu: '唯一一笔有余额的账单；A 股用救助偿付，所以符号为正',
-    verdict: 'ok',
+    old: '修正后：贴线 f60 多空 +525bp；长腿对同特征基准 +291bp；涨幅 t −6.39；折算仍无效',
+    neu: '唯一一笔有余额的账单；符号为正，但只是候选（未 OOS / 成本 / 容量）',
+    verdict: 'warn',
   },
   {
     cls: '已支付类',
@@ -1506,7 +1626,153 @@ export const VERSIONS = [
     title: '唯一活口是未来函数：修正后反转',
     body: 'CLOSE_FORWARD_ADJPRICE_TODAY 是提取日价格，drift/ratio 含公告日之后的行情。H11 −474→+525bp、H12 +72.7→−276.0、账龄 889→305 作废（修正后 −401→−716）。存量簿与大宗 F 线不受影响；预注册 pledge-drift 撤回。',
   },
+  {
+    date: '2026-11-27',
+    volume: '收敛',
+    title: '一个候选，其余排除',
+    body: 'H13：贴线 near−far +525bp 是多空差；只做多的长腿相对「同日同跌幅三次曲线 + 同波动/换手/规模」基准 +291bp（t 5.28），6/7 年为正，2021 −35bp。线性控制 drift 会把 ratio 压到 +47bp（t 0.83），因为关系是阈值不是线性。证据等级 B：未 OOS、未计成本、未定容量。页面收敛为「一个候选 + 一张体检表 + 一份排除清单」，38 节档案保留；卷六加入后 43 节。',
+  },
+  {
+    date: '2026-11-28',
+    volume: '卷六',
+    title: '条件，不是水平',
+    body: '同一个「贴线」四种实现：簿加权 +141bp / 数量占比 +21bp / 最大合约 −42bp / 最贴合约 −54bp，水平差 195bp。但四种实现的排序全部一致：低压力 > 高压力、少合约 > 多合约（8/8）。结论不是「贴线有效」，是「主效应不可识别，条件可识别」。路径孪生 +141bp / t 2.71，路径只解释 5.9%；配对差中位 +7bp、偏度 3.54——均值是右尾，不是常态。',
+  },
 ]
+
+/* ───────────────────── 卷六：条件，不是水平（2026-11-28） ─────────────────────
+ *
+ * 这一卷不新增「另一个贴线指标」，而是检验「贴线」这个词本身有没有唯一实现。
+ * 同一批股票、同一个对照组（wdist ≤ 0.6 的有簿股）、同一套路径孪生匹配，
+ * 只把 near 的定义换四次：簿加权平均 / 数量占比 / 最大合约 / 最贴合约。
+ * 水平从 +141 到 −54；两个排序（低压力>高压力、少合约>多合约）在四个口径里 8/8 一致。
+ *
+ * 数字来源：
+ *   analysis/_diag_chip_path_twin.py  → data/.scratch/leverage/path_twin*.json
+ *   analysis/_diag_chip_largest_contract.py → largest_contract_panel.parquet
+ * 口径：月末面板 2020-01 ~ 2026-07，79 个月；f60 = close[t+61]/open[t+1] − 1；
+ *      路径 = 过去 60 日对数收盘的 6 段增量；匹配向量 = 路径 + 规模 + 60 日均换手 + vol20 + ret250。
+ *      压力 = 当月有簿股票中 wdist ≥ 0.9 的占比，三分位；合约数 = ncon 的中位数二分。
+ */
+
+export interface FourDefRow {
+  def: string
+  rule: string
+  bp: number
+  t: number
+  low: number
+  high: number
+  few: number
+  many: number
+  n: number
+}
+
+export const FOUR_DEFS: FourDefRow[] = [
+  {
+    def: '簿加权平均',
+    rule: 'wdist ≥ 0.9：账单按金额加权后贴线',
+    bp: 141.0, t: 2.71, low: 189.5, high: 27.6, few: 194.6, many: 67.2, n: 8559,
+  },
+  {
+    def: '数量占比',
+    rule: 'near_share ≥ 0.5：过半合约在 [0.8, 1.2]',
+    bp: 20.7, t: 0.54, low: 61.6, high: -74.8, few: 32.9, many: -0.1, n: 8945,
+  },
+  {
+    def: '最大合约',
+    rule: 'big_ratio ∈ [0.8, 1.2]：tsr 最大那份贴线',
+    bp: -41.9, t: -0.76, low: -35.0, high: -73.1, few: -6.1, many: -83.3, n: 7190,
+  },
+  {
+    def: '最贴合约',
+    rule: 'max_ratio ∈ [0.8, 1.2]：簿内最贴的一份贴线',
+    bp: -54.1, t: -1.10, low: -57.7, high: -95.3, few: -7.1, many: -103.0, n: 12496,
+  },
+]
+
+/** 四种口径的公共读数：水平散了，排序没散。 */
+export const COND = {
+  levelMin: -54.1,
+  levelMax: 141.0,
+  spread: 195.1,
+  pairs: 8559,
+  pairMin: 7190,
+  pairMax: 12496,
+  months: 79,
+  randBp: 149.8,
+  randT: 2.38,
+  pathShare: 0.059,
+  pairMedian: 7.0,
+  pairHit: 50.2,
+  pairSkew: 3.54,
+  pairSd: 3140,
+  stressDelta: -202.0,
+  stressT: -1.92,
+  match: '同日 · 同规模带 · 60 日路径最近邻 · 8,559 对 / 79 月',
+} as const
+
+export interface StressRow {
+  def: string
+  low: number
+  mid: number
+  high: number
+  delta: number
+  t: number
+}
+
+/** 系统压力三分位：有簿股票中 wdist ≥ 0.9 的占比。中位 6.2% / 8.3% / 14.3%。 */
+export const STRESS: StressRow[] = [
+  { def: '簿加权平均', low: 189.5, mid: 201.2, high: 27.6, delta: -202.0, t: -1.92 },
+  { def: '数量占比', low: 61.6, mid: 75.4, high: -74.8, delta: -173.8, t: -1.91 },
+  { def: '最大合约', low: -35.0, mid: -17.9, high: -73.1, delta: -80.8, t: -0.85 },
+  { def: '最贴合约', low: -57.7, mid: -9.6, high: -95.3, delta: -48.0, t: -0.73 },
+]
+
+/** 2013–2018 的事件口径：同一套 drift_c / ratio_c，只换事件表。 */
+export const PRE2019 = {
+  spread: 113.2,
+  t: 0.40,
+  months: 68,
+  near: 165.3,
+  far: 52.2,
+  postSpread: 525.3,
+  postT: 7.47,
+  window: '2013-01 ~ 2018-12',
+} as const
+
+export const STRESS_META = {
+  low: '6.2%',
+  mid: '8.3%',
+  high: '14.3%',
+  hiYears: '2020 / 2022 / 2024',
+} as const
+
+export interface ShapeRow {
+  metric: string
+  near: string
+  twin: string
+  read: string
+}
+
+export const SHAPE6: ShapeRow[] = [
+  { metric: '60 日收益 sd', near: '2,577bp', twin: '2,052bp', read: '贴线组更宽' },
+  { metric: '左尾 p10', near: '−2,042bp', twin: '−1,758bp', read: '左尾也更差' },
+  { metric: '右尾 p90', near: '+2,210bp', twin: '+1,965bp', read: '右尾更厚' },
+  { metric: '偏度', near: '7.96', twin: '5.77', read: '正偏' },
+  { metric: '配对差 · 中位', near: '+7bp', twin: '—', read: '均值不是常态' },
+  { metric: '配对差 · 胜率', near: '50.2%', twin: '—', read: '抛硬币' },
+  { metric: '配对差 · 偏度', near: '3.54', twin: '—', read: '右尾驱动' },
+]
+
+export const KILL6: string[] = [
+  '四种口径的排序反转：任一「低压力 > 高压力」或「少合约 > 多合约」的格子变号。',
+  '集中只是规模：在规模/年龄/流动性内匹配后，少合约与多合约的差归零。',
+  '压力差只是对照压缩：用独立的救助/解押事件度量后，高压力月的对照也同等反弹。',
+  '分布无增量：near 与 twin 的 sd/偏度差在控制后归零，只剩均值噪声。',
+  '2027 前瞻：冻结「低压力 × 少合约」格，60 日超额 ≤ 0。',
+]
+
+export const KILL6_NOTE = '如果只能留一个数，留 −202（压力差），不留 +141（水平）。'
 
 /* ───────────────────── 页面结构：卷 → 节（导航、折叠、计数的唯一来源） ─────────────────────
  *
@@ -1518,7 +1784,7 @@ export const VERSIONS = [
  * digest 不是新结论，是把该卷分隔段原有的两句话压成一行——
  * 折叠之后读者先读它，再决定要不要展开档案。
  */
-export type VolKey = 'audit' | 'v5' | 'v4' | 'v3'
+export type VolKey = 'audit' | 'v6' | 'v5' | 'v4' | 'v3'
 
 export interface VolSection {
   /** 与 <Section id> 一一对应；测试按它断言这一节真的渲染了。 */
@@ -1553,8 +1819,8 @@ export const VOLUMES: VolumeDef[] = [
     key: 'v5',
     tab: '5 未付账单',
     title: '卷五 · 记录（未付账单）',
-    digest: '换一张表：筹码是杠杆持有人的应付账款。贴线组修正后 +525bp，是反弹不是阴跌；P1–P5 待测。',
-    openByDefault: true,
+    digest: '换一张表：筹码是杠杆持有人的应付账款。贴线溢价仍是候选（长腿 +291bp / t 5.28），但 +525 是多空差、+1011 是 beta；证据等级 B。',
+    openByDefault: false,
     sections: [
       { id: 'ledger', label: '5A 换表' },
       { id: 'mtm', label: '5B 定律' },
@@ -1563,6 +1829,20 @@ export const VOLUMES: VolumeDef[] = [
       { id: 'pred5', label: '5E 五条' },
       { id: 'control', label: '5F 对照' },
       { id: 'kill5', label: '5G 杀死' },
+    ],
+  },
+  {
+    key: 'v6',
+    tab: '6 条件',
+    title: '卷六 · 理论（条件，不是水平）',
+    digest: '单位不是股票，是索取权；统计不是均值，是边界质量；识别不是水平，是条件。四种「贴线」代理按边界质量排序：+141 / +21 / −42 / −54；条件排序 8/8 一致：低压力 > 高压力、少合约 > 多合约。',
+    openByDefault: true,
+    sections: [
+      { id: 'four', label: '6A 四口径' },
+      { id: 'grain', label: '6B 质量' },
+      { id: 'capacity', label: '6C 容量' },
+      { id: 'shape', label: '6D 分布' },
+      { id: 'kill6', label: '6E 杀死' },
     ],
   },
   {
@@ -1620,5 +1900,5 @@ export const SECTION_VOLUME: Record<string, VolKey> = Object.fromEntries(
   VOLUMES.flatMap(v => v.sections.map(s => [s.id, v.key] as const)),
 )
 
-/** 页面上应有 38 节；测试与导航计数都读它。 */
+/** 页面上应有 43 节；测试与导航计数都读它。 */
 export const SECTION_IDS: string[] = VOLUMES.flatMap(v => v.sections.map(s => s.id))
