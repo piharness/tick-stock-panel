@@ -7727,8 +7727,15 @@ export interface EtfWatchAccount {
     rules: Record<string, string>
     /** 执行叠加（2026-11-23）：次日开盘限价，页面不重复定义。 */
     entry?: { mode: string; cap_pct: number; valid_until: string; note: string }
+    /** 段首口径（2026-11-28）：只有账户脚本这一份，页面不自己推。 */
+    segment?: { definition: string; ledger_is_not?: string }
   }
   asof: string
+  /**
+   * 当日候选段首的行业（status 首过四条 + 60 日冷却），与 `instructions` 里非债券的 BUY 同集合。
+   * 旧快照没有该字段 —— 缺它就是「不知道」，不要退回账本口径猜。
+   */
+  seg_first?: string[]
   state: {
     equity: number
     cash: number

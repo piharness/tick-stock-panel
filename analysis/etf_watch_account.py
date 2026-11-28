@@ -69,6 +69,16 @@ def load_world():
     return d, mats, sessions_all, ev, matrix_end
 
 
+def seg_first_industries(ev_w: pd.DataFrame, asof) -> list[str]:
+    """当日「候选段首」的行业 —— 与 `derive_instructions` 的腿 1 BUY 同一集合。
+
+    页面分组读这个字段（`account.json` 的 `seg_first`），不自己从账本推：
+    账本记的是「回撤首次进入区间」，是位置证据，两者会在「已在区间内但资格翻转」时分叉
+    （2026-11-27：账本=电子、可执行=有色）。
+    """
+    return sorted(ev_w.loc[ev_w["date"] == asof, "industry"].tolist())
+
+
 def derive_instructions(r: dict, ev_w: pd.DataFrame, sessions, sym_mat,
                         prices: dict | None = None) -> list[dict]:
     """次日三条指令：①到期卖出 ②新信号按权益/6 进场（钱不够先卖债券） ③剩余对齐债券。
@@ -176,6 +186,11 @@ def main() -> None:
                         entry_mode="open_limit", entry_cap=ENTRY_CAP)
 
     instructions = derive_instructions(r, ev_w, sessions, sym_mat, prices)
+    # 当日「候选段首」：与 BUY 指令同一集合，页面分组只认这一份。
+    # 为什么不在页面里从账本推：账本记的是「回撤首次进入区间」（位置证据），
+    # 与买入口径（status 首过四条 + 60 日冷却）在 2026-11-27 分叉 —— 账本=电子、可执行=有色。
+    asof = sessions[-1]
+    seg_first = seg_first_industries(ev_w, asof)
     eq = float(r["equity"].iloc[-1])
     out = {
         "meta": {
@@ -197,8 +212,13 @@ def main() -> None:
                 "valid_until": "14:50",
                 "note": f"限价 = 信号收盘 ×{ENTRY_CAP}；开盘低于限价按开盘成交，未成交则放弃（不追已修复出区间的事件）。回测仍按 t+1 收盘（保守口径），执行叠加读数见 _probe_entry_timing.json。",
             },
+            "segment": {
+                "definition": "候选段首 = status 首次成为 CANDIDATE（四条全过）+ 同行业 60 交易日冷却；与 instructions 里非债券的 BUY 行业同一集合（etf_watch_experiments.build_events）",
+                "ledger_is_not": "账本事件记的是「回撤首次进入区间」，是位置证据，不是买入口径；两者会在「已在区间内但资格翻转」时分叉",
+            },
         },
-        "asof": str(sessions[-1].date()),
+        "asof": str(asof.date()),
+        "seg_first": seg_first,
         "state": {
             "equity": round(eq, 0),
             "cash": round(float(r["cash"]), 0),

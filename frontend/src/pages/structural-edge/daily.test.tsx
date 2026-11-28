@@ -86,6 +86,26 @@ const payload = vi.hoisted(() => ({
   },
 }))
 
+// 账户快照：段首（seg_first）是页面唯一认的买入口径，与 BUY 指令同集合。
+// 2026-11-28 之前页面从账本推段首，2026-11-27 两者分叉（账本=电子，可执行=有色）。
+const account = vi.hoisted(() => ({
+  meta: {
+    generated_at: '2026-11-20 17:31', policy: '', engine: '', adoption: '2026-11-20', init: 600000,
+    defensive: { symbol: '511010', name: '国债ETF', method: '' }, rules: {},
+    segment: { definition: '候选段首 = status 首过四条 + 60 日冷却', ledger_is_not: '账本事件是位置证据' },
+  },
+  asof: '2026-11-20',
+  seg_first: ['电子'] as string[] | undefined,
+  state: {
+    equity: 611801, cash: 0,
+    defensive: { value: 499700, weight: 0.8166 },
+    leg1: { value: 112101, positions: [{ industry: '电子', symbol: '588170.SH', entry: '2026-11-20', exit: null, value: 112101 }] },
+    trades_closed: 0,
+  },
+  instructions: [],
+  equity_tail: [],
+}))
+
 let throwWatch: boolean
 vi.mock('@/lib/api', () => ({
   api: {
@@ -93,21 +113,7 @@ vi.mock('@/lib/api', () => ({
       if (throwWatch) throw new Error('404 Not Found')
       return payload
     },
-    etfWatchAccount: async () => ({
-      meta: {
-        generated_at: '2026-11-20 17:31', policy: '', engine: '', adoption: '2026-11-20', init: 600000,
-        defensive: { symbol: '511010', name: '国债ETF', method: '' }, rules: {},
-      },
-      asof: '2026-11-20',
-      state: {
-        equity: 611801, cash: 0,
-        defensive: { value: 499700, weight: 0.8166 },
-        leg1: { value: 112101, positions: [{ industry: '电子', symbol: '588170.SH', entry: '2026-11-20', exit: null, value: 112101 }] },
-        trades_closed: 0,
-      },
-      instructions: [],
-      equity_tail: [],
-    }),
+    etfWatchAccount: async () => account,
     watchlistGroups: async () => ({ groups: [{ id: 'g-pool', name: '观察池', color: 'sky' }] }),
     watchlistGroupCreate: async () => { throw new Error('should not create when pool exists') },
     etfWatchCashLeg: async () => { throw new Error('404 Not Found') },
@@ -130,6 +136,7 @@ beforeEach(() => {
   })
   window.history.replaceState(null, '', '/handbook')
   throwWatch = false
+  account.seg_first = ['电子']
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -200,18 +207,43 @@ it('有数据时：日期 + 判定数 + 候选卡 + 三项微指标', async () =
   expect(addBtn).not.toBeNull()
   expect(addBtn!.title).toContain('观察池')
   expect(text).toContain('一格(权益/6)')
-  // 段首/延续分组：电子今天触发（段首），军工是延续 —— 两组都要标出来
-  expect(text).toContain('段首 · 今天首次进入区间')
-  expect(text).toContain('延续 · 已在区间内')
+  // 段首/延续分组：段首来自账户快照（电子），军工是延续 —— 两组都要标出来
+  expect(text).toContain('段首 · 今日首次满足四条')
+  expect(text).toContain('延续 · 已在候选段内')
   expect(text).toContain('账本内首次触发')
   // 「明天要干什么」必须一眼可答：hero 结论句 + 明日待办清单 + 触发预案
   expect(text).toContain('段首 1 个 —— 明日开盘按限价买入')
   expect(text).toContain('明日待办')
   expect(text).toContain('明日无操作')
   expect(text).toContain('触发预案')
-  expect(text).toContain('今天已有段首 1 个')
+  expect(text).toContain('今天段首 1 个（电子）')
   expect(text).toContain('区间内')
   expect(text).toContain('12/30')
+})
+
+// 2026-11-27 的真实分叉：账本记电子（回撤重回区间），账户段首是有色。
+// 段首只有一个来源（账户快照），账本事件不许把行业顶进「可执行」组。
+it('段首只认账户口径：账本里的位置事件不能把行业顶进可执行组', async () => {
+  account.seg_first = ['军工']
+  const el = await render()
+  const text = el.textContent ?? ''
+  expect(text).toContain('今天段首 1 个（军工）')
+  const section = Array.from(el.querySelectorAll('section')).find(s => s.textContent?.includes('候选行业'))!
+  const grids = Array.from(section.children).filter(
+    n => typeof (n as HTMLElement).className === 'string' && (n as HTMLElement).className.includes('grid'),
+  ) as HTMLElement[]
+  expect(grids).toHaveLength(2)
+  expect(grids[0].textContent).toContain('军工')
+  expect(grids[1].textContent).toContain('电子')
+})
+
+it('账户快照没有段首字段时，宁可不分组也不退回账本口径', async () => {
+  account.seg_first = undefined
+  const el = await render()
+  const text = el.textContent ?? ''
+  expect(text).toContain('段首待账户脚本确认')
+  expect(text).toContain('账户快照未就绪')
+  expect(text).not.toContain('延续 · 已在候选段内')
 })
 
 it('反例登记与账户指令同屏，且「不能相加」的原则没有在拆页时丢掉', async () => {

@@ -285,3 +285,34 @@ def test_replay_open_limit_fills_at_open_or_limit_and_skips_gap():
     r = LR.replay_joint(ev, s, px, sm, div_r=z, div_tgt=z, cash_r=z,
                         use_div=False, allow_open=True, entry_mode="open_limit")
     assert r["open_positions"] == []
+
+
+def test_seg_first_matches_buy_instructions():
+    """段首集合 == 腿 1 BUY 集合（2026-11-28）。
+
+    页面分组只认 account.json 的 seg_first；它必须与指令同源，否则又会出现
+    「页面说 A 可执行、明日待办买 B」（2026-11-27 电子/有色就是这么分叉的）。
+    """
+    import etf_watch_account as acc
+
+    days = pd.bdate_range("2026-11-26", periods=2)
+    asof = days[-1]
+    r = {"equity": pd.Series([600_000.0, 600_000.0], index=days),
+         "open_positions": [], "defensive_value": 0.0}
+    ev_w = pd.DataFrame([
+        {"date": asof, "industry": "有色", "i": 0, "ym": "2026-11", "dd": -0.41},
+        {"date": asof, "industry": "电子", "i": 0, "ym": "2026-11", "dd": -0.46},
+        # 前一日的事件不得混进来
+        {"date": days[0], "industry": "军工", "i": 0, "ym": "2026-11", "dd": -0.44},
+    ])
+    sym_mat = pd.DataFrame({"有色": ["A.SZ"] * 2, "电子": ["B.SH"] * 2, "军工": ["C.SH"] * 2},
+                           index=days)
+
+    first = acc.seg_first_industries(ev_w, asof)
+    assert first == ["有色", "电子"]          # 排序稳定，且不含前一日的军工
+
+    out = acc.derive_instructions(r, ev_w, list(days), sym_mat)
+    buys = [o for o in out if o["action"] == "BUY" and "511010" not in o["what"]]
+    assert len(buys) == len(first)
+    for ind in first:
+        assert any(f"（{ind}）" in o["what"] for o in buys)

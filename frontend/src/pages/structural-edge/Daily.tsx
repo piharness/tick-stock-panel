@@ -93,15 +93,14 @@ export function Daily() {
   // 六格仓位（规则章预注册）：每笔 = 当时权益 / 6 ≈ 16.7%。候选卡把它带到手边，
   // 金额以「最近收盘估算」，实际按成交时权益计算 —— 与账户指令同一口径。
   const slot = account ? account.state.equity / 6 : null
-  // 段首 = 今天首次进入区间（账户只买段首）；其余是延续中的信号。
-  // 两组分开排：今天真正可执行的永远是少数，不能让延续的信号淹没它。
-  const segToday = useMemo(
-    () => new Set((payload?.ledger.events ?? []).filter(e => e.date === payload?.meta.asof).map(e => e.industry)),
-    [payload],
-  )
-  const segFirst = candidates.filter(c => segToday.has(c.industry))
-  const ongoing = candidates.filter(c => !segToday.has(c.industry))
-  const grouped = segFirst.length > 0 && ongoing.length > 0
+  // 段首口径只有一份：账户脚本的「候选段首」（status 首过四条 + 60 日冷却），
+  // 与「明日待办」的 BUY 指令同集合。账本事件是「回撤首次进入区间」的位置证据，
+  // 2026-11-27 两者分叉过（账本=电子、可执行=有色）—— 所以这里不读账本。
+  // 旧快照没有 seg_first 时，`segKnown=false`：宁可不分组，也不退回账本口径猜。
+  const segFirstSet = useMemo(() => new Set(account?.seg_first ?? []), [account])
+  const segKnown = Array.isArray(account?.seg_first)
+  const segFirst = segKnown ? candidates.filter(c => segFirstSet.has(c.industry)) : []
+  const ongoing = segKnown ? candidates.filter(c => !segFirstSet.has(c.industry)) : candidates
   // 弹窗顶栏的判定四条（CANDIDATE 才会出现在这里，所以四条都是过）
   const previewContext = preview?.industry && payload
     ? {
@@ -169,7 +168,9 @@ export function Daily() {
 
       {/* ------------------------------------------------ 01 今天 */}
       <section id="today" className="mt-14 scroll-mt-24">
-        {payload ? <Today payload={payload} /> : <Offline err={err} />}
+        {payload
+          ? <Today payload={payload} segFirst={segKnown ? segFirst.length : null} />
+          : <Offline err={err} />}
       </section>
 
       {/* ------------------------------------------------ 02 候选卡 */}
@@ -184,19 +185,23 @@ export function Daily() {
             </h2>
             <span className="text-[11px] text-muted">段首优先 · 组内按回撤深度排 · 点卡片看载体 K 线</span>
           </div>
-          {grouped && (
-            <div className="mt-5 text-[11px] font-medium tracking-[0.1em] text-accent">段首 · 今天首次进入区间，可执行</div>
+          {segFirst.length > 0 && (
+            <div className="mt-5 text-[11px] font-medium tracking-[0.1em] text-accent">段首 · 今日首次满足四条，账户按此买入</div>
           )}
-          <div className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-3', grouped ? 'mt-3' : 'mt-5')}>
-            {segFirst.map(c => (
-              <CandidateCard key={c.industry} c={c} payload={payload} slot={slot} onOpen={setPreview} onAdd={() => c.best_symbol && addWatch.mutate({ symbol: c.best_symbol })} added={c.best_symbol ? !!added[c.best_symbol] : false} />
-            ))}
-          </div>
-          {grouped && (
-            <div className="mt-7 text-[11px] font-medium tracking-[0.1em] text-muted">延续 · 已在区间内，账户只买段首</div>
+          {segFirst.length > 0 && (
+            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {segFirst.map(c => (
+                <CandidateCard key={c.industry} c={c} payload={payload} slot={slot} onOpen={setPreview} onAdd={() => c.best_symbol && addWatch.mutate({ symbol: c.best_symbol })} added={c.best_symbol ? !!added[c.best_symbol] : false} />
+              ))}
+            </div>
+          )}
+          {segKnown && ongoing.length > 0 && (
+            <div className={cn('text-[11px] font-medium tracking-[0.1em] text-muted', segFirst.length > 0 ? 'mt-7' : 'mt-5')}>
+              延续 · 已在候选段内，账户不重复买入
+            </div>
           )}
           {ongoing.length > 0 && (
-            <div className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-3', grouped ? 'mt-3' : 'mt-5')}>
+            <div className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-3', segKnown ? 'mt-3' : 'mt-5')}>
               {ongoing.map(c => (
                 <CandidateCard key={c.industry} c={c} payload={payload} slot={slot} onOpen={setPreview} onAdd={() => c.best_symbol && addWatch.mutate({ symbol: c.best_symbol })} added={c.best_symbol ? !!added[c.best_symbol] : false} />
               ))}
@@ -213,9 +218,11 @@ export function Daily() {
             <div className="text-[11px] font-medium tracking-[0.1em] text-muted">触发预案</div>
             <p className="mt-2 max-w-[46em] text-[13px] leading-[1.8] text-secondary">
               {segFirst.length > 0
-                ? `今天已有段首 ${segFirst.length} 个（上面指令里有对应买入），其余 ${ongoing.length} 个候选继续观察 —— 账户只买段首，延续中的信号不加仓。`
-                : `候选 ${payload.counts.candidate} 个全是延续信号：明日无买入。明天收盘若确认新增段首（四条全过且当日未触发），按`}
-              {segFirst.length === 0 && (
+                ? `今天段首 ${segFirst.length} 个（${segFirst.map(c => c.industry).join('、')}），上方指令已按此下买入；其余 ${ongoing.length} 个候选属于延续段，账户不重复买入。`
+                : segKnown
+                  ? `候选 ${payload.counts.candidate} 个全是延续信号：明日无买入。明天收盘若确认新增段首（四条全过且当日未触发），按`
+                  : '账户快照未就绪，暂时分不清段首与延续 —— 先运行 etf_watch_account.py，再核对上面的指令。'}
+              {segFirst.length === 0 && segKnown && (
                 <button
                   type="button"
                   onClick={() => openFold('next')}
@@ -224,7 +231,7 @@ export function Daily() {
                   「触发后的四步」
                 </button>
               )}
-              {segFirst.length === 0 && '执行：确认载体 → 复核不买清单 → 按六格定仓 → 次日开盘限价。'}
+              {segFirst.length === 0 && segKnown && '执行：确认载体 → 复核不买清单 → 按六格定仓 → 次日开盘限价。'}
             </p>
           </div>
         )}
@@ -296,10 +303,9 @@ function DailySection({ id, title, note, children }: { id: string; title: string
 }
 
 /** 01 今天：一个数字回答一个问题。0 也是答案，而且是常见的答案。 */
-function Today({ payload }: { payload: EtfWatchPayload }) {
+function Today({ payload, segFirst }: { payload: EtfWatchPayload; segFirst: number | null }) {
   const { candidate, in_band, industries, signal, clusters_today } = payload.counts
   const has = candidate > 0
-  const newSeg = payload.ledger.events.filter(e => e.date === payload.meta.asof).length
 
   return (
     <div>
@@ -318,9 +324,11 @@ function Today({ payload }: { payload: EtfWatchPayload }) {
           </div>
           <div className="mt-1.5 text-[13px] leading-[1.6] text-secondary">
             {has
-              ? (newSeg > 0
-                  ? `段首 ${newSeg} 个 —— 明日开盘按限价买入，见「明日待办」`
-                  : '全是延续信号 —— 明日无买入，等下一个段首')
+              ? (segFirst == null
+                  ? '段首待账户脚本确认 —— 明日买不买只看「明日待办」的指令'
+                  : segFirst > 0
+                    ? `段首 ${segFirst} 个 —— 明日开盘按限价买入，见「明日待办」`
+                    : '全是延续信号 —— 明日无买入，等下一个段首')
               : '明日无买入。区间内不等于可下注 —— 形态或容量不过就不做。'}
           </div>
         </div>
@@ -398,7 +406,8 @@ function CandidateCard({
       <div className="mt-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-[11.5px]">
         {trig ? (
           <>
-            <span className="text-muted">上次触发 {trig.date}</span>
+            {/* 账本口径：位置证据，不是买入口径（买不买看上面的段首分组）。 */}
+            <span className="text-muted" title="账本记的是该行业最近一次「四条全过」事件；它证明位置与资格曾经同时成立，不代表今天可以买">账本触发 {trig.date}</span>
             {trig.rel != null
               ? <span className={cn('font-mono tabular-nums', trig.rel >= 0 ? 'text-bull' : 'text-bear')}>{fmtSigned(trig.rel)}bp</span>
               : <span className="text-muted">待到期</span>}
