@@ -136,19 +136,9 @@ const evBucketCols: Col<EventBucketRow>[] = [
     render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.pre))}>{sgn(r.pre)}<span className="ml-1 text-[10px] text-muted">t {sgn(r.preT, 2)}</span></span>,
   },
   {
-    head: '解禁后 20 日',
-    align: 'right',
-    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.post))}>{sgn(r.post)}<span className="ml-1 text-[10px] text-muted">t {sgn(r.postT, 2)}</span></span>,
-  },
-  {
     head: 'DiD 前',
     align: 'right',
     render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.didPre))}>{sgn(r.didPre)}</span>,
-  },
-  {
-    head: 'DiD 后',
-    align: 'right',
-    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.didPost))}>{sgn(r.didPost)}</span>,
   },
 ]
 
@@ -156,7 +146,7 @@ const evMomCols: Col<EventMomentumRow>[] = [
   { head: '前期 120 日动量', w: '20%', render: r => <span className="text-[12px] text-foreground">{r.terc}</span> },
   { head: '≥10% 组', align: 'right', render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.hi))}>{sgn(r.hi)}</span> },
   { head: '<1% 组', align: 'right', render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.lo))}>{sgn(r.lo)}</span> },
-  { head: '差（排除前买）', align: 'right', render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.diff))}>{sgn(r.diff)}</span> },
+  { head: '差（≥10% − <1%）', align: 'right', render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.diff))}>{sgn(r.diff)}</span> },
   {
     head: '前期超额',
     align: 'right',
@@ -171,11 +161,6 @@ const evKindCols: Col<EventKindRow>[] = [
     head: '解禁前 20 日',
     align: 'right',
     render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.pre))}>{sgn(r.pre)}<span className="ml-1 text-[10px] text-muted">t {sgn(r.preT, 2)}</span></span>,
-  },
-  {
-    head: '解禁后 20 日',
-    align: 'right',
-    render: r => <span className={cn('font-mono text-[12px] tabular-nums', tone(r.post))}>{sgn(r.post)}<span className="ml-1 text-[10px] text-muted">t {sgn(r.postT, 2)}</span></span>,
   },
 ]
 
@@ -408,7 +393,7 @@ export function Narrative() {
       <Section
         id="event"
         no="2C"
-        title="事件腿：解禁的漂移在到期前就付完了"
+        title="事件腿：解禁的抛压发生在到期之前"
         asOf="2026-06-30"
         source="events/lockup.parquet（东财 RPT_LIFT_STAGE，16,928 件）· analysis/_diag_narrative_events.py"
         lead={
@@ -421,8 +406,9 @@ export function Narrative() {
       >
         <DataTable cols={evBucketCols} rows={EVENT_BUCKETS} rowKey={r => r.bucket} minWidth={880} swipeHint />
         <div className="mt-3 text-[11px] leading-[1.7] text-muted">
-          pre20 = open[t−20] → close[t−1]；post20 = open[t+1] → close[t+20]；超额 = 相对同日全市场等权收益。
+          pre20 = open[t−20] → close[t−1]；超额 = 相对同日全市场等权收益。
           DiD = 事件 − 同股票 ±120 交易日随机日（安慰剂）。事件扎堆，t 按日聚簇 NW(5)。
+          解禁之后的窗口已从读数中撤下：刚过成本、方向只出现过一次，样本太薄。
         </div>
         <div className="mt-8 grid gap-x-8 gap-y-6 lg:grid-cols-2">
           <DataTable
@@ -442,9 +428,9 @@ export function Narrative() {
         </div>
         <Callout tone="warn" label="结论：提前支付，到期结算">
           <p>
-            解禁前 20 日的超额随比例单调下降（−37 → −94 → −172 → −276bp），解禁后 20 日转为 +51bp。
-            也就是说，抛压不是在解禁日释放的，而是在解禁日之前被定价完的；到期日不是卖点，是结算点。
-            这与 /chip 的 P3 同构：支付之后漂移归零。
+            解禁前 20 日的超额随比例单调下降（−37 → −94 → −172 → −276bp）：抛压不是在解禁日释放的，
+            而是在解禁日之前就被定价的。解禁之后走成什么样，本页不下结论——那一格刚过成本、方向只出现过一次，
+            已经撤下。
           </p>
           <p className="mt-1.5">
             解禁效应是<span className="text-foreground">横截面</span>的，不是择时的：371 个交易日里，当日解禁市值 / 流通市值
@@ -452,7 +438,7 @@ export function Narrative() {
           </p>
           <p className="mt-1.5">
             可执行的只有排除：<span className="text-foreground">未来 20 日解禁占流通比 ≥10% 的股票，不进候选池。</span>
-            解禁后的 +51bp（t 2.08）刚过双边成本，不构成买点；也不建议做空——融券成本与借券可得性都不在这个读数里。
+            也不建议做空——融券成本与借券可得性都不在这个读数里。
           </p>
         </Callout>
         <Callout tone="muted" label="剔除事件股后：结论不变">
@@ -862,7 +848,7 @@ export function Narrative() {
                 {
                   k: '近 30 日已解禁',
                   v: `${num(b.events.recent30?.n)} 只 / ${num(b.events.recent30?.mcap_yi, 1)} 亿`,
-                  d: '这部分已经结算完毕，是「后 20 日 +51bp」的样本',
+                  d: '这部分已经解禁完毕，只作为已发生的供给记账',
                 },
                 {
                   k: '近 90 日定增上市',

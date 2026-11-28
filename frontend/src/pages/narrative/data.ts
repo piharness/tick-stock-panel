@@ -29,13 +29,13 @@ export const META = {
 export const VERDICT = {
   tag: '三条腿 · 一条可用的排除',
   tone: 'warn' as Verdict,
-  line: '叙事是收据，解禁是账单——但这张账单也在到期前就付完了。',
+  line: '叙事是收据，解禁是账单——账单在到期前就开始付了。',
   body:
     '把 /chip 的定律搬到大盘：一笔约束要产生漂移，需要「未结算的余额」与「结算周期 > 0」。' +
     '叙事腿的结算周期是 0（涨停在收盘撮合完），剂量跨度只有 −17bp，小于成本；' +
     '事件腿终于有了余额与日期：解禁占流通比 ≥10% 的股票，解禁前 20 日比同日等权市场低 ' +
-    '276bp（t −12.0），且按比例单调（−37 → −94 → −172 → −276）；解禁后 20 日反而 +51bp。' +
-    '抛压是提前支付的，到期日不是卖点，是结算点。这条只够做排除：解禁前 20 日不买，不做空。',
+    '276bp（t −12.0），且按比例单调（−37 → −94 → −172 → −276）。解禁之后走成什么样，样本太薄，本页不下结论。' +
+    '这条只够做排除：解禁前 20 日不买，不做空。',
   action: '当前可执行动作：1 条排除',
   actionValue: '1',
   actionNote: '未来 20 日解禁占流通比 ≥10% 的票不进候选池；其余动作仍为 0。',
@@ -55,10 +55,10 @@ export const SUMMARY = [
     note: '解禁占流通比 ≥10% 组，相对同日等权市场，t −12.0；四档单调。',
   },
   {
-    label: '解禁后 20 日',
-    value: '+51bp',
-    verdict: 'muted' as Verdict,
-    note: '结算完成后的回补，t 2.08，幅度刚过双边成本 —— 不构成买点。',
+    label: '安慰剂后',
+    value: '−262bp',
+    verdict: 'warn' as Verdict,
+    note: '同股票 ±120 交易日随机日做差；同动量分位内 −196 ~ −408bp。不是均值回归。',
   },
   {
     label: '证据等级',
@@ -90,7 +90,7 @@ export const LAW: LawRow[] = [
     who: '质押、解禁、定增、大宗、指数调样',
     when: '到处置日',
     balance: '有——按账龄摊销',
-    read: '质押贴线 +291bp；解禁前 −276bp / 后 +51bp；大宗符号不迁移；调样 −10.5bp',
+    read: '质押贴线 +291bp；解禁前 −276bp；大宗符号不迁移；调样 −10.5bp',
   },
   {
     cadence: '从不盯市',
@@ -129,7 +129,7 @@ export const LEGS: LegRow[] = [
     leg: '事件腿',
     object: '质押、大宗、调样、退市',
     tests: 'H11 贴线、解禁 16,928 件、大宗迁移 225k 条、调样 1,471 事件、退市清仓',
-    read: '解禁前 −276bp / 后 +51bp（本次新测）；贴线 +291bp；大宗符号翻转；调样 −10.5bp；退市负 EV',
+    read: '解禁前 −276bp（本次新测）；贴线 +291bp；大宗符号翻转；调样 −10.5bp；退市负 EV',
     use: '只做排除：解禁前 20 日不买。贴线候选归 /chip，不在这页重复。',
   },
 ]
@@ -245,9 +245,7 @@ export const KILL: KillRow[] = [
   {
     id: 'K7',
     claim: '解禁前负漂移',
-    kill: '注册制后（2023 起）样本里 ≥10% 组的解禁前超额转正 ⇒ 「提前支付、到期结算」死，改回「供给压力持续」，' +
-      '撤掉排除规则。每年重跑一次即判。（解禁后 +51bp 不列为条件：它 t 2.08、刚过成本，太薄，' +
-      '翻一次也不足以推翻解禁前 −276bp 的主体证据。）',
+    kill: '注册制后（2023 起）样本里 ≥10% 组的解禁前超额转正 ⇒ 「抛压提前」死，撤掉排除规则。每年重跑一次即判。',
   },
 ]
 
@@ -260,25 +258,24 @@ export interface EventBucketRow {
   days: number
   pre: number
   preT: number
-  post: number
-  postT: number
   didPre: number
-  didPost: number
 }
 
 /**
  * 解禁：按「本次解禁股数 / 流通股数」分档。
  *
- * 读法：解禁前 20 日（open[t-20] → close[t-1]）与解禁后 20 日（open[t+1] → close[t+20]）
- * 相对**同日全市场等权收益**的超额。DiD = 事件 − 同股票 ±120 交易日随机日（安慰剂）。
+ * 读法：解禁前 20 日（open[t-20] → close[t-1]）相对**同日全市场等权收益**的超额。
+ * DiD = 事件 − 同股票 ±120 交易日随机日（安慰剂）。
+ * 解禁之后的窗口 2026-11-28 按裁决从结论中撤下：刚过成本、样本内方向只出现一次，
+ * 太薄，不参与任何判断。
  * 基准从「中位」换成「等权均值」，是因为收益分布右偏，中位口径会把所有个股超额
  * 系统性抬高约 +400bp/20日 —— 价差仍可读，但水平不可读。
  */
 export const EVENT_BUCKETS: EventBucketRow[] = [
-  { bucket: '<1%', events: 6384, days: 1696, pre: -37.4, preT: -1.64, post: 62.9, postT: 2.64, didPre: -29.5, didPost: 65.2 },
-  { bucket: '1–3%', events: 2540, days: 1228, pre: -93.8, preT: -2.29, post: 32.4, postT: 0.94, didPre: -69.2, didPost: 60.3 },
-  { bucket: '3–10%', events: 2574, days: 1267, pre: -172.2, preT: -6.15, post: 127.7, postT: 3.67, didPre: -156.3, didPost: 141.5 },
-  { bucket: '≥10%', events: 5430, days: 1583, pre: -276.5, preT: -12.02, post: 50.8, postT: 2.08, didPre: -261.6, didPost: 56.6 },
+  { bucket: '<1%', events: 6384, days: 1696, pre: -37.4, preT: -1.64, didPre: -29.5 },
+  { bucket: '1–3%', events: 2540, days: 1228, pre: -93.8, preT: -2.29, didPre: -69.2 },
+  { bucket: '3–10%', events: 2574, days: 1267, pre: -172.2, preT: -6.15, didPre: -156.3 },
+  { bucket: '≥10%', events: 5430, days: 1583, pre: -276.5, preT: -12.02, didPre: -261.6 },
 ]
 
 export interface EventMomentumRow {
