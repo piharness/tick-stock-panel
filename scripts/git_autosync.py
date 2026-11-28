@@ -336,8 +336,11 @@ def checkpoint(repo: Repo, *, reason: str, dry: bool = False) -> str | None:
             return f"(dry-run) {tree[:8]}"
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         args = ["commit-tree", tree, "-m", f"snapshot {stamp} — {reason}"]
-        if has_head:
-            args += ["-p", "HEAD"]
+        # 父提交取**上一个快照**，不是 HEAD。取 HEAD 会让快照链把 main 的历史也串进来：
+        # `rev-list --count` 数出来是 1237（含主线的 1200+ 条），按条数裁剪就失去意义。
+        previous = git(repo.root, "rev-parse", "-q", "--verify", CHECKPOINT_REF, timeout=15)
+        if previous:
+            args += ["-p", previous]
         sha = git(repo.root, *args, env=env, timeout=60)
         if not sha:
             return None
@@ -348,19 +351,37 @@ def checkpoint(repo: Repo, *, reason: str, dry: bool = False) -> str | None:
         return None
 
 
-def _prune(repo: Repo) -> None:
+def _prune(repo: Repo, *, keep: int = MAX_CHECKPOINTS) -> None:
+    """快照链保留最近 `keep` 条。
+
+    不能靠「把 ref 往回移」来裁剪：ref 只能指向某个提交，往回移丢掉的是**最新的**
+    那一批。所以这里重造：取最近 keep 条的树（新→旧），反向重建成一条新的根链，
+    再把 ref 指过去。旧的提交随即不可达，交给 `git gc` 回收。
+
+    只在超过 2×keep 时触发一次（迟滞），避免每条快照都重造 200 个提交。
+    """
     try:
         count = int(git(repo.root, "rev-list", "--count", CHECKPOINT_REF, timeout=60) or 0)
-        if count <= MAX_CHECKPOINTS:
-            return
-        keep = git(
-            repo.root, "rev-list", f"--skip={MAX_CHECKPOINTS - 1}", "--max-count=1",
-            CHECKPOINT_REF, timeout=60,
-        )
-        if keep:
-            git(repo.root, "update-ref", CHECKPOINT_REF, keep, timeout=30)
     except (OSError, subprocess.SubprocessError, ValueError):
-        pass
+        return
+    if count <= keep * 2:
+        return
+    try:
+        trees = git(
+            repo.root, "log", f"--max-count={keep}", "--format=%T", CHECKPOINT_REF, timeout=120
+        ).split()
+        rebuilt = ""
+        for tree in reversed(trees):  # 旧 → 新，逐条挂到上一条后面
+            args = ["commit-tree", tree, "-m", f"snapshot (pruned) {tree[:8]}"]
+            if rebuilt:
+                args += ["-p", rebuilt]
+            rebuilt = git(repo.root, *args, timeout=60)
+            if not rebuilt:
+                return
+        if rebuilt:
+            git(repo.root, "update-ref", CHECKPOINT_REF, rebuilt, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return
 
 
 # ── 消息 ──────────────────────────────────────────────────────────────

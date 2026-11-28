@@ -180,6 +180,34 @@ def test_checkpoint_does_not_touch_index_or_head(repo: Path):
     )
 
 
+def test_checkpoint_chain_holds_only_snapshots(repo: Path):
+    """快照的父提交必须是上一个快照 —— 挂到 HEAD 上会把 main 的历史串进来。"""
+    (repo / "a.txt").write_text("1\n", encoding="utf-8")
+    first = autosync.checkpoint(autosync.discover(), reason="t1")
+    (repo / "b.txt").write_text("2\n", encoding="utf-8")
+    second = autosync.checkpoint(autosync.discover(), reason="t2")
+
+    assert first and second
+    assert _git(repo, "rev-parse", f"{second}^") == first
+    assert int(_git(repo, "rev-list", "--count", autosync.CHECKPOINT_REF)) == 2, (
+        "链里只能有快照，不能带主线历史"
+    )
+
+
+def test_prune_keeps_the_newest_not_the_oldest(repo: Path):
+    root = autosync.discover()
+    for index in range(5):
+        (repo / "n.txt").write_text(f"{index}\n", encoding="utf-8")
+        assert autosync.checkpoint(root, reason=f"t{index}")
+
+    autosync._prune(root, keep=2)
+
+    assert int(_git(repo, "rev-list", "--count", autosync.CHECKPOINT_REF)) == 2
+    assert _git(repo, "show", f"{autosync.CHECKPOINT_REF}:n.txt").strip() == "4", (
+        "裁剪必须丢旧的、留新的"
+    )
+
+
 def test_push_is_skipped_without_remote(repo: Path):
     (repo / "notes.md").write_text("x\n", encoding="utf-8")
 
