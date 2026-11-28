@@ -395,7 +395,8 @@ it('排序体检：回填期只报状态，完整四格在抽屉里且标样本�
     focus: { ...fixture.focus, sort_audit: AUDIT_BACKFILL },
   })
   const el = await render()
-  // 首屏只留一行：现行 / 候选 / 配对
+  // 首屏一行横幅：现行跑输随机 15 只 / 候选 / 配对；不是 9px 脚注
+  expect(el.textContent).toContain('现行排序跑输池内随机 15 只')
   expect(el.textContent).toContain('回填 500 天（样本内）')
   expect(el.textContent).toContain('-140.9bp')
   expect(el.textContent).toContain('+115.1bp')
@@ -430,15 +431,58 @@ it('排序体检：前向有数据时首行切到 forward，裁决线按 forward
   expect(el.textContent).toContain('+12.5bp')
 })
 
+
+it('席位背书：数据非当日时标披露日与滞后天数，不写「今日」', async () => {
+  vi.spyOn(api, 'shortlineRadar').mockResolvedValue({
+    ...fixture,
+    focus: {
+      ...fixture.focus,
+      seat_backing: [{
+        symbol: '600000.SH', name: '浦发银行', seat_name: '测试营业部',
+        rep20: 0.05, net: 1e7, date: '2026-11-13',
+      }],
+    },
+  })
+  const el = await render()
+  expect(el.textContent).toContain('最近披露 2026-11-13')
+  expect(el.textContent).toContain('滞后 7 天')
+  expect(el.textContent).not.toContain('今日被高声誉席位净买入')
+})
+
+it('可执行动作：今日封板名单链到连板梯队，并声明触发清单不在本页', async () => {
+  const el = await render()
+  const link = Array.from(el.querySelectorAll('a')).find(a => a.textContent?.includes('连板梯队'))
+  expect(link?.getAttribute('href')).toBe('/limit-ladder')
+  expect(el.textContent).toContain('本页不提供触发清单')
+})
+
+it('情绪：先报近 120 日分位，再报晋级率绝对值', async () => {
+  vi.spyOn(api, 'shortlineRadar').mockResolvedValue({
+    ...fixture,
+    focus: {
+      ...fixture.focus,
+      emotion: {
+        available: true, upgrade_rate: 0.4286, n_lu_today: 437, n_lianban_today: 30,
+        pct: 0.992, state: 'green', label: '主升期', window_days: 119, hint: '',
+      },
+    },
+  })
+  const el = await render()
+  const t = el.textContent ?? ''
+  expect(t).toContain('主升期')
+  expect(t).toContain('近 119 日分位 99%')
+  expect(t.indexOf('分位')).toBeLessThan(t.indexOf('晋级率'))
+})
+
 // ===== 跨年妖候选池：实时计算，替换旧「锁仓 + 上方无抛压」=====
 //
-// 8 画像 → 6 条件，后端 focus.cross_year 实时筛出，分两梯队（位置干净 / 位置偏高）。
+// 8 画像 → 4 门槛 + 1 排序 + 1 徽标，后端 focus.cross_year 实时筛出，分两梯队（位置干净 / 位置偏高）。
 // 测试锁住：块存在、两梯队分组、情绪温度读数、记忆点标记、切标签后不再出现。
 
 it('跨年妖候选池：分两梯队、带情绪温度与记忆点标记', async () => {
   const el = await render()
   expect(el.textContent).toContain('跨年妖候选池')
-  expect(el.textContent).toContain('8 画像 → 6 条件')
+  expect(el.textContent).toContain('8 画像 → 4 门槛 + 1 排序 + 1 徽标')
   expect(el.textContent).toContain('第一梯队 · 位置干净')
   expect(el.textContent).toContain('第二梯队 · 位置偏高')
   // 情绪温度计：全市场正在炒的票数 + 候选数合并成完整温度读数
@@ -447,8 +491,10 @@ it('跨年妖候选池：分两梯队、带情绪温度与记忆点标记', asyn
   expect(el.textContent).toContain('长虹美菱')
   expect(el.textContent).toContain('金新农')
   expect(el.textContent).toContain('好当家')
-  // 名字记忆点标签
-  expect(el.textContent).toContain('记忆点')
+  // 三类条件不能混读：门槛 / 排序 / 徽标
+  expect(el.textContent).toContain('门槛 · 启动价低')
+  expect(el.textContent).toContain('排序 · 位置干净')
+  expect(el.textContent).toContain('徽标 · 名字记忆点')
   // 负向说明：候选池不是买入名单
   expect(el.textContent).toContain('候选池不是买入名单')
 })

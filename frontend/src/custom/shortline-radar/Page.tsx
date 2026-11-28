@@ -28,7 +28,7 @@ import {
   useEffect, useMemo, useRef, useState,
   type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject,
 } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle, ArrowDown, ArrowDownWideNarrow, ArrowUp, ChevronDown, RefreshCw, Search, X,
@@ -394,13 +394,16 @@ function StatusBar({
                 <span className={cn('h-2 w-2 rounded-full', dot)} />
                 情绪 · {emo.label}
               </span>
-              <span className="font-mono text-[11px] tabular-nums text-secondary">
-                连板晋级率 {fmtPct(emo.upgrade_rate ?? 0, 1)}
+              <span className="font-mono text-[11px] tabular-nums text-secondary"
+                title="今日连板晋级率在近 120 个交易日里的分位；先看分位，再看绝对值">
+                近 {emo.window_days ?? 0} 日分位 {((emo.pct ?? 0) * 100).toFixed(0)}%
+              </span>
+              <span className="text-[10px] text-muted">
+                晋级率 {fmtPct(emo.upgrade_rate ?? 0, 1)}
               </span>
               <span className="text-[9.5px] text-muted">
                 今日涨停 {emo.n_lu_today ?? 0}（连板 {emo.n_lianban_today ?? 0}）
               </span>
-              <span className="text-[9.5px] text-muted">近 {emo.window_days ?? 0} 日分位 {((emo.pct ?? 0) * 100).toFixed(0)}%</span>
             </>
           ) : (
             <span className="text-[10px] text-muted">情绪闸门不可用（交易日不足 30 个）</span>
@@ -520,6 +523,11 @@ function FocusBand({
     .join(' / ')
 
   const allCold = picks.length > 0 && picks.every(p => p.stage === 'cold')
+  // 席位数据盘后才有，as_of 当天往往还拿不到；把披露日写在标题上，避免「今日」被读成 as_of。
+  const seatDate = focus.seat_backing.reduce((m, s) => (s.date > m ? s.date : m), '')
+  const seatLag = seatDate && asOf
+    ? Math.max(0, Math.round((Date.parse(asOf) - Date.parse(seatDate)) / 86400000))
+    : 0
 
   return (
     <section className="overflow-hidden rounded-card border border-emerald-500/20 bg-emerald-500/[0.02]">
@@ -527,7 +535,7 @@ function FocusBand({
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <h2 className="text-[13px] font-medium text-foreground">今日观察池</h2>
           <span className="text-[10px] text-muted">
-            明日候选，不是买入名单 · {asOf ?? '—'}
+            注意力前 15 · 不是买入名单 · {asOf ?? '—'}
           </span>
         </div>
         {picks.length > 0 && (
@@ -536,6 +544,8 @@ function FocusBand({
           </span>
         )}
       </div>
+
+      <SortAuditBanner audit={focus.sort_audit} onOpen={onOpenMethod} />
 
       {/* 漏斗：四步各自闭口 */}
       <div className="mx-4 mb-2 grid grid-cols-2 gap-px overflow-hidden rounded-btn border border-border/60 bg-border/40 sm:grid-cols-4">
@@ -600,8 +610,10 @@ function FocusBand({
             className="flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors hover:bg-elevated/30"
           >
             <span className="text-[10px] font-medium text-foreground">席位背书 {focus.seat_backing.length}</span>
-            <span className="text-[9px] text-muted/70">
-              今日被高声誉席位净买入 · 与池正交 ·「谁在买」，不是「还没动」
+            <span className={cn('text-[10px]', seatLag > 0 ? 'text-amber-700/90 dark:text-amber-400/90' : 'text-muted/70')}
+              title={seatDate ? `席位数据日期 ${seatDate}；as_of ${asOf ?? '—'}` : undefined}>
+              {seatLag > 0 ? `最近披露 ${seatDate} · 非当日（滞后 ${seatLag} 天）` : '今日被高声誉席位净买入'}
+              {' · '}与池正交 ·「谁在买」，不是「还没动」
             </span>
             <ChevronDown className={cn('ml-auto h-3 w-3 shrink-0 text-muted/60 transition-transform', seatsOpen && 'rotate-180')} />
           </button>
@@ -638,7 +650,6 @@ function FocusBand({
           className="text-accent underline underline-offset-2 hover:text-foreground">
           完整口径与实测
         </button>
-        <SortAuditLine audit={focus.sort_audit} onOpen={onOpenMethod} />
       </div>
     </section>
   )
@@ -647,7 +658,7 @@ function FocusBand({
 /**
  * 跨年妖候选池 —— 观察池之外的另一块，独立口径，实时计算（数据来自后端 focus.cross_year）。
  *
- * 把跨年妖股的 8 条历史画像翻译成 6 个可量化的数据条件，实时筛出候选，分两梯队：
+ * 把跨年妖股的 8 条历史画像翻译成 4 个硬门槛 + 1 个排序 + 1 个徽标，实时筛出候选，分两梯队：
  *   第一梯队 = 位置干净（ret60 < 30%，前期没怎么涨、最近才启动）
  *   第二梯队 = 位置偏高（ret60 ≥ 30%，已涨过一轮）
  *
@@ -678,7 +689,7 @@ function CrossYearCandidates({
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <h2 className="text-[13px] font-medium text-foreground">跨年妖候选池</h2>
           <span className="text-[10px] text-muted">
-            8 画像 → 6 条件 · 实时计算
+            8 画像 → 4 门槛 + 1 排序 + 1 徽标 · 实时计算
           </span>
         </div>
         <span className="flex items-center gap-1.5 text-[9.5px] tabular-nums text-muted/80">
@@ -700,6 +711,7 @@ function CrossYearCandidates({
             className="rounded-btn border border-purple-500/20 bg-purple-500/[0.04] px-1.5 py-0.5 text-[9px] text-muted/80"
             title={`${s.label}：${s.hint}`}
           >
+            <span className="text-muted/45">{s.kind === 'gate' ? '门槛' : s.kind === 'rank' ? '排序' : '徽标'} · </span>
             <span className="text-foreground/70">{s.label}</span>
             <span className="ml-1 text-muted/60">{s.hint}</span>
           </span>
@@ -792,15 +804,17 @@ function CandidateCard({ c, onOpen }: { c: CrossYearCandidate; onOpen: (s: strin
 }
 
 /**
- * 排序体检的一行摘要。
+ * 排序体检横幅：放在观察池头，而不是 9px 脚注。
  *
- * 判据冻结在 docs/structural-edge/prereg-heat-sort.md，评估日由人执行；
- * 这里只报状态，不裁决。完整四格与门槛在口径抽屉里。
+ * 页面自己的体检说现行 heat 排序跑输池内随机 15 只（回填 −140.9bp / t −3.02），
+ * 而 15 张卡仍按 heat 排。这两件事必须同屏：卡片回答「谁在动」，横幅回答「按收益它不好」。
+ * 判据冻结在 docs/structural-edge/prereg-heat-sort.md，评估日由人执行；这里只报状态，不裁决。
  */
-function SortAuditLine({ audit, onOpen }: { audit: SortAudit | null | undefined; onOpen: () => void }) {
+function SortAuditBanner({ audit, onOpen }: { audit: SortAudit | null | undefined; onOpen: () => void }) {
   if (!audit) {
     return (
-      <button type="button" onClick={onOpen} className="ml-auto text-[9px] text-muted/70 underline underline-offset-2 hover:text-foreground">
+      <button type="button" onClick={onOpen}
+        className="mx-4 mb-2 text-left text-[10px] text-muted/70 underline underline-offset-2 hover:text-foreground">
         排序体检未生成
       </button>
     )
@@ -809,17 +823,26 @@ function SortAuditLine({ audit, onOpen }: { audit: SortAudit | null | undefined;
   const w = hasFwd ? audit.forward! : audit.all
   const months = audit.forward?.months ?? 0
   const pending = months < audit.gate.min_months
+  const negative = (w.cur_lift_bp ?? 0) < 0
   const bp = (v: number | null | undefined) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}bp`)
   return (
     <button type="button" onClick={onOpen}
-      className="ml-auto flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] tabular-nums text-muted/80 hover:text-foreground"
-      title="现行排序相对同日随机 15 只的前向读数；判据见 prereg-heat-sort.md">
-      <span className="text-muted/55">排序体检</span>
-      <span>{hasFwd ? `前向 ${months}/${audit.gate.min_months} 月` : `回填 ${audit.backfill_days} 天（样本内）`}</span>
-      <span>现行 {bp(w.cur_lift_bp)}</span>
-      <span>候选 {bp(w.shadow_lift_bp)}</span>
-      <span>配对 {bp(w.paired_delta_bp)}</span>
-      {pending && <span className="text-muted/50">· 只看不判</span>}
+      className={cn(
+        'mx-4 mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-btn border px-3 py-1.5 text-left transition-colors hover:bg-elevated/30',
+        negative ? 'border-amber-500/35 bg-amber-500/[0.06]' : 'border-border/60 bg-surface/40',
+      )}
+      title="现行排序相对同日池内随机 15 只的前向读数；判据见 prereg-heat-sort.md">
+      <span className={cn('text-[12px] font-medium', negative ? 'text-amber-700 dark:text-amber-400' : 'text-secondary')}>
+        排序体检 · 现行排序{negative ? '跑输' : '跑赢'}池内随机 15 只 {bp(w.cur_lift_bp)}
+      </span>
+      <span className="font-mono text-[10.5px] tabular-nums text-muted">
+        t {w.cur_t?.toFixed(2) ?? '—'} · 候选 {bp(w.shadow_lift_bp)} · 配对 {bp(w.paired_delta_bp)}
+      </span>
+      <span className="text-[10px] text-muted/70">
+        {hasFwd ? `前向 ${months}/${audit.gate.min_months} 月` : `回填 ${audit.backfill_days} 天（样本内）`}
+        {pending ? ' · 只看不判' : ''}
+      </span>
+      <span className="ml-auto text-[10px] text-accent">口径 →</span>
     </button>
   )
 }
@@ -833,14 +856,18 @@ function SortAuditLine({ audit, onOpen }: { audit: SortAudit | null | undefined;
  */
 function ActionLine({ onOpenMethod }: { onOpenMethod: () => void }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-card border border-border/70 bg-surface/30 px-4 py-1.5 text-[9.5px] leading-relaxed text-muted">
-      <span className="text-[10px] font-medium text-foreground">可执行动作只有两个</span>
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-card border border-border/70 bg-surface/30 px-4 py-1.5 text-[10.5px] leading-relaxed text-muted">
+      <span className="text-[10.5px] font-medium text-foreground">可执行动作只有两个</span>
       <span>
         全市场换手板口径，不是本页观察池：T 日封板 → T+1 开盘卖{' '}
         <b className="text-foreground/85">+1.45%</b>；T+1 日内跌 &gt;5% → T+2 开盘买、收盘卖{' '}
         <b className="text-foreground/85">+0.836%</b>
       </span>
-      <span className="hidden text-muted/70 sm:inline">代价 p10 −6.80% · 22% 盘中破 −5%</span>
+      <Link to="/limit-ladder" className="text-accent underline underline-offset-2 hover:text-foreground">
+        今日封板名单 → 连板梯队
+      </Link>
+      <span className="text-[10px] text-muted/60">T+1 跌 5% 需盘中盯，本页不提供触发清单</span>
+      <span className="hidden text-amber-700/90 dark:text-amber-400/90 sm:inline">代价 p10 −6.80% · 22% 盘中破 −5%</span>
       <button type="button" onClick={onOpenMethod}
         className="ml-auto text-accent underline underline-offset-2 hover:text-foreground">
         完整规则与「不要做」
